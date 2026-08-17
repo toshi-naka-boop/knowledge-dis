@@ -1,0 +1,20 @@
+{
+  "colorScheme": "tokyo night",
+  "enableTelemetry": false,
+  "model": "Gemini 3.6 Flash (High)",
+  "permissions": {
+    "allow": [
+      "write_file(/Users/toshixa/kototsugi/index.html)",
+      "write_file(/Users/toshixa/kototsugi/assets/)",
+      "write_file(/Users/toshixa/kototsugi/data/)",
+      "write_file(/Users/toshixa/kototsugi/tests/)",
+      "write_file(/Users/toshixa/dev/Knowledge-discovery/src/)",
+      "write_file(/Users/toshixa/dev/Knowledge-discovery/tests/)",
+      "write_file(/Users/toshixa/dev/Knowledge-discovery/scripts/)"
+    ]
+  },
+  "trustedWorkspaces": [
+    "/Users/toshixa/kototsugi",
+    "/Users/toshixa/dev/Knowledge-discovery"
+  ]
+}
