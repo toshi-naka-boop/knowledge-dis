@@ -1,0 +1,17 @@
+{
+  "currentNode": "実装",
+  "status": "in_progress",
+  "designVersion": "v7",
+  "approvedDesignVersion": "v7",
+  "approvedDesignSha256": "0f4dde9369f9ca748922f1ef093c2c0ab43f5d1cfab6e70f286af244e1478da0",
+  "approvedAt": "2026-08-18T02:10:00+09:00",
+  "approvalEvidence": "v7:0f4dde9369f9 で承認",
+  "requiredApprovalFingerprint": "v7:0f4dde9369f9",
+  "baseline": null,
+  "criticRound": 2,
+  "openIssueIds": [],
+  "requiredReads": ["design.md", "ledger.md"],
+  "nextAction": "git init+baseline commit後、design-loop-antigravityの委譲手順（settings.json差し替え→preflight→execute）。舞台設定の確定（8/19期限）がシードデータのクリティカルパス",
+  "delegation": { "批評": "claude-opus-5[1m] design-critic（round-4, round-5）", "実装": "antigravity（モデルIDはagy modelsで確定し記録する）" },
+  "lastUpdated": "2026-08-18"
+}
