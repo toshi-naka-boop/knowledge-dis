@@ -38,7 +38,13 @@ design.md の以下を、**外部サービスに接続せずテスト可能な�
 4. **privateマスク（§3、メッセージ横断の1ルール）**: `cited_item_keys` に `visibility=="private"` を含む全メッセージへの `audit_payload` 生成、`connect_ask`→`connect_ask_private` のintent確定、監査表示のfail-closedホワイトリスト
 5. **探索的マッチング2段階**（§2）: LLM を直接呼ばず `ConnectionInferencer` インターフェース＋テスト用フェイク実装を作る。ベクトル類似度も `Embedder` インターフェース＋決定的フェイク（例: 単語重複率）で抽象化。`VECTOR_FLOOR` / `CONNECTION_THRESHOLD` によるOR落選判定、`no_connection` の記録、候補エージェントごとの独立推論の構造（各推論呼び出しに渡るのは質問文と当人のプロフィールのみであることをコード構造で保証）
 6. **つながりレーン**（§4-§6）: connect_ask 配送 → consent_reply(granted/declined) → match_proposal（reason_text 非含有、双方宛）／ decline_with_reason（reason + attachment: link/text/doc）。複数同意は全員成立
-7. **単体テスト**: design.md §10 のゴール 1, 2, 4, 4b, 5, 6, 7, 8 に対応するテストを `tests/` に書く。**テストはネットワーク・GCP認証・APIキーなしで完走すること**（全てフェイク実装を使う）
+7. **単体テスト**: design.md §10 のゴール 1, 2, 4, 4b, 5, 6, 7, 8 に対応するテストを `tests/` に書く。**テストはネットワーク・GCP認証・APIキーなしで完走すること**（全てフェイク実装を使う）。`tests/__init__.py` を必ず置く（`python3 -m unittest discover -s tests` で発見可能にするため）
+
+## 実行環境の制約（重要）
+
+- **この環境ではシェルコマンド（Bash等）は一切実行できない**。実行を試みると拒否されて作業が中断する。**使ってよいツールはファイルの読み取りと write_file のみ**
+- テストの実行は外側の controller が `python3 -m unittest discover -s tests` で行う。あなたは**テストを実行せず**、静的に正しいと確信できるコードとテストを書き切ること
+- import の整合・タイポ・フィクスチャの過不足は実行で確かめられないため、書き終えた後にファイルを読み直して自己レビューすること
 
 ## 書き込み許可範囲
 
@@ -48,10 +54,10 @@ design.md の以下を、**外部サービスに接続せずテスト可能な�
 
 ## 完了条件（これを満たすまで complete と報告しない）
 
-1. `python3 -m unittest discover -s tests` が全件パスする（自分で実行して確認すること）
+1. `python3 -m unittest discover -s tests` が全件パスする見込みのコード・テスト一式が書かれている（実行は controller が行う）
 2. 上記スコープ1〜6の各コンポーネントが `src/` に存在する
-3. private項目を引用したメッセージ（connect_ask_private / no_connection とも）の監査表示がマスクされることを検証するテストが存在しパスする
-4. 未登録payload型・unsupported intent の拒否が監査記録に `rejected=true` で残ることを検証するテストが存在しパスする
+3. private項目を引用したメッセージ（connect_ask_private / no_connection とも）の監査表示がマスクされることを検証するテストが存在する
+4. 未登録payload型・unsupported intent の拒否が監査記録に `rejected=true` で残ることを検証するテストが存在する
 
 ## 実装スタイル
 
