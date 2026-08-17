@@ -11,7 +11,7 @@
   "criticRound": 2,
   "openIssueIds": [],
   "requiredReads": ["design.md", "ledger.md"],
-  "nextAction": "git init+baseline commit後、design-loop-antigravityの委譲手順（settings.json差し替え→preflight→execute）。舞台設定の確定（8/19期限）がシードデータのクリティカルパス",
-  "delegation": { "批評": "claude-opus-5[1m] design-critic（round-4, round-5）", "実装": "antigravity（モデルIDはagy modelsで確定し記録する）" },
+  "nextAction": "M1のexecuteをユーザーのターミナルで実行し、receipt・実ファイル・テストを独立検証する。M2（Firestore/Gemini実装・シードデータ）には舞台設定の確定が必要",
+  "delegation": { "批評": "claude-opus-5[1m] design-critic（round-4, round-5）", "実装": "antigravity/gemini-3.7-flash-high（agy models出力から選定。批評側Claudeとのクロスベンダー独立性を優先）" },
   "lastUpdated": "2026-08-18"
 }
