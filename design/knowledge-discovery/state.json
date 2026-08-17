@@ -11,7 +11,7 @@
   "criticRound": 2,
   "openIssueIds": [],
   "requiredReads": ["design.md", "ledger.md"],
-  "nextAction": "M1のexecuteをユーザーのターミナルで実行し、receipt・実ファイル・テストを独立検証する。M2（Firestore/Gemini実装・シードデータ）には舞台設定の確定が必要",
+  "nextAction": "M1完了（39テストパス・commit 9f6f1dd）。次はM2: シードデータ設計（舞台=医療人材紹介+不動産+承継支援グループ、A+D確定済み）とFirestore/Gemini実装のhandoff作成。反証工程（3レンズ）は全実装完了後に実施予定",
   "delegation": { "批評": "claude-opus-5[1m] design-critic（round-4, round-5）", "実装": "antigravity/gemini-3.7-flash-high（agy models出力から選定。批評側Claudeとのクロスベンダー独立性を優先）" },
   "lastUpdated": "2026-08-18"
 }
