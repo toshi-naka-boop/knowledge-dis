@@ -7,7 +7,7 @@
   "approvedAt": "2026-08-18T02:10:00+09:00",
   "approvalEvidence": "v7:0f4dde9369f9 で承認",
   "requiredApprovalFingerprint": "v7:0f4dde9369f9",
-  "baseline": null,
+  "baseline": "4f0a856768de17b014af65b2bf3160a2db94156d",
   "criticRound": 2,
   "openIssueIds": [],
   "requiredReads": ["design.md", "ledger.md"],
