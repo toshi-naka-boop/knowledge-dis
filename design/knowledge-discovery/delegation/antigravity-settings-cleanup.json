@@ -1,0 +1,16 @@
+{
+  "colorScheme": "tokyo night",
+  "enableTelemetry": false,
+  "model": "Gemini 3.6 Flash (High)",
+  "permissions": {
+    "allow": [
+      "write_file(/Users/toshixa/kototsugi/index.html)",
+      "write_file(/Users/toshixa/kototsugi/assets/)",
+      "write_file(/Users/toshixa/kototsugi/data/)",
+      "write_file(/Users/toshixa/kototsugi/tests/)"
+    ]
+  },
+  "trustedWorkspaces": [
+    "/Users/toshixa/kototsugi"
+  ]
+}
