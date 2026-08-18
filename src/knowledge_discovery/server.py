@@ -407,7 +407,6 @@ def create_app(
     return app
 
 
-# Default app instance for running via `uvicorn knowledge_discovery.server:app`
-app = None
-if FastAPI is not None:
-    app = create_app()
+# Run with the env-driven factory (module-level eager creation would seed an
+# unused in-memory store at import time and slow down cold starts):
+#   uvicorn 'knowledge_discovery.server:create_app_from_env' --factory
