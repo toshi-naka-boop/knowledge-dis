@@ -1,5 +1,5 @@
 {
-  "currentNode": "実装",
+  "currentNode": "反証",
   "status": "in_progress",
   "designVersion": "v7",
   "approvedDesignVersion": "v7",
@@ -11,7 +11,7 @@
   "criticRound": 2,
   "openIssueIds": [],
   "requiredReads": ["design.md", "ledger.md"],
-  "nextAction": "M2完了（61テストパス・commit cac062f）。次: GCP実疎通（$150クレジット状況確認→Firestore/Gemini APIキー→シード投入→ローカルE2E→Cloud Runデプロイ）。その後に反証工程（3レンズ）→デモ動画・アーキ図・write-up。8/29機能凍結",
+  "nextAction": "反証round-6の15件修正済み(76732e2)・再シード済み。VECTOR_FLOOR=0.62での再デプロイ完了後、本番スモーク（デモ2質問+拒否プローブ）→反証クローズ→デモ動画・アーキ図・write-up。8/29機能凍結",
   "delegation": { "批評": "claude-opus-5[1m] design-critic（round-4, round-5）", "実装": "antigravity/gemini-3.7-flash-high（agy models出力から選定。批評側Claudeとのクロスベンダー独立性を優先）" },
   "lastUpdated": "2026-08-18"
 }

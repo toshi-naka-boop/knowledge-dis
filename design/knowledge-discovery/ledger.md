@@ -6,7 +6,26 @@
 
 ## 未解決の指摘
 
-（round-5のC-21〜C-25は全てv7/spec v5で解決済み。critic判定「C-21反映後は設計として破綻する論点なし、承認CPへ進めてよい」に基づき承認CPへ）
+（なし。反証工程round-6の15件も全て解決/意図的却下済み）
+
+## 反証工程 round-6（実装検証・3レンズ並列）の帰結
+
+原文: reviews/round-6-correctness.md / round-6-safety.md / round-6-scope.md（critic: claude-opus-5[1m]×3。codexは未インストールのため省略）。修正コミット 76732e2。
+
+- **V-1/S-1（high・両レンズ一致）**: マスクがLLM自己申告のcited_item_keysに無検証依存＋捏造キーfallback → 送信層でキー実在検証＋reason_textへのprivate本文断片スキャン、fail-closed化。回帰テスト3件追加
+- **V-2（high）**: 依頼者⇔打診リンクがプロセス内メモリのみ → payload永続化(requester_id/query_id/ask_audit_id)でステートレス化
+- **V-3/S-2（high/mid）**: UIのAPIキー焼き込み・/docs無認証 → URLクエリ取得化・docs/openapi閉鎖
+- **V-4（mid）**: 射影の質問混在・辞退誤突合 → 質問単位スコープ＋ask_audit_id突合
+- **V-5（mid）**: match_proposalが双方に届いていない → 依頼者・同意者へ各1通実送信＋宛先assert
+- **S-3（mid）**: 候補受信箱のagent_id切替 → デモ用1人4役ドロップダウンの意図的仕様としてREADMEに明記（採用せず）
+- **S-4（mid）**: 未エスケープinnerHTML → esc()全面適用
+- **S-5（low）**: funnel類似度の桁数オラクル → 社内デモ文脈で許容（採用せず）
+- **E-1（high）**: VECTOR_FLOOR=0.20がGemini埋め込み空間で無意味 → 実測較正（無関係0.59/関連0.68-0.84）し本番env VECTOR_FLOOR=0.62
+- **E-2（high）**: 拒否経路のライブ実演手段なし → /api/probe/unregistered-intent 追加
+- **E-3（high）**: 合成データの重なり分岐が到達不能＋5クローン → 部門ローカル連番化＋役職/focus句織り込み、再シード済み
+- **E-4（high）**: 監査ポーリング毎の全プロフィール取得(~10MB/3s) → 初回のみの静的カウントに
+- **E-5（mid）**: README/rules不在 → README新設（再現手順・3責務対応表・rules方針・デモ割り切り）。firestore.rulesはclient SDK既定拒否をREADMEに文書化する方式
+- E付録の削除候補(~200行)は凍結優先で見送り（陳腐化リスクよりも手戻りリスクを重視）。「実シード＋実デモ質問のゴールデンテスト」は台本確定後に追加検討
 
 ## 新前提での解決済み（一行索引）
 
