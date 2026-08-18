@@ -104,6 +104,47 @@ class ConsentRequest(BaseModel):  # type: ignore[misc]
 # Application Factory
 # -----------------------------------------------------------------------------
 
+def create_app_from_env() -> Any:
+    """Production factory: wire FirestoreStore / Gemini adapters from environment.
+
+    Env vars:
+    - USE_FIRESTORE=1        -> FirestoreStore (project from GOOGLE_CLOUD_PROJECT)
+    - GEMINI_API_KEY set     -> GeminiEmbedder + GeminiConnectionInferencer
+    - DEMO_API_KEY           -> API key protection (create_app default)
+
+    Run with: uvicorn 'knowledge_discovery.server:create_app_from_env' --factory
+    """
+    store: Store | None = None
+    if os.environ.get("USE_FIRESTORE") == "1":
+        from knowledge_discovery.firestore_store import FirestoreStore
+
+        store = FirestoreStore(project=os.environ.get("GOOGLE_CLOUD_PROJECT"))
+
+    service: KnowledgeDiscoveryService | None = None
+    if os.environ.get("GEMINI_API_KEY"):
+        from knowledge_discovery.gemini_adapters import (
+            GeminiConnectionInferencer,
+            GeminiEmbedder,
+        )
+
+        if store is None:
+            store = InMemoryStore()
+            from scripts.generate_seeds import populate_store
+
+            populate_store(store, dry_run=False)
+        matching_engine = MatchingEngine(
+            embedder=GeminiEmbedder(),
+            inferencer=GeminiConnectionInferencer(),
+            vector_floor=float(os.environ.get("VECTOR_FLOOR", "0.20")),
+            connection_threshold=float(os.environ.get("CONNECTION_THRESHOLD", "0.50")),
+            max_dispatch_k=3,
+            funnel_limit=20,
+        )
+        service = KnowledgeDiscoveryService(store=store, matching_engine=matching_engine)
+
+    return create_app(store=store, service=service)
+
+
 def create_app(
     store: Store | None = None,
     service: KnowledgeDiscoveryService | None = None,

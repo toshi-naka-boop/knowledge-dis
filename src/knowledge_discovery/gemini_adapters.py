@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import time
 from typing import Any
 
 from knowledge_discovery.matching import ConnectionInferencer, Embedder
@@ -49,7 +50,8 @@ class GeminiEmbedder(Embedder):
             client: Optional pre-configured genai.Client instance (useful for testing/mocking).
         """
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
-        self.model = model or os.environ.get("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+        # text-embedding-004 was retired; gemini-embedding-2 is the current GA model
+        self.model = model or os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2")
         if client is not None:
             self.client = client
         elif genai is not None and self.api_key:
@@ -67,12 +69,27 @@ class GeminiEmbedder(Embedder):
                 "Gemini client is not initialized. Ensure GEMINI_API_KEY is set or google-genai is installed."
             )
 
+        response = None
+        last_exc: Exception | None = None
+        for attempt in range(4):
+            try:
+                # google-genai SDK call
+                response = self.client.models.embed_content(
+                    model=self.model,
+                    contents=text,
+                )
+                break
+            except Exception as exc:
+                # Free-tier rate limit (100 req/min): wait out the window and retry
+                if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
+                    last_exc = exc
+                    time.sleep(62)
+                    continue
+                raise RuntimeError(f"Gemini embedding API call failed: {exc}") from exc
+        if response is None:
+            raise RuntimeError(f"Gemini embedding API call failed after retries: {last_exc}") from last_exc
+
         try:
-            # google-genai SDK call
-            response = self.client.models.embed_content(
-                model=self.model,
-                contents=text,
-            )
             # Extract vector values from SDK response
             values: list[float] = []
             if hasattr(response, "embedding") and hasattr(response.embedding, "values"):

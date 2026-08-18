@@ -508,16 +508,28 @@ def main() -> None:
     parser.add_argument("--use-firestore", action="store_true", help="Write to live Firestore instance.")
     parser.add_argument("--project", type=str, default=None, help="Google Cloud project ID.")
     parser.add_argument("--database", type=str, default=None, help="Firestore database ID.")
+    parser.add_argument(
+        "--embedder",
+        choices=["deterministic", "gemini"],
+        default="deterministic",
+        help="Embedder used for stored profile embeddings. Use 'gemini' when the server "
+        "runs with GeminiEmbedder (embedding dimensions must match at query time).",
+    )
     args = parser.parse_args()
+
+    embedder = None
+    if args.embedder == "gemini":
+        from knowledge_discovery.gemini_adapters import GeminiEmbedder
+        embedder = GeminiEmbedder()
 
     if args.dry_run or not args.use_firestore:
         from knowledge_discovery.store import InMemoryStore
         store = InMemoryStore()
-        populate_store(store, dry_run=args.dry_run)
+        populate_store(store, dry_run=args.dry_run, embedder=embedder)
     else:
         from knowledge_discovery.firestore_store import FirestoreStore
         store = FirestoreStore(project=args.project, database=args.database)
-        populate_store(store, dry_run=False)
+        populate_store(store, dry_run=False, embedder=embedder)
 
 
 if __name__ == "__main__":
