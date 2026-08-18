@@ -33,6 +33,22 @@ except ImportError:
     types = None  # type: ignore[assignment]
 
 
+def _build_genai_client(api_key: str) -> Any | None:
+    """Build a genai.Client for either Vertex AI mode or API-key mode.
+
+    Vertex AI mode (GOOGLE_GENAI_USE_VERTEXAI=true + ADC credentials) needs no
+    API key and bills the Cloud project — used because AI Studio keys default
+    to a prepaid plan that cannot be switched to postpaid billing.
+    """
+    if genai is None:
+        return None
+    if os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("1", "true"):
+        return genai.Client()
+    if api_key:
+        return genai.Client(api_key=api_key)
+    return None
+
+
 class GeminiEmbedder(Embedder):
     """Vector embedder powered by Gemini embedding models."""
 
@@ -54,10 +70,8 @@ class GeminiEmbedder(Embedder):
         self.model = model or os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2")
         if client is not None:
             self.client = client
-        elif genai is not None and self.api_key:
-            self.client = genai.Client(api_key=self.api_key)
         else:
-            self.client = None
+            self.client = _build_genai_client(self.api_key)
 
     def embed(self, text: str) -> list[float]:
         """Generate normalized embedding vector for text using Gemini API."""
@@ -158,10 +172,8 @@ Output JSON Schema:
         self.model = model or os.environ.get("GEMINI_MODEL", "gemini-3.7-flash")
         if client is not None:
             self.client = client
-        elif genai is not None and self.api_key:
-            self.client = genai.Client(api_key=self.api_key)
         else:
-            self.client = None
+            self.client = _build_genai_client(self.api_key)
 
     def _format_profile_context(self, profile: Profile) -> str:
         """Format candidate profile items into text for isolated inference."""

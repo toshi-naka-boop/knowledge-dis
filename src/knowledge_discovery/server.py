@@ -120,8 +120,9 @@ def create_app_from_env() -> Any:
 
         store = FirestoreStore(project=os.environ.get("GOOGLE_CLOUD_PROJECT"))
 
+    use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("1", "true")
     service: KnowledgeDiscoveryService | None = None
-    if os.environ.get("GEMINI_API_KEY"):
+    if os.environ.get("GEMINI_API_KEY") or use_vertex:
         from knowledge_discovery.gemini_adapters import (
             GeminiConnectionInferencer,
             GeminiEmbedder,
