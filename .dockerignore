@@ -1,0 +1,11 @@
+.git
+.venv
+.claude
+design
+tests
+__pycache__
+**/__pycache__
+*.pyc
+.DS_Store
+**/.DS_Store
+*.md
