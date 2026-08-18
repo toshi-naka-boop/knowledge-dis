@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knowledge Discovery — Requester Portal</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --card-radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }
+    .container { max-width: 860px; margin: 0 auto; }
+    header { margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    h1 { font-size: 20px; font-weight: 600; color: #e2e8f0; }
+    .badge { background: #334155; color: #cbd5e1; padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+    .nav-links a { color: var(--text-muted); text-decoration: none; margin-left: 16px; font-size: 14px; }
+    .nav-links a.active, .nav-links a:hover { color: var(--primary); }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--card-radius); padding: 20px; margin-bottom: 20px; }
+    label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; color: var(--text-muted); }
+    textarea { width: 100%; height: 110px; background: #0f172a; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 12px; font-size: 14px; resize: vertical; margin-bottom: 12px; }
+    textarea:focus { outline: none; border-color: var(--primary); }
+    .btn-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    button { background: var(--primary); color: white; border: none; border-radius: 6px; padding: 10px 18px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+    button:hover { background: var(--primary-hover); }
+    button.secondary { background: #334155; color: #e2e8f0; }
+    button.secondary:hover { background: #475569; }
+    .demo-presets { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .preset-btn { background: #1e293b; border: 1px solid var(--border); color: #94a3b8; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+    .preset-btn:hover { color: var(--text); border-color: #64748b; }
+    .status-list { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+    .status-card { border-radius: 8px; padding: 16px; border: 1px solid var(--border); background: #0f172a; }
+    .status-card.pending { border-left: 4px solid var(--warning); }
+    .status-card.matched { border-left: 4px solid var(--success); }
+    .status-card.declined { border-left: 4px solid #64748b; }
+    .status-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .status-title { font-weight: 600; font-size: 15px; }
+    .status-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .status-tag.pending { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .status-tag.matched { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+    .status-tag.declined { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+    .status-body { font-size: 13px; color: #cbd5e1; line-height: 1.5; }
+    .attachment-box { margin-top: 10px; padding: 10px; background: #1e293b; border-radius: 6px; font-size: 12px; border: 1px dashed var(--border); }
+    .attachment-box a { color: var(--primary); text-decoration: none; }
+    .attachment-box a:hover { text-decoration: underline; }
+    .info-bar { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+    .live-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--success); margin-left: 12px; }
+    .dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; display: inline-block; animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Meridian Care Partners</h1>
+        <div style="font-size: 13px; color: var(--text-muted); margin-top: 2px;">
+          Tacit Knowledge Discovery & Synergy Engine
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span class="badge">Requester: Jordan Lee (Staffing)</span>
+        <div class="nav-links">
+          <a href="/requester" class="active">Requester</a>
+          <a href="/candidate">Candidate</a>
+          <a href="/audit">Audit View</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="card">
+      <label>Demo Quick Questions</label>
+      <div class="demo-presets">
+        <button class="preset-btn" onclick="setQuestion(1)">Demo 1: Clinic Relocation & Zoning</button>
+        <button class="preset-btn" onclick="setQuestion(2)">Demo 2: Practice Succession & Retirement</button>
+        <button class="preset-btn" onclick="setQuestion(3)">Demo 3: General Inquiries</button>
+      </div>
+
+      <label for="questionText">Ask a Question to the Organization</label>
+      <textarea id="questionText" placeholder="Describe the implicit background, tacit experience, or specialized knowledge you need..."></textarea>
+      
+      <div class="btn-group">
+        <button id="submitBtn" onclick="submitInquiry()">Dispatch Inquiry</button>
+        <button class="secondary" onclick="clearForm()">Clear</button>
+        <span id="liveStatus" class="live-indicator" style="display:none;">
+          <span class="dot"></span> Active polling (2s)
+        </span>
+      </div>
+      <div id="queryMeta" class="info-bar"></div>
+    </div>
+
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="font-size: 16px; font-weight: 600;">Candidate Response Status</h2>
+        <button class="secondary" style="padding: 4px 10px; font-size: 12px;" onclick="fetchStatuses()">Refresh</button>
+      </div>
+      <div id="statusContainer" class="status-list">
+        <div style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 24px;">
+          No active inquiries. Enter a question above to start discovery.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_KEY = "demo-key-2026";
+    const REQUESTER_ID = "emp_jordan_lee";
+    let pollInterval = null;
+
+    const DEMO_QUESTIONS = {
+      1: "A hospital client of mine wants to relocate one of their clinics. Who in our group knows how to find sites that can actually host a medical facility — zoning, conversion, that kind of thing?",
+      2: "The owner of a small clinic I work with mentioned she's thinking about retiring in a few years. Who has experience with practice succession conversations?",
+      3: "We need someone with experience in ambulatory surgical center operational licensing and state compliance documentation."
+    };
+
+    function setQuestion(num) {
+      document.getElementById("questionText").value = DEMO_QUESTIONS[num] || "";
+    }
+
+    function clearForm() {
+      document.getElementById("questionText").value = "";
+      document.getElementById("queryMeta").innerText = "";
+    }
+
+    async function submitInquiry() {
+      const q = document.getElementById("questionText").value.trim();
+      if (!q) {
+        alert("Please enter a question.");
+        return;
+      }
+      const submitBtn = document.getElementById("submitBtn");
+      submitBtn.disabled = true;
+      submitBtn.innerText = "Dispatching...";
+
+      try {
+        const res = await fetch("/api/query", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": API_KEY,
+          },
+          body: JSON.stringify({
+            requester_id: REQUESTER_ID,
+            question_text: q
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert("Error dispatching query: " + (data.detail || "Unknown error"));
+          return;
+        }
+
+        document.getElementById("queryMeta").innerText = 
+          `Inquiry ID: ${data.query_id} | Dispatched to ${data.dispatched_count} candidate agent(s) | Top 20 screened in Screen Funnel`;
+        
+        document.getElementById("liveStatus").style.display = "inline-flex";
+        await fetchStatuses();
+
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(fetchStatuses, 2000);
+      } catch (err) {
+        alert("Failed to connect to server: " + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Dispatch Inquiry";
+      }
+    }
+
+    async function fetchStatuses() {
+      try {
+        const res = await fetch(`/api/requester/${REQUESTER_ID}/status`, {
+          headers: { "X-API-Key": API_KEY }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        renderStatuses(data.statuses || []);
+      } catch (err) {
+        console.error("Status fetch error:", err);
+      }
+    }
+
+    function renderStatuses(statuses) {
+      const container = document.getElementById("statusContainer");
+      if (!statuses || statuses.length === 0) {
+        container.innerHTML = `
+          <div style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 24px;">
+            No candidate responses recorded yet.
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = statuses.map((item, idx) => {
+        if (item.state === "pending") {
+          return `
+            <div class="status-card pending">
+              <div class="status-header">
+                <span class="status-title">Candidate #${idx + 1}</span>
+                <span class="status-tag pending">Waiting for response</span>
+              </div>
+              <div class="status-body">
+                Candidate's personal agent is evaluating tacit background fit. Awaiting candidate review and consent.
+              </div>
+            </div>`;
+        } else if (item.state === "matched") {
+          return `
+            <div class="status-card matched">
+              <div class="status-header">
+                <span class="status-title">Connected with ${item.respondent_name || "Candidate"}</span>
+                <span class="status-tag matched">Connected</span>
+              </div>
+              <div class="status-body">
+                <strong>Synergy Match Established:</strong> ${item.respondent_name} consented to connect!
+                <br>Proposed: <strong>15-minute introductory meeting</strong>.
+              </div>
+            </div>`;
+        } else if (item.state === "declined") {
+          let attHtml = "";
+          if (item.attachment) {
+            if (item.attachment.type === "link") {
+              attHtml = `<div class="attachment-box">📎 <strong>Shared Link:</strong> <a href="${item.attachment.content}" target="_blank">${item.attachment.content}</a></div>`;
+            } else if (item.attachment.type === "doc") {
+              attHtml = `<div class="attachment-box">📄 <strong>Shared Document:</strong> <a href="/attachments/${item.attachment.content}" target="_blank">${item.attachment.content}</a></div>`;
+            } else {
+              attHtml = `<div class="attachment-box">📝 <strong>Note:</strong> ${item.attachment.content}</div>`;
+            }
+          }
+          return `
+            <div class="status-card declined">
+              <div class="status-header">
+                <span class="status-title">${item.respondent_name || "Candidate"}</span>
+                <span class="status-tag declined">Unavailable this time</span>
+              </div>
+              <div class="status-body">
+                ${item.decline_reason ? `<em>"${item.decline_reason}"</em>` : "Candidate cannot connect at this time."}
+                ${attHtml}
+              </div>
+            </div>`;
+        }
+        return "";
+      }).join("");
+    }
+  </script>
+</body>
+</html>

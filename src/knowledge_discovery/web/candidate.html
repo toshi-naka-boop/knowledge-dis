@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knowledge Discovery — Candidate Agent Portal</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --card-radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }
+    .container { max-width: 860px; margin: 0 auto; }
+    header { margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    h1 { font-size: 20px; font-weight: 600; color: #e2e8f0; }
+    .badge { background: #334155; color: #cbd5e1; padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+    .nav-links a { color: var(--text-muted); text-decoration: none; margin-left: 16px; font-size: 14px; }
+    .nav-links a.active, .nav-links a:hover { color: var(--primary); }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--card-radius); padding: 20px; margin-bottom: 20px; }
+    label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; color: var(--text-muted); }
+    select, input, textarea { width: 100%; background: #0f172a; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 10px; font-size: 14px; margin-bottom: 12px; }
+    select:focus, input:focus, textarea:focus { outline: none; border-color: var(--primary); }
+    .btn-group { display: flex; gap: 10px; align-items: center; }
+    button { background: var(--primary); color: white; border: none; border-radius: 6px; padding: 10px 18px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+    button:hover { background: var(--primary-hover); }
+    button.success { background: var(--success); }
+    button.success:hover { background: #059669; }
+    button.secondary { background: #334155; color: #e2e8f0; }
+    button.secondary:hover { background: #475569; }
+    button.danger-outline { background: transparent; border: 1px solid #ef4444; color: #ef4444; }
+    button.danger-outline:hover { background: rgba(239, 68, 68, 0.1); }
+    .ask-card { background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+    .ask-card.private-border { border-left: 4px solid #8b5cf6; }
+    .ask-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .ask-title { font-size: 16px; font-weight: 600; color: #f8fafc; }
+    .private-badge { background: rgba(139, 92, 246, 0.2); color: #c4b5fd; border: 1px solid #8b5cf6; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+    .reason-box { background: #1e293b; border-radius: 6px; padding: 12px; margin: 12px 0; font-size: 13px; color: #cbd5e1; border-left: 3px solid var(--primary); }
+    .decline-panel { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+    .form-row { display: grid; grid-template-columns: 140px 1fr; gap: 10px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Candidate Agent Inbox</h1>
+        <div style="font-size: 13px; color: var(--text-muted); margin-top: 2px;">
+          Review Incoming Inquiries & Manage Synergy Consent
+        </div>
+      </div>
+      <div class="nav-links">
+        <a href="/requester">Requester</a>
+        <a href="/candidate" class="active">Candidate</a>
+        <a href="/audit">Audit View</a>
+      </div>
+    </header>
+
+    <div class="card">
+      <label for="agentSelector">Select Active Candidate Agent (Demo Switcher):</label>
+      <select id="agentSelector" onchange="loadAsksForAgent()">
+        <option value="agent_marcus_delgado">Marcus Delgado — Commercial Broker (Real Estate)</option>
+        <option value="agent_rachel_kim">Rachel Kim — Senior Account Manager (Staffing)</option>
+        <option value="agent_elena_vasquez">Elena Vasquez — Transition Advisor (M&A / Succession)</option>
+        <option value="agent_tom_whitfield">Tom Whitfield — Senior Accountant (Corporate Services)</option>
+      </select>
+    </div>
+
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="font-size: 16px; font-weight: 600;">Incoming Inquiries & Synergy Asks</h2>
+        <button class="secondary" style="padding: 4px 10px; font-size: 12px;" onclick="loadAsksForAgent()">Refresh</button>
+      </div>
+
+      <div id="asksContainer">
+        <div style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 24px;">
+          Loading received asks...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_KEY = "demo-key-2026";
+
+    async function loadAsksForAgent() {
+      const agentId = document.getElementById("agentSelector").value;
+      const container = document.getElementById("asksContainer");
+      container.innerHTML = `<div style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 24px;">Fetching asks for ${agentId}...</div>`;
+
+      try {
+        const res = await fetch(`/api/candidate/${agentId}/asks`, {
+          headers: { "X-API-Key": API_KEY }
+        });
+        if (!res.ok) {
+          container.innerHTML = `<div style="color: var(--danger); font-size: 13px;">Error fetching asks.</div>`;
+          return;
+        }
+        const data = await res.json();
+        renderAsks(data.asks || []);
+      } catch (err) {
+        container.innerHTML = `<div style="color: var(--danger); font-size: 13px;">Connection error: ${err.message}</div>`;
+      }
+    }
+
+    function renderAsks(asks) {
+      const container = document.getElementById("asksContainer");
+      if (!asks || asks.length === 0) {
+        container.innerHTML = `
+          <div style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 24px;">
+            No incoming synergy requests for this agent.
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = asks.map((ask) => {
+        const isPrivate = ask.is_private || ask.intent === "connect_ask_private";
+        const privateBadge = isPrivate
+          ? `<span class="private-badge">🔒 Related to your private profile item</span>`
+          : "";
+
+        const cardClass = isPrivate ? "ask-card private-border" : "ask-card";
+        const isPending = (ask.consent_state === "pending" || ask.consent_state === "n/a");
+
+        let actionArea = "";
+        if (isPending) {
+          actionArea = `
+            <div style="display: flex; gap: 10px; margin-top: 14px;">
+              <button class="success" onclick="giveConsent('${ask.ask_audit_id}', 'granted')">Accept & Connect (15-min MTG)</button>
+              <button class="secondary" onclick="toggleDeclineForm('${ask.ask_audit_id}')">Decline with Note / Attachment</button>
+            </div>
+            <div id="declineForm_${ask.ask_audit_id}" class="decline-panel" style="display: none;">
+              <label>Decline Reason / Note:</label>
+              <textarea id="declineReason_${ask.ask_audit_id}" placeholder="e.g. Currently unavailable due to client escalations, but sharing relevant resources below..."></textarea>
+              
+              <div class="form-row">
+                <select id="attType_${ask.ask_audit_id}" onchange="updateAttachmentPlaceholder('${ask.ask_audit_id}')">
+                  <option value="link">Link (URL)</option>
+                  <option value="doc">Document ID</option>
+                  <option value="text">Text Note</option>
+                </select>
+                <input type="text" id="attContent_${ask.ask_audit_id}" placeholder="https://wiki.internal/clinic-relocation" value="https://wiki.internal/clinic-relocation">
+              </div>
+
+              <div style="display: flex; gap: 8px;">
+                <button class="danger-outline" onclick="giveConsent('${ask.ask_audit_id}', 'declined')">Confirm Decline & Send Resources</button>
+                <button class="secondary" onclick="toggleDeclineForm('${ask.ask_audit_id}')">Cancel</button>
+              </div>
+            </div>`;
+        } else {
+          actionArea = `
+            <div style="margin-top: 12px; font-size: 13px; color: var(--text-muted);">
+              Status: <strong>${ask.consent_state.toUpperCase()}</strong>
+            </div>`;
+        }
+
+        return `
+          <div class="${cardClass}">
+            <div class="ask-header">
+              <span class="ask-title">Synergy Inquiry from Colleague</span>
+              <div>${privateBadge}</div>
+            </div>
+            <div style="font-size: 14px; color: #f1f5f9; margin-bottom: 8px;">
+              <strong>Inquiry:</strong> "${ask.question_summary || "Colleague inquiry"}"
+            </div>
+            <div class="reason-box">
+              <strong>🤖 AI Matching Rationale:</strong><br>
+              ${ask.reason_text || "Relevant tacit experience detected."}
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+                Confidence Score: ${Math.round((ask.score || 0.8) * 100)}%
+              </div>
+            </div>
+            ${actionArea}
+          </div>`;
+      }).join("");
+    }
+
+    function toggleDeclineForm(auditId) {
+      const form = document.getElementById(`declineForm_${auditId}`);
+      form.style.display = form.style.display === "none" ? "block" : "none";
+    }
+
+    function updateAttachmentPlaceholder(auditId) {
+      const type = document.getElementById(`attType_${auditId}`).value;
+      const input = document.getElementById(`attContent_${auditId}`);
+      if (type === "link") {
+        input.value = "https://wiki.internal/clinic-relocation";
+      } else if (type === "doc") {
+        input.value = "doc_clinic_relocation_guide";
+      } else {
+        input.value = "Please refer to standard outpatient guidelines.";
+      }
+    }
+
+    async function giveConsent(auditId, decision) {
+      const agentId = document.getElementById("agentSelector").value;
+      let reasonText = "";
+      let attachment = null;
+
+      if (decision === "declined") {
+        reasonText = document.getElementById(`declineReason_${auditId}`)?.value.trim() || "Currently unable to participate.";
+        const attType = document.getElementById(`attType_${auditId}`)?.value;
+        const attContent = document.getElementById(`attContent_${auditId}`)?.value.trim();
+        if (attContent) {
+          attachment = { type: attType, content: attContent };
+        }
+      }
+
+      try {
+        const res = await fetch(`/api/candidate/${agentId}/consent`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": API_KEY,
+          },
+          body: JSON.stringify({
+            ask_audit_id: auditId,
+            decision: decision,
+            reason_text: reasonText,
+            attachment: attachment
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          alert("Failed to submit consent decision: " + (errData.detail || "Unknown error"));
+          return;
+        }
+
+        await loadAsksForAgent();
+      } catch (err) {
+        alert("Connection error: " + err.message);
+      }
+    }
+
+    // Initial load
+    window.addEventListener("DOMContentLoaded", loadAsksForAgent);
+  </script>
+</body>
+</html>

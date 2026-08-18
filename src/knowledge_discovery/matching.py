@@ -50,17 +50,28 @@ class DeterministicEmbedder(Embedder):
         self.dimension = dimension
 
     def _tokenize(self, text: str) -> list[str]:
-        """Extract words plus character uni/bigrams for robust matching across languages."""
+        """Extract language-aware tokens.
+
+        ASCII words: word + simple plural strip + 4-char prefix (character grams on
+        English are dominated by common bigrams like 'on'/'in' and make unrelated
+        texts look similar). Non-ASCII (CJK) words: the word plus character
+        uni/bigrams, since spaceless CJK text does not split into words.
+        """
         if not text:
             return []
         cleaned = text.lower().strip()
-        words = re.findall(r"[\w]+", cleaned)
-        # Character unigrams + bigrams: spaceless CJK text does not split into words,
-        # so subword grams are the only granularity shared across question and profile
-        no_spaces = "".join(words)
-        unigrams = list(no_spaces)
-        bigrams = [no_spaces[i : i + 2] for i in range(len(no_spaces) - 1)]
-        return words + unigrams + bigrams
+        tokens: list[str] = []
+        for word in re.findall(r"[\w]+", cleaned):
+            if word.isascii():
+                base = word.rstrip("s") if len(word) > 3 else word
+                tokens.append(base)
+                if len(base) > 4:
+                    tokens.append(base[:4])
+            else:
+                tokens.append(word)
+                tokens.extend(word)
+                tokens.extend(word[i : i + 2] for i in range(len(word) - 1))
+        return tokens
 
     def embed(self, text: str) -> list[float]:
         """Generate normalized vector embedding."""
@@ -122,14 +133,14 @@ class FakeConnectionInferencer(ConnectionInferencer):
         if profile.employee_id in self._overrides:
             return self._overrides[profile.employee_id]
 
-        # Default heuristic: character-bigram overlap between item body and question.
-        # Word-level matching fails on spaceless CJK text, so grams are the unit here.
-        q_lower = question.lower()
+        # Default heuristic: shared language-aware tokens (same scheme as the
+        # DeterministicEmbedder) between item body and question. Requires >= 2
+        # shared tokens so single common words do not create a connection.
+        _tok = DeterministicEmbedder()._tokenize
+        q_tokens = set(_tok(question))
         matched_items = []
         for item in profile.items:
-            body = "".join(re.findall(r"[\w]+", item.body.lower()))
-            bigrams = {body[i : i + 2] for i in range(len(body) - 1)}
-            overlap = sum(1 for bg in bigrams if bg in q_lower)
+            overlap = len(q_tokens & set(_tok(item.body)))
             if overlap >= 2:
                 matched_items.append(item)
 
