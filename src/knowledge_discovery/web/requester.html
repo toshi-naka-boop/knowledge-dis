@@ -113,7 +113,15 @@
   </div>
 
   <script>
-    const API_KEY = "demo-key-2026";
+    const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
+    if (!API_KEY) {
+      document.body.insertAdjacentHTML("afterbegin",
+        '<div style="background:#b91c1c;color:#fff;padding:8px 16px;font-size:13px;">Missing api_key: open this page as /PAGE?api_key=YOUR_KEY</div>');
+    }
+    // Escape server-derived strings before HTML interpolation (S-4)
+    function esc(v) {
+      return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    }
     const REQUESTER_ID = "emp_jordan_lee";
     let pollInterval = null;
 
@@ -215,11 +223,11 @@
           return `
             <div class="status-card matched">
               <div class="status-header">
-                <span class="status-title">Connected with ${item.respondent_name || "Candidate"}</span>
+                <span class="status-title">Connected with ${esc(item.respondent_name) || "Candidate"}</span>
                 <span class="status-tag matched">Connected</span>
               </div>
               <div class="status-body">
-                <strong>Synergy Match Established:</strong> ${item.respondent_name} consented to connect!
+                <strong>Synergy Match Established:</strong> ${esc(item.respondent_name)} consented to connect!
                 <br>Proposed: <strong>15-minute introductory meeting</strong>.
               </div>
             </div>`;
@@ -227,21 +235,21 @@
           let attHtml = "";
           if (item.attachment) {
             if (item.attachment.type === "link") {
-              attHtml = `<div class="attachment-box">📎 <strong>Shared Link:</strong> <a href="${item.attachment.content}" target="_blank">${item.attachment.content}</a></div>`;
+              attHtml = `<div class="attachment-box">📎 <strong>Shared Link:</strong> <a href="${/^https?:\/\//.test(item.attachment.content) ? esc(item.attachment.content) : "#"}" target="_blank" rel="noopener">${esc(item.attachment.content)}</a></div>`;
             } else if (item.attachment.type === "doc") {
-              attHtml = `<div class="attachment-box">📄 <strong>Shared Document:</strong> <a href="/attachments/${item.attachment.content}" target="_blank">${item.attachment.content}</a></div>`;
+              attHtml = `<div class="attachment-box">📄 <strong>Shared Document:</strong> <a href="/attachments/${encodeURIComponent(item.attachment.content)}?api_key=${encodeURIComponent(API_KEY)}" target="_blank">${esc(item.attachment.content)}</a></div>`;
             } else {
-              attHtml = `<div class="attachment-box">📝 <strong>Note:</strong> ${item.attachment.content}</div>`;
+              attHtml = `<div class="attachment-box">📝 <strong>Note:</strong> ${esc(item.attachment.content)}</div>`;
             }
           }
           return `
             <div class="status-card declined">
               <div class="status-header">
-                <span class="status-title">${item.respondent_name || "Candidate"}</span>
+                <span class="status-title">${esc(item.respondent_name) || "Candidate"}</span>
                 <span class="status-tag declined">Unavailable this time</span>
               </div>
               <div class="status-body">
-                ${item.decline_reason ? `<em>"${item.decline_reason}"</em>` : "Candidate cannot connect at this time."}
+                ${item.decline_reason ? `<em>"${esc(item.decline_reason)}"</em>` : "Candidate cannot connect at this time."}
                 ${attHtml}
               </div>
             </div>`;

@@ -179,6 +179,11 @@ def create_app(
         title="Knowledge Discovery API",
         description="Tacit knowledge discovery and synergy matching engine (Milestone 2)",
         version="0.2.0",
+        # No unauthenticated surface beyond the UI shells (S-2): API schema
+        # endpoints are disabled rather than left open on the public demo URL
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
 
     web_dir = Path(__file__).parent / "web"
@@ -383,26 +388,46 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
+    # Counting profiles per poll would pull all 400 documents (with 3072-dim
+    # embeddings, ~10MB) from Firestore every 3 seconds (E-4). The counts are
+    # static for the demo, so compute them once on first request.
+    static_counts: dict[str, int] = {}
+
     @app.get("/api/audit/messages", dependencies=[Depends(verify_api_key)])
     def get_audit_messages() -> dict[str, Any]:
         """Retrieve audit dashboard records with fail-closed masked payloads and funnel stats."""
         records = service.get_audit_dashboard_records()
-        profiles = store.list_profiles()
-        agents = store.list_agents(active_only=True)
+        if not static_counts:
+            static_counts["profiles"] = len(store.list_profiles())
+            static_counts["agents"] = len(store.list_agents(active_only=True))
 
         dispatched_count = sum(1 for r in records if r["intent"] in ("connect_ask", "connect_ask_private"))
         dropped_count = sum(1 for r in records if r["intent"] == "no_connection")
 
         return {
             "funnel_stats": {
-                "total_profiles": len(profiles),
+                "total_profiles": static_counts["profiles"],
                 "funnel_limit": 20,
-                "registered_agents_count": len(agents),
+                "registered_agents_count": static_counts["agents"],
                 "dispatched_count": dispatched_count,
                 "dropped_count": dropped_count,
             },
             "records": records,
         }
+
+    @app.post("/api/probe/unregistered-intent", dependencies=[Depends(verify_api_key)])
+    def probe_unregistered_intent() -> dict[str, Any]:
+        """Demo probe (E-2): push an unregistered payload_type through the
+        transmission layer so the schema-registry rejection (red row) can be
+        shown live on the deployed system during the demo's governance act."""
+        msg = service.transmission.send(
+            from_entity="demo_probe",
+            to_entity="agent_marcus_delgado" if store.get_agent("agent_marcus_delgado") else "system",
+            intent="exfiltrate_profile",
+            payload_type="exfiltrate_profile",
+            payload={"note": "demo probe: unregistered payload type"},
+        )
+        return {"rejected": msg.rejected, "intent": msg.intent, "audit_id": msg.audit_id}
 
     return app
 

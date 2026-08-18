@@ -90,12 +90,20 @@
   </div>
 
   <script>
-    const API_KEY = "demo-key-2026";
+    const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
+    if (!API_KEY) {
+      document.body.insertAdjacentHTML("afterbegin",
+        '<div style="background:#b91c1c;color:#fff;padding:8px 16px;font-size:13px;">Missing api_key: open this page as /PAGE?api_key=YOUR_KEY</div>');
+    }
+    // Escape server-derived strings before HTML interpolation (S-4)
+    function esc(v) {
+      return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    }
 
     async function loadAsksForAgent() {
       const agentId = document.getElementById("agentSelector").value;
       const container = document.getElementById("asksContainer");
-      container.innerHTML = `<div style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 24px;">Fetching asks for ${agentId}...</div>`;
+      container.innerHTML = `<div style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 24px;">Fetching asks for ${esc(agentId)}...</div>`;
 
       try {
         const res = await fetch(`/api/candidate/${agentId}/asks`, {
@@ -108,7 +116,7 @@
         const data = await res.json();
         renderAsks(data.asks || []);
       } catch (err) {
-        container.innerHTML = `<div style="color: var(--danger); font-size: 13px;">Connection error: ${err.message}</div>`;
+        container.innerHTML = `<div style="color: var(--danger); font-size: 13px;">Connection error: ${esc(err.message)}</div>`;
       }
     }
 
@@ -170,11 +178,11 @@
               <div>${privateBadge}</div>
             </div>
             <div style="font-size: 14px; color: #f1f5f9; margin-bottom: 8px;">
-              <strong>Inquiry:</strong> "${ask.question_summary || "Colleague inquiry"}"
+              <strong>Inquiry:</strong> "${esc(ask.question_summary) || "Colleague inquiry"}"
             </div>
             <div class="reason-box">
               <strong>🤖 AI Matching Rationale:</strong><br>
-              ${ask.reason_text || "Relevant tacit experience detected."}
+              ${esc(ask.reason_text) || "Relevant tacit experience detected."}
               <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
                 Confidence Score: ${Math.round((ask.score || 0.8) * 100)}%
               </div>

@@ -239,7 +239,7 @@ Output strictly valid JSON matching the required schema.
 
         except Exception as exc:
             # Fallback to no_connection on API or parsing failure (fail-closed)
-            first_key = all_item_keys[:1] if all_item_keys else []
+            first_key = []  # V-1: never fabricate a citation key
             return ConnectionInferenceResult(
                 connection=None,
                 no_connection_reason=f"Inference evaluation unavailable: {exc}",
@@ -251,9 +251,11 @@ Output strictly valid JSON matching the required schema.
     ) -> ConnectionInferenceResult:
         """Parse dictionary into ConnectionInferenceResult with strict validation."""
         cited_keys = data.get("cited_item_keys")
-        if not isinstance(cited_keys, list) or not cited_keys:
-            # Default to first available profile key if LLM did not provide one
-            cited_keys = all_item_keys[:1] if all_item_keys else []
+        if not isinstance(cited_keys, list):
+            # Do NOT default to a profile key (V-1: a fabricated public key would
+            # bypass the private mask). Missing citations stay empty; the
+            # transmission layer's reason-text scan is the safety net.
+            cited_keys = []
 
         connection_data = data.get("connection")
         if isinstance(connection_data, dict):

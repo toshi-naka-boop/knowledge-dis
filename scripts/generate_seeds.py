@@ -341,17 +341,22 @@ def generate_synthetic_profiles(count: int = 396) -> list[Profile]:
         + [("executive", EXECUTIVE_ROLES)] * exec_count
     )
 
+    dept_local_counters: dict[str, int] = {}
     for idx, (dept, role_list) in enumerate(dept_assignments, start=1):
         emp_id = f"emp_synth_{idx:03d}"
         f_name = FIRST_NAMES[(idx * 7) % len(FIRST_NAMES)]
         l_name = LAST_NAMES[(idx * 13) % len(LAST_NAMES)]
         full_name = f"{f_name} {l_name}"
         role = role_list[idx % len(role_list)]
+        # E-3: overlap branches must key on the department-LOCAL index — the
+        # global idx never satisfies `<= 5` for departments that start at 159+
+        local_idx = dept_local_counters.get(dept, 0) + 1
+        dept_local_counters[dept] = local_idx
 
         # Intentional overlap design:
-        # Candidate 1..5 in real_estate: strong overlap with Demo 1 (medical clinic relocation & zoning)
-        # Candidate 1..5 in transition: strong overlap with Demo 2 (practice retirement & succession)
-        if dept == "real_estate" and idx <= 5:
+        # First 5 in real_estate: strong overlap with Demo 1 (medical clinic relocation & zoning)
+        # First 5 in transition: strong overlap with Demo 2 (practice retirement & succession)
+        if dept == "real_estate" and local_idx <= 5:
             current_work = (
                 f"Coordinates site acquisition and municipal zoning clearances and permits for outpatient medical facilities. "
                 f"Evaluates parking ratio compliance, ADA access, and plumbing infrastructure conversions for clinic tenants. "
@@ -359,7 +364,7 @@ def generate_synthetic_profiles(count: int = 396) -> list[Profile]:
             )
             expertise = "Medical zoning codes, retail-to-clinic adaptive reuse, healthcare facility tenant representation."
             background = f"Experienced real estate specialist with {4 + (idx % 6)} years in commercial healthcare properties."
-        elif dept == "transition" and idx <= 5:
+        elif dept == "transition" and local_idx <= 5:
             current_work = (
                 f"Assists retiring physicians with practice valuations, succession timelines, and buyer matchmaking. "
                 f"Structures goodwill asset transfers and patient chart continuity for private clinical practices. "
@@ -407,6 +412,16 @@ def generate_synthetic_profiles(count: int = 396) -> list[Profile]:
             )
             expertise = "Healthcare enterprise strategy, executive leadership, inter-departmental synergy development."
             background = f"Senior healthcare executive with {10 + (idx % 8)} years in healthcare management."
+
+        # E-3 (clone mitigation): weave the role and a rotating focus phrase
+        # into the generic body so profiles are not verbatim department clones
+        _focus = [
+            "Primary focus: multi-site client portfolios.",
+            "Primary focus: rural and community providers.",
+            "Primary focus: large metropolitan health systems.",
+            "Primary focus: fast-turnaround urgent engagements.",
+        ][local_idx % 4]
+        current_work = f"Serves as {role}. " + current_work + " " + _focus
 
         items = [
             ProfileItem(

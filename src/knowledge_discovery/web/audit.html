@@ -198,7 +198,15 @@
   </div>
 
   <script>
-    const API_KEY = "demo-key-2026";
+    const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
+    if (!API_KEY) {
+      document.body.insertAdjacentHTML("afterbegin",
+        '<div style="background:#b91c1c;color:#fff;padding:8px 16px;font-size:13px;">Missing api_key: open this page as /PAGE?api_key=YOUR_KEY</div>');
+    }
+    // Escape server-derived strings before HTML interpolation (S-4)
+    function esc(v) {
+      return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    }
 
     const AGENT_NAMES = {
       "emp_jordan_lee": "Jordan Lee (Requester)",
@@ -258,61 +266,61 @@
           tagClass = "msg-intent-tag tag-reject";
           contentHtml = `
             <div><strong>⚠️ TRANSMISSION REJECTED (Policy Failure)</strong></div>
-            <div>Reason: ${payload.reason || "Unauthorized transmission or unregistered schema"}</div>
-            ${payload.attempted_intent ? `<div>Attempted Intent: <code>${payload.attempted_intent}</code></div>` : ""}
-            ${payload.raw_payload_type ? `<div>Unregistered Type: <code>${payload.raw_payload_type}</code></div>` : ""}`;
+            <div>Reason: ${esc(payload.reason) || "Unauthorized transmission or unregistered schema"}</div>
+            ${payload.attempted_intent ? `<div>Attempted Intent: <code>${esc(payload.attempted_intent)}</code></div>` : ""}
+            ${payload.raw_payload_type ? `<div>Unregistered Type: <code>${esc(payload.raw_payload_type)}</code></div>` : ""}`;
         } else if (payload.masked || r.intent === "connect_ask_private") {
           bubbleClass += " masked-ask";
           tagClass = "msg-intent-tag tag-connect_ask_private";
           contentHtml = `
             <div><strong>🔒 Private-Item-Based Ask (Content Masked by Transmission Layer)</strong></div>
-            <div style="margin-top: 4px; font-style: italic;">"${payload.note || "非公開項目に基づく打診（内容非表示）"}"</div>
+            <div style="margin-top: 4px; font-style: italic;">"${esc(payload.note) || "非公開項目に基づく打診（内容非表示）"}"</div>
             <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Cited private items: ${payload.cited_count || 1} | Confidence: ${payload.score || "N/A"}</div>`;
         } else if (r.intent === "no_connection" || r.is_no_connection) {
           bubbleClass += " no-connection";
           tagClass = "msg-intent-tag tag-no_connection";
           contentHtml = `
             <div><strong>Candidate Dropped:</strong> No verbalized synergy connection found.</div>
-            <div style="margin-top: 4px; font-size: 12px;">Rationale: ${payload.reason_text || "Below threshold or no domain overlap"}</div>`;
+            <div style="margin-top: 4px; font-size: 12px;">Rationale: ${esc(payload.reason_text) || "Below threshold or no domain overlap"}</div>`;
         } else if (r.intent === "query") {
           bubbleClass += " from-requester";
           tagClass = "msg-intent-tag tag-query";
           contentHtml = `
-            <div><strong>Inquiry:</strong> "${payload.question_text || ""}"</div>
-            <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Requester: ${payload.requester_id || r.from}</div>`;
+            <div><strong>Inquiry:</strong> "${esc(payload.question_text)}"</div>
+            <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Requester: ${esc(payload.requester_id || r.from)}</div>`;
         } else if (r.intent === "connect_ask") {
           bubbleClass += " system-ask";
           tagClass = "msg-intent-tag tag-connect_ask";
           contentHtml = `
             <div><strong>Synergy Ask Dispatched to Candidate Agent:</strong></div>
-            <div style="margin-top: 4px;">"${payload.question_summary || ""}"</div>
+            <div style="margin-top: 4px;">"${esc(payload.question_summary)}"</div>
             <div style="margin-top: 6px; background: rgba(0,0,0,0.25); padding: 8px; border-radius: 4px;">
-              🤖 <strong>AI Matching Reason:</strong> ${payload.reason_text || ""}
+              🤖 <strong>AI Matching Reason:</strong> ${esc(payload.reason_text)}
             </div>`;
         } else if (r.intent === "match_proposal") {
           bubbleClass += " match-proposal";
           tagClass = "msg-intent-tag tag-match_proposal";
           contentHtml = `
             <div><strong>🎉 Synergy Match Confirmed!</strong></div>
-            <div>Proposed 15-Minute Meeting between: <code>${(payload.participants || []).join(" & ")}</code></div>
+            <div>Proposed 15-Minute Meeting between: <code>${esc((payload.participants || []).join(" & "))}</code></div>
             <div style="font-size: 11px; opacity: 0.8; margin-top: 2px;">(Candidate background details withheld from match proposal per C-19)</div>`;
         } else if (r.intent === "decline_with_reason") {
           bubbleClass += " from-agent";
           tagClass = "msg-intent-tag tag-decline_with_reason";
           let attText = "";
           if (payload.attachment) {
-            attText = `<div style="margin-top: 4px; padding: 6px; background: rgba(0,0,0,0.2); border-radius: 4px;">📎 Attachment [${payload.attachment.type}]: ${payload.attachment.content}</div>`;
+            attText = `<div style="margin-top: 4px; padding: 6px; background: rgba(0,0,0,0.2); border-radius: 4px;">📎 Attachment [${esc(payload.attachment.type)}]: ${esc(payload.attachment.content)}</div>`;
           }
           contentHtml = `
-            <div><strong>Candidate Declined:</strong> "${payload.reason_text || "Unavailable"}"</div>
+            <div><strong>Candidate Declined:</strong> "${esc(payload.reason_text) || "Unavailable"}"</div>
             ${attText}`;
         } else if (r.intent === "consent_reply") {
           bubbleClass += " from-agent";
           tagClass = "msg-intent-tag tag-consent_reply";
-          contentHtml = `<div>Consent Decision: <strong>${(payload.decision || "").toUpperCase()}</strong> for ask <code>${payload.ask_audit_id || ""}</code></div>`;
+          contentHtml = `<div>Consent Decision: <strong>${esc((payload.decision || "").toUpperCase())}</strong> for ask <code>${esc(payload.ask_audit_id)}</code></div>`;
         } else {
           bubbleClass += " system-ask";
-          contentHtml = `<pre style="font-size: 11px;">${JSON.stringify(payload, null, 2)}</pre>`;
+          contentHtml = `<pre style="font-size: 11px;">${esc(JSON.stringify(payload, null, 2))}</pre>`;
         }
 
         const timeStr = r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : "";
@@ -321,11 +329,11 @@
           <div class="msg-row">
             <div class="${bubbleClass}">
               <div class="msg-header">
-                <span class="msg-sender">${getSenderName(r.from)} ➔ ${getSenderName(r.to)}</span>
+                <span class="msg-sender">${esc(getSenderName(r.from))} ➔ ${esc(getSenderName(r.to))}</span>
                 <span class="${tagClass}">${r.intent}</span>
               </div>
               <div class="msg-payload">${contentHtml}</div>
-              <div class="msg-time">${timeStr} · id: ${r.audit_id}</div>
+              <div class="msg-time">${timeStr} · id: ${esc(r.audit_id)}</div>
             </div>
           </div>`;
       }).join("");

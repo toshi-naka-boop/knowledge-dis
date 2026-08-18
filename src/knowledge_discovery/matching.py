@@ -154,7 +154,7 @@ class FakeConnectionInferencer(ConnectionInferencer):
             )
 
         # No meaningful connection found
-        first_key = [profile.items[0].key] if profile.items else []
+        first_key = []  # V-1: never fabricate a citation key
         return ConnectionInferenceResult(
             connection=None,
             no_connection_reason=f"質問「{question[:30]}」に対する意味のある接点が見つかりませんでした",

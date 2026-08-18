@@ -310,6 +310,15 @@ class TestMilestone1Goals(unittest.TestCase):
         # Critical privacy rule: reason_text must NOT exist in match_proposal
         self.assertNotIn("reason_text", match_proposal.payload)
 
+        # V-5: the proposal must actually be DELIVERED to both parties —
+        # one message addressed to the requester, one to the candidate employee
+        proposals = [m for m in self.store.list_messages() if m.intent == "match_proposal"]
+        recipients = {m.to_entity for m in proposals}
+        self.assertIn("user_requester", recipients)
+        self.assertIn("emp_alice", recipients)
+        for m in proposals:
+            self.assertNotIn("reason_text", m.payload)
+
     def test_goal_6_consent_declined_with_attachments(self) -> None:
         """Goal 6: Declined consent with link and doc attachments returns decline_with_reason to requester."""
         res = self.service.submit_query(

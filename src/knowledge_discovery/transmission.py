@@ -31,6 +31,33 @@ class TransmissionLayer:
     def __init__(self, store: Store) -> None:
         self.store = store
 
+    @staticmethod
+    def _reason_leaks_private(profile: Any, reason_text: str) -> bool:
+        """Return True if reason_text contains fragments of any private item body.
+
+        Defense beyond LLM self-report (V-1/S-1): even if the model cites only
+        public keys, quoting private content in the reason forces the mask.
+        Comparison is whitespace-normalized, case-insensitive, over sliding
+        fragments so partial quotes are caught.
+        """
+        if not reason_text:
+            return False
+        norm_reason = "".join(reason_text.lower().split())
+        for item in profile.items:
+            if getattr(item, "visibility", "public") != "private":
+                continue
+            norm_body = "".join(item.body.lower().split())
+            if len(norm_body) < 12:
+                if norm_body and norm_body in norm_reason:
+                    return True
+                continue
+            step = 8
+            frag_len = 15
+            for i in range(0, len(norm_body) - frag_len + 1, step):
+                if norm_body[i : i + frag_len] in norm_reason:
+                    return True
+        return False
+
     def _resolve_profile(
         self,
         from_entity: str,
@@ -135,28 +162,42 @@ class TransmissionLayer:
                 self.store.save_message(reject_msg)
                 return reject_msg
 
-        # Step 3: Private Mask Rule (C-18, C-21)
-        # Check if cited_item_keys contains any item with visibility == "private"
+        # Step 3: Private Mask Rule (C-18, C-21, V-1/S-1)
+        # The mask decision must not trust the LLM's self-reported cited_item_keys
+        # alone: keys are validated against the actual profile, and the reason
+        # text is scanned for private-body fragments. Any uncertainty (unknown
+        # keys, leaked fragments) fails CLOSED into the masked/private path.
         final_intent = intent
         final_payload_type = payload_type
         audit_payload: dict[str, Any] | None = None
 
         cited_keys = payload.get("cited_item_keys")
-        if isinstance(cited_keys, list) and len(cited_keys) > 0:
-            profile = self._resolve_profile(from_entity, to_entity, candidate_profile)
-            if profile is not None and profile.has_any_private(cited_keys):
-                # Promote connect_ask to connect_ask_private mechanically
-                if final_intent == "connect_ask":
-                    final_intent = "connect_ask_private"
-                    final_payload_type = "connect_ask_private"
+        cited_list = cited_keys if isinstance(cited_keys, list) else []
+        reason_text = str(payload.get("reason_text") or "")
 
-                # Generate audit_payload for masked audit view
-                audit_payload = {
-                    "masked": True,
-                    "note": f"非公開項目に基づく{final_intent}（内容非表示）",
-                    "score": payload.get("score"),
-                    "cited_count": len(cited_keys),
-                }
+        if cited_list or reason_text:
+            profile = self._resolve_profile(from_entity, to_entity, candidate_profile)
+            if profile is not None:
+                known_keys = {item.key for item in profile.items}
+                has_unknown_key = any(k not in known_keys for k in cited_list)
+                must_mask = (
+                    profile.has_any_private(cited_list)
+                    or has_unknown_key
+                    or self._reason_leaks_private(profile, reason_text)
+                )
+                if must_mask:
+                    # Promote connect_ask to connect_ask_private mechanically
+                    if final_intent == "connect_ask":
+                        final_intent = "connect_ask_private"
+                        final_payload_type = "connect_ask_private"
+
+                    # Generate audit_payload for masked audit view
+                    audit_payload = {
+                        "masked": True,
+                        "note": f"非公開項目に基づく{final_intent}（内容非表示）",
+                        "score": payload.get("score"),
+                        "cited_count": len(cited_list),
+                    }
 
         # Step 4: Construct and store operational message
         message = Message(

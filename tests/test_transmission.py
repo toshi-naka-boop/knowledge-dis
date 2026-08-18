@@ -150,6 +150,65 @@ class TestTransmission(unittest.TestCase):
         self.assertTrue(msg.audit_payload.get("masked"))
         self.assertIn("no_connection", msg.audit_payload.get("note", ""))
 
+    def test_mask_on_unknown_cited_key(self) -> None:
+        """V-1/S-1: LLM-fabricated keys that don't exist in the profile must fail CLOSED."""
+        msg = self.transmission.send(
+            from_entity="system",
+            to_entity="agent_1",
+            intent="connect_ask",
+            payload_type="connect_ask",
+            payload={
+                "question_summary": "q",
+                "reason_text": "some public-sounding reason",
+                "cited_item_keys": ["nonexistent_key"],
+                "score": 0.9,
+            },
+            consent_state="pending",
+            candidate_profile=self.profile1,
+        )
+        self.assertEqual(msg.intent, "connect_ask_private")
+        self.assertIsNotNone(msg.audit_payload)
+        self.assertTrue(msg.audit_payload.get("masked"))
+
+    def test_mask_on_private_body_fragment_in_reason(self) -> None:
+        """V-1/S-1: private body content quoted in reason_text forces the mask
+        even when the LLM cites only public keys."""
+        msg = self.transmission.send(
+            from_entity="system",
+            to_entity="agent_1",
+            intent="connect_ask",
+            payload_type="connect_ask",
+            payload={
+                "question_summary": "q",
+                "reason_text": "公開業務に加えて非公開ノウハウを持っているため適任です",
+                "cited_item_keys": ["current_work"],  # public key only
+                "score": 0.9,
+            },
+            consent_state="pending",
+            candidate_profile=self.profile1,
+        )
+        self.assertEqual(msg.intent, "connect_ask_private")
+        self.assertTrue(msg.audit_payload.get("masked"))
+
+    def test_no_mask_on_clean_public_reason(self) -> None:
+        """Public citation with clean reason stays unmasked (no false positives)."""
+        msg = self.transmission.send(
+            from_entity="system",
+            to_entity="agent_1",
+            intent="connect_ask",
+            payload_type="connect_ask",
+            payload={
+                "question_summary": "q",
+                "reason_text": "生産管理の経験が質問に直結しています",
+                "cited_item_keys": ["current_work"],
+                "score": 0.9,
+            },
+            consent_state="pending",
+            candidate_profile=self.profile1,
+        )
+        self.assertEqual(msg.intent, "connect_ask")
+        self.assertIsNone(msg.audit_payload)
+
 
 if __name__ == "__main__":
     unittest.main()

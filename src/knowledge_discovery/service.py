@@ -58,10 +58,9 @@ class KnowledgeDiscoveryService:
         self.store = store
         self.transmission = transmission or TransmissionLayer(store)
         self.matching_engine = matching_engine or MatchingEngine()
-        # Internal map of ask_audit_id -> requester_id
-        self._ask_to_requester: dict[str, str] = {}
-        # Internal map of query_id -> list of ask_audit_ids
-        self._query_to_asks: dict[str, list[str]] = {}
+        # No in-process requester/ask maps (V-2): Cloud Run scales to zero and
+        # restarts between requests, so every link lives in message payloads
+        # (requester_id / query_id / ask_audit_id) and is derived from the store.
 
     def submit_query(self, requester_id: str, question_text: str) -> QuerySubmissionResult:
         """Submit a question, run 2-track matching, and dispatch asks/no_connection records."""
@@ -109,14 +108,14 @@ class KnowledgeDiscoveryService:
                     "reason_text": qual.reason_text,
                     "cited_item_keys": list(qual.cited_item_keys),
                     "score": qual.score,
+                    # Durable links (V-2): survive instance restarts
+                    "requester_id": requester_id,
+                    "query_id": query_msg.audit_id,
                 },
                 consent_state="pending",
                 candidate_profile=qual.profile,
             )
             dispatched_asks.append(ask_msg)
-            self._ask_to_requester[ask_msg.audit_id] = requester_id
-
-        self._query_to_asks[query_msg.audit_id] = [m.audit_id for m in dispatched_asks]
 
         return QuerySubmissionResult(
             query_message=query_msg,
@@ -152,26 +151,38 @@ class KnowledgeDiscoveryService:
             consent_state=decision,
         )
 
-        requester_id = self._ask_to_requester.get(ask_audit_id, "requester")
+        # Requester is derived from the durable link in the ask payload (V-2)
+        requester_id = str(original_ask.payload.get("requester_id") or "requester")
 
         # 2. Outcome handling based on decision
         if decision == "granted":
-            # Match established -> generate match_proposal for both parties (C-19: no reason_text)
+            # Match established -> match_proposal delivered to BOTH parties
+            # (design §6 / V-5: one message per recipient, no reason_text)
             candidate_employee_id = candidate_entity_id
             agent = self.store.get_agent(candidate_entity_id)
             if agent is not None:
                 candidate_employee_id = agent.employee_id
 
+            proposal_payload = {
+                "meeting_duration": 15,
+                "proposed_by": "system",
+                "participants": [requester_id, candidate_employee_id],
+                "ask_audit_id": ask_audit_id,
+            }
             outcome_msg = self.transmission.send(
                 from_entity="system",
-                to_entity="system",
+                to_entity=requester_id,
                 intent="match_proposal",
                 payload_type="match_proposal",
-                payload={
-                    "meeting_duration": 15,
-                    "proposed_by": "system",
-                    "participants": [requester_id, candidate_employee_id],
-                },
+                payload=dict(proposal_payload),
+                consent_state="granted",
+            )
+            self.transmission.send(
+                from_entity="system",
+                to_entity=candidate_employee_id,
+                intent="match_proposal",
+                payload_type="match_proposal",
+                payload=dict(proposal_payload),
                 consent_state="granted",
             )
         else:
@@ -188,6 +199,7 @@ class KnowledgeDiscoveryService:
                 payload={
                     "reason_text": reason_text,
                     "attachment": att_dict,
+                    "ask_audit_id": ask_audit_id,
                 },
                 consent_state="declined",
             )
@@ -204,19 +216,28 @@ class KnowledgeDiscoveryService:
 
         Strict requirement: Does NOT distinguish connect_ask vs connect_ask_private.
         """
-        ask_ids: list[str] = []
-        if query_audit_id and query_audit_id in self._query_to_asks:
-            ask_ids = self._query_to_asks[query_audit_id]
-        else:
-            # Fallback: all asks belonging to this requester
-            ask_ids = [aid for aid, rid in self._ask_to_requester.items() if rid == requester_id]
+        # Store-derived, stateless projection (V-2). Scoped to ONE query so
+        # candidates from past questions do not mix into the view (V-4):
+        # the given query_audit_id, or the requester's latest query by default.
+        messages = self.store.list_messages()
+
+        if query_audit_id is None:
+            own_queries = [
+                m for m in messages
+                if m.intent == "query" and m.payload.get("requester_id") == requester_id
+            ]
+            if not own_queries:
+                return []
+            query_audit_id = max(own_queries, key=lambda m: m.timestamp).audit_id
+
+        asks = [
+            m for m in messages
+            if m.intent in ("connect_ask", "connect_ask_private")
+            and m.payload.get("query_id") == query_audit_id
+        ]
 
         statuses: list[RequesterCandidateStatus] = []
-        for aid in ask_ids:
-            ask_msg = self.store.get_message(aid)
-            if ask_msg is None:
-                continue
-
+        for ask_msg in asks:
             # Candidate name lookup
             agent = self.store.get_agent(ask_msg.to_entity)
             cand_name = agent.display_name if agent else ask_msg.to_entity
@@ -240,15 +261,16 @@ class KnowledgeDiscoveryService:
                     )
                 )
             elif ask_msg.consent_state == "declined":
-                # Find decline_with_reason message for this candidate
-                decline_msg = None
-                for msg in self.store.list_messages():
-                    if (
-                        msg.intent == "decline_with_reason"
-                        and (msg.from_entity == ask_msg.to_entity or (agent and msg.from_entity == agent.employee_id))
-                    ):
-                        decline_msg = msg
-                        break
+                # Join the decline to THIS ask via its durable ask_audit_id (V-4:
+                # matching by sender would surface a past decline's reason here)
+                decline_msg = next(
+                    (
+                        m for m in messages
+                        if m.intent == "decline_with_reason"
+                        and m.payload.get("ask_audit_id") == ask_msg.audit_id
+                    ),
+                    None,
+                )
 
                 reason = decline_msg.payload.get("reason_text", "") if decline_msg else ""
                 att = decline_msg.payload.get("attachment") if decline_msg else None

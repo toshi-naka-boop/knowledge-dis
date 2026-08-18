@@ -135,10 +135,12 @@ class TestGeminiConnectionInferencer(unittest.TestCase):
             profile=self.profile,
         )
 
-        # Fail-closed: Must gracefully fall back to no_connection without crashing
+        # Fail-closed: Must gracefully fall back to no_connection without crashing.
+        # cited_item_keys must be EMPTY — fabricating a (public) key here would
+        # bypass the private mask rule in the transmission layer (V-1/S-1)
         self.assertIsNone(res.connection)
         self.assertIsNotNone(res.no_connection_reason)
-        self.assertTrue(len(res.cited_item_keys) > 0)
+        self.assertEqual(res.cited_item_keys, [])
 
 
 if __name__ == "__main__":
