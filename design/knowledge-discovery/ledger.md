@@ -1,5 +1,22 @@
 # ledger: knowledge-discovery
 
+## 反証round-8（M3実装・3レンズ）のルーティング — 2026-08-19
+
+原文: reviews/round-8-correctness.md（V-6〜V-10）/ round-8-safety.md（S-6〜S-10）/ round-8-excess-codex-raw.txt（E-6〜E-10。critic: claude design-critic ×2 = claude-opus-5[1m]、過剰実装レンズ = codex/gpt-5.6-sol xhigh）。15件・重複統合で実質10論点、**全件「実装」種別として受理**（設計差し戻しなし）。修正はCC内sonnetサブエージェントへ委譲、修正後に再検証・再反証。
+
+- **V-6/S-8（high・一致）**: confirm CASが非トランザクション（並行二重POSTで二重配送を両criticが実測） → Storeに原子的遷移操作を追加（InMemory=Lock、Firestore=transaction）
+- **V-7/S-7（high・一致）**: 差分反映が同一キー上書き＋visibility反転可（NDA項目のpublic化経路） → 厳密に「追加」のみへ。既存項目の変更を構造的に排除
+- **V-8/E-7/S-6（high・3レンズ一致）**: llm_client未配線でヒューリスティック（メール全文コピー→public公開）が既定経路化 → serverで配線。LLM経路を既定、null（差分なし）対応
+- **V-9/E-6（mid・一致）**: 帯変化なし再sweepでプレビュー再実行・preview_search監査行重複・0件時降格 → §14.2どおりscore/evidence更新のみに
+- **V-10（mid）**: mail_seed所有者にprofile/agentが無くゴール16検証不能＋ダミープロフィール生成 → シード修正・実在前提化
+- **E-8（mid）**: 汎用dismissが状態機械外の遷移を許す → type=stagnation & status=open に制限
+- **E-9（low）**: DEMO_TODAYのAPI上書き・item_key付け替えの露出 → 削除（環境変数のみ）
+- **E-10（low）**: 呼び出しゼロのCRUDヘルパー → 削除
+- **S-9（low）**: `${tagText}` 未エスケープ（round-6 S-4の局所回帰） → esc()適用
+- **S-10（low）**: /api/secretary/* の本人性突合なし → デモ割り切りとしてREADME明記（round-6 S-3と同じ整理）
+
+**反証の肯定的所見（記録価値あり）**: M3の中核主張——プレビュー無痕跡（ゴール12）・public限定・fail-closedマスク——は正しさ・安全性の両レンズが実測で成立を確認。破綻は中核の外側（差分反映の書き込み側・並行処理）に限定されていた。
+
 ## スコープ追加の記録（2026-08-19 / spec v7 / M3）
 
 ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
