@@ -255,17 +255,25 @@ If no meaningful knowledge is found, return null."""
             resp_text = response.text.strip() if hasattr(response, "text") and response.text else ""
             cleaned = re.sub(r"^```(?:json)?\s*", "", resp_text)
             cleaned = re.sub(r"\s*```$", "", cleaned).strip()
-            if cleaned and cleaned != "null":
-                data = json.loads(cleaned)
-                if isinstance(data, dict) and "body_draft" in data:
-                    key = data.get("item_key", "current_work")
-                    body = data.get("body_draft", "").strip()
-                    if body:
-                        return key, body
+            if not cleaned or cleaned == "null":
+                # Explicit "no diff": LLM was reachable and deliberately found
+                # nothing worth proposing. Do NOT fall through to the heuristic
+                # (design §14.5-1: null must be expressible; V-8/S-6).
+                return None
+            data = json.loads(cleaned)
+            if isinstance(data, dict) and "body_draft" in data:
+                key = data.get("item_key", "current_work")
+                body = data.get("body_draft", "").strip()
+                if body:
+                    return key, body
+            return None
         except Exception:
+            # LLM call/parse failed: fall through to the heuristic fallback below
+            # (design: heuristic is a failure-only fallback, never the default path).
             pass
 
-    # Heuristic extraction fallback
+    # Heuristic extraction fallback (reached only when llm_client is None, or the
+    # LLM call above raised — never the default path, V-8/S-6).
     subj = mail.subject.strip()
     body = mail.body.strip()
     if len(body) > 10:
@@ -407,6 +415,21 @@ class SecretaryService:
 
                 # Rule 4: score >= T2 (Request Draft Tier or Notice fallback)
                 if score >= self.t2:
+                    if open_card is not None and open_card.tier == "request_draft":
+                        # No band change (already promoted, still >= T2): update
+                        # score/evidence_line only. Do NOT re-run preview search,
+                        # do NOT regenerate the question draft, and do NOT add a
+                        # new preview_search audit record (design §14.2 idempotency;
+                        # V-9/E-6: a re-sweep must not repeat side effects for an
+                        # already-promoted card).
+                        open_card.payload["score"] = score
+                        open_card.payload["evidence_line"] = evidence_line
+                        open_card.payload["task_title"] = task.title
+                        open_card.updated_at = utc_now_iso()
+                        self.store.save_card(open_card)
+                        cards_updated += 1
+                        continue
+
                     # 1. Draft inquiry question
                     q_draft = generate_question_draft(task, llm_client=self.llm_client)
 
@@ -639,29 +662,26 @@ class SecretaryService:
     ) -> dict[str, Any]:
         """Confirm stagnation card and dispatch query via standard query path (§14.4).
 
-        Idempotency & CAS:
-        - If already 'confirmed', returns existing linked_query_audit_id without resubmitting.
-        - If not 'open', raises an error.
+        Atomic CAS (X-3, V-6/S-8):
+        - Store.try_confirm_card() atomically transitions open->confirmed; only the
+          caller that wins the race proceeds to submit the query.
+        - A losing concurrent call (card already 'confirmed') returns the existing
+          linked_query_audit_id without resubmitting.
+        - If not 'open' and not 'confirmed', raises an error.
         - On query execution failure, rolls back card status to 'open'.
         """
-        card = self.store.get_card(card_id)
+        card, won = self.store.try_confirm_card(card_id)
         if card is None:
             raise ValueError(f"Secretary card '{card_id}' not found")
 
-        # Idempotent double-POST / double-click check
-        if card.status == "confirmed":
-            return {
-                "status": "already_confirmed",
-                "card_id": card.card_id,
-                "query_audit_id": card.linked_query_audit_id,
-            }
-
-        if card.status != "open":
+        if not won:
+            if card.status == "confirmed":
+                return {
+                    "status": "already_confirmed",
+                    "card_id": card.card_id,
+                    "query_audit_id": card.linked_query_audit_id,
+                }
             raise ValueError(f"Card '{card_id}' cannot be confirmed in status '{card.status}'")
-
-        # Atomic CAS: mark confirmed
-        card.status = "confirmed"
-        self.store.save_card(card)
 
         try:
             # Pass edited question to existing query pipeline
@@ -693,15 +713,20 @@ class SecretaryService:
         card_id: str,
         action: str,  # 'apply' | 'edit_apply' | 'private_apply' | 'dismiss'
         edited_body: str | None = None,
-        item_key: str | None = None,
     ) -> dict[str, Any]:
         """Process employee review for a profile diff proposal card (§14.5).
 
         Actions:
-        - 'apply': Add item with visibility='public', regenerate embeddings, card -> 'applied'.
-        - 'edit_apply': Add edited body with visibility='public', regenerate embeddings, card -> 'applied'.
-        - 'private_apply': Add item with visibility='private', regenerate embeddings, card -> 'applied'.
+        - 'apply': Add a NEW item with visibility='public', regenerate embeddings, card -> 'applied'.
+        - 'edit_apply': Add a NEW item with the edited body (public), regenerate embeddings, card -> 'applied'.
+        - 'private_apply': Add a NEW item with visibility='private', regenerate embeddings, card -> 'applied'.
         - 'dismiss': Card -> 'dismissed' (no profile change).
+
+        Reflection is always additive (design §14.5-3, V-7/S-7): existing profile
+        items are never overwritten and their visibility is never flipped. If the
+        proposed item_key collides with an existing item, a unique suffixed key is
+        used instead. The item_key itself always comes from the card's own payload
+        (never from the caller) so a request cannot retarget which item gets edited.
         """
         card = self.store.get_card(card_id)
         if card is None or card.type != "profile_diff":
@@ -718,7 +743,7 @@ class SecretaryService:
         if action not in ("apply", "edit_apply", "private_apply"):
             raise ValueError(f"Unsupported review action '{action}'")
 
-        key = item_key or card.payload.get("item_key", "current_work")
+        key = card.payload.get("item_key", "current_work")
         body = (
             edited_body.strip()
             if (action == "edit_apply" and edited_body and edited_body.strip())
@@ -726,32 +751,33 @@ class SecretaryService:
         )
         visibility = "private" if action == "private_apply" else "public"
 
-        # Update profile
+        # Reflection assumes the profile already exists (V-10): the secretary
+        # never fabricates a profile for a mail owner who isn't a registered
+        # employee.
         prof = self.store.get_profile(card.owner_employee_id)
         if prof is None:
-            prof = Profile(
-                employee_id=card.owner_employee_id,
-                name=card.owner_employee_id,
-                role="Employee",
-                items=[],
+            raise LookupError(
+                f"Profile for employee '{card.owner_employee_id}' not found; cannot apply diff"
             )
 
-        # Check if item with same key already exists
-        existing_item = prof.get_item(key)
-        if existing_item is not None:
-            existing_item.body = body
-            existing_item.source = "mail_seed"
-            existing_item.visibility = visibility
-            existing_item.reviewed = True
-        else:
-            new_item = ProfileItem(
-                key=key,
-                body=body,
-                source="mail_seed",
-                visibility=visibility,
-                reviewed=True,
-            )
-            prof.items.append(new_item)
+        # Additive only: never overwrite an existing key/visibility. On
+        # collision, append a uniquely suffixed key instead (design §14.5-3).
+        if prof.get_item(key) is not None:
+            suffix = 1
+            candidate_key = f"{key}_mail_{suffix}"
+            while prof.get_item(candidate_key) is not None:
+                suffix += 1
+                candidate_key = f"{key}_mail_{suffix}"
+            key = candidate_key
+
+        new_item = ProfileItem(
+            key=key,
+            body=body,
+            source="mail_seed",
+            visibility=visibility,
+            reviewed=True,
+        )
+        prof.items.append(new_item)
 
         # Regenerate BOTH full embedding and public embedding (§14.5, §9.3)
         self.matching_engine.compute_profile_embedding(prof)
@@ -771,10 +797,18 @@ class SecretaryService:
         }
 
     def dismiss_card(self, card_id: str) -> dict[str, Any]:
-        """Dismiss a secretary card (§14.2)."""
+        """Dismiss an open stagnation card (§14.2, E-8).
+
+        Restricted to type='stagnation' and status='open': profile_diff cards
+        have their own dedicated 'see later' path via review_profile_diff(action='dismiss'),
+        and confirmed/applied/resolved cards must not be reachable through this
+        generic endpoint.
+        """
         card = self.store.get_card(card_id)
-        if card is None:
-            raise ValueError(f"Card '{card_id}' not found")
+        if card is None or card.type != "stagnation":
+            raise ValueError(f"Stagnation card '{card_id}' not found")
+        if card.status != "open":
+            raise ValueError(f"Card '{card_id}' cannot be dismissed in status '{card.status}'")
         card.status = "dismissed"
         card.updated_at = utc_now_iso()
         self.store.save_card(card)

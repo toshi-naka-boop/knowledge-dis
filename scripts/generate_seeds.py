@@ -590,13 +590,21 @@ def build_m3_schedules(today_str: str | None = None) -> list[Schedule]:
 
 
 def build_m3_mail_seeds(today_str: str | None = None) -> list[MailSeed]:
-    """Generate M3 mail seed for proactive profile diff proposal (§14.5)."""
+    """Generate M3 mail seed for proactive profile diff proposal (§14.5).
+
+    Owner must be one of the 4 registered personas (V-10): profile-diff
+    reflection assumes the owning employee already has a profiles/agents
+    entry, since the secretary never fabricates a profile for a mail owner
+    who isn't registered. emp_marcus_delgado is used because his existing
+    current_work item already covers ambulatory-surgery-center site
+    searches, matching this email's subject.
+    """
     ref_today = get_base_today(today_str)
 
     return [
         MailSeed(
             mail_id="mail_jordan_clinic_mou",
-            owner_employee_id="emp_jordan_lee",
+            owner_employee_id="emp_marcus_delgado",
             subject="Update on ambulatory surgery center partnership discussions",
             body=(
                 "Hi Jordan, regarding our discussions with St. Jude ASC, we have finalized the preliminary "

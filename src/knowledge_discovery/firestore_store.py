@@ -19,6 +19,7 @@ from knowledge_discovery.models import (
     Profile,
     Schedule,
     Task,
+    utc_now_iso,
 )
 from knowledge_discovery.store import Store
 
@@ -186,16 +187,6 @@ class FirestoreStore(Store):
         doc_ref = self.db.collection("tasks").document(task.task_id)
         doc_ref.set(task.to_dict())
 
-    def get_task(self, task_id: str) -> Task | None:
-        """Retrieve a task by task_id."""
-        doc = self.db.collection("tasks").document(task_id).get()
-        if hasattr(doc, "exists") and not doc.exists:
-            return None
-        data = doc.to_dict() if hasattr(doc, "to_dict") else None
-        if not data:
-            return None
-        return Task.from_dict(data)
-
     def list_tasks(self, owner_employee_id: str | None = None) -> list[Task]:
         """List tasks, optionally filtered by owner_employee_id."""
         col = self.db.collection("tasks")
@@ -218,16 +209,6 @@ class FirestoreStore(Store):
         """Save or update a schedule reminder."""
         doc_ref = self.db.collection("schedules").document(schedule.item_id)
         doc_ref.set(schedule.to_dict())
-
-    def get_schedule(self, item_id: str) -> Schedule | None:
-        """Retrieve a schedule by item_id."""
-        doc = self.db.collection("schedules").document(item_id).get()
-        if hasattr(doc, "exists") and not doc.exists:
-            return None
-        data = doc.to_dict() if hasattr(doc, "to_dict") else None
-        if not data:
-            return None
-        return Schedule.from_dict(data)
 
     def list_schedules(self, owner_employee_id: str | None = None) -> list[Schedule]:
         """List schedules, optionally filtered by owner_employee_id."""
@@ -349,6 +330,29 @@ class FirestoreStore(Store):
             if data:
                 cards.append(Card.from_dict(data))
         return cards
+
+    def try_confirm_card(self, card_id: str) -> tuple[Card | None, bool]:
+        """Atomically transition a card's status from 'open' to 'confirmed' (CAS, §14.4)."""
+        doc_ref = self.db.collection("cards").document(card_id)
+        transaction = self.db.transaction()
+
+        @firestore.transactional
+        def _txn(txn: Any) -> tuple[Card | None, bool]:
+            snapshot = doc_ref.get(transaction=txn)
+            if hasattr(snapshot, "exists") and not snapshot.exists:
+                return None, False
+            data = snapshot.to_dict() if hasattr(snapshot, "to_dict") else None
+            if not data:
+                return None, False
+            card = Card.from_dict(data)
+            if card.status != "open":
+                return card, False
+            card.status = "confirmed"
+            card.updated_at = utc_now_iso()
+            txn.set(doc_ref, card.to_dict())
+            return card, True
+
+        return _txn(transaction)
 
     def clear(self) -> None:
         """Clear all stored data across all collections."""

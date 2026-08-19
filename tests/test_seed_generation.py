@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from knowledge_discovery.store import InMemoryStore
 from scripts.generate_seeds import (
     build_fixed_personas,
+    build_m3_mail_seeds,
     generate_all_seeds,
     generate_synthetic_profiles,
     populate_store,
@@ -57,6 +58,18 @@ class TestSeedGeneration(unittest.TestCase):
         tom = profiles_by_id["emp_tom_whitfield"]
         self.assertIn("Accountant", tom.role)
         self.assertIn("GAAP", tom.get_item("expertise").body)
+
+    def test_mail_seed_owner_is_a_registered_persona(self) -> None:
+        """V-10: mail_seeds owner must already be one of the 4 registered
+        personas (profiles + agents), since review_profile_diff() reflects
+        into an existing profile and never fabricates one."""
+        agents, _profiles = build_fixed_personas()
+        registered_employee_ids = {a.employee_id for a in agents}
+
+        mail_seeds = build_m3_mail_seeds()
+        self.assertGreater(len(mail_seeds), 0)
+        for mail in mail_seeds:
+            self.assertIn(mail.owner_employee_id, registered_employee_ids)
 
     def test_synthetic_profiles(self) -> None:
         synthetic = generate_synthetic_profiles(count=396)

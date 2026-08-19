@@ -96,3 +96,9 @@ through the server, which applies the requester/audit projections.
   one operator can play all four roles. Per-user auth is out of scope by spec.
 - `POST /api/probe/unregistered-intent` exists solely to demonstrate the
   transmission-layer rejection (red row in the audit view) live.
+- `/api/secretary/*` (digest/confirm/dismiss/profile-diff review) does not
+  verify that the caller is the owning employee_id — it trusts the single
+  shared demo API key, same as `/api/query`'s existing `requester_id` param.
+  Anyone with the demo URL can read another persona's digest by swapping
+  `employee_id`. Out of scope by spec (M3, same posture as the persona
+  switcher above).

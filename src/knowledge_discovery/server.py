@@ -101,10 +101,6 @@ class ConsentRequest(BaseModel):  # type: ignore[misc]
     attachment: AttachmentModel | None = Field(default=None, description="Optional attachment")
 
 
-class SweepRequest(BaseModel):  # type: ignore[misc]
-    demo_today: str | None = Field(default=None, description="Optional ISO date (YYYY-MM-DD) to override today")
-
-
 class ConfirmCardRequest(BaseModel):  # type: ignore[misc]
     card_id: str = Field(..., description="ID of the stagnation card to confirm")
     edited_question: str = Field(..., description="Inquiry question (AI draft or user edited)")
@@ -113,7 +109,6 @@ class ConfirmCardRequest(BaseModel):  # type: ignore[misc]
 class ProfileDiffReviewRequest(BaseModel):  # type: ignore[misc]
     action: str = Field(..., description="'apply' | 'edit_apply' | 'private_apply' | 'dismiss'")
     edited_body: str | None = Field(default=None, description="Optional edited body text for edit_apply")
-    item_key: str | None = Field(default=None, description="Optional custom key for profile item")
 
 
 
@@ -139,10 +134,12 @@ def create_app_from_env() -> Any:
 
     use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("1", "true")
     service: KnowledgeDiscoveryService | None = None
+    llm_client: Any | None = None
     if os.environ.get("GEMINI_API_KEY") or use_vertex:
         from knowledge_discovery.gemini_adapters import (
             GeminiConnectionInferencer,
             GeminiEmbedder,
+            _build_genai_client,
         )
 
         if store is None:
@@ -159,14 +156,18 @@ def create_app_from_env() -> Any:
             funnel_limit=20,
         )
         service = KnowledgeDiscoveryService(store=store, matching_engine=matching_engine)
+        # Secretary question drafts and profile-diff extraction use the same
+        # Gemini client as connection inference (§14.4/§14.5, V-8/E-7/S-6).
+        llm_client = _build_genai_client(os.environ.get("GEMINI_API_KEY", ""))
 
-    return create_app(store=store, service=service)
+    return create_app(store=store, service=service, llm_client=llm_client)
 
 
 def create_app(
     store: Store | None = None,
     service: KnowledgeDiscoveryService | None = None,
     api_key: str | None = None,
+    llm_client: Any | None = None,
 ) -> Any:
     """Create and configure the FastAPI application."""
     if FastAPI is None:
@@ -436,30 +437,28 @@ def create_app(
         store=store,
         kd_service=service,
         matching_engine=service.matching_engine,
+        llm_client=llm_client,
     )
 
     # -------------------------------------------------------------------------
     # Secretary Endpoints (§14)
     # -------------------------------------------------------------------------
+    # Note: "today" is controlled exclusively by the DEMO_TODAY env var (§14.7).
+    # There is no query/body override here (E-9): tests exercise date behavior
+    # by calling SecretaryService directly with demo_today=, or by setting
+    # DEMO_TODAY in the environment.
 
     @app.post("/api/secretary/sweep", dependencies=[Depends(verify_api_key)])
-    def run_secretary_sweep(
-        req: SweepRequest | None = None,
-        demo_today: str | None = Query(default=None),
-    ) -> dict[str, Any]:
+    def run_secretary_sweep() -> dict[str, Any]:
         """Execute proactive secretary sweep across all tasks and mail seeds (§14.1)."""
-        target_today = (req.demo_today if req and req.demo_today else None) or demo_today
-        return secretary_service.run_sweep(demo_today=target_today)
+        return secretary_service.run_sweep()
 
     @app.get("/api/secretary/digest", dependencies=[Depends(verify_api_key)])
     def get_morning_digest(
         employee_id: str = Query(..., description="Employee ID"),
-        demo_today: str | None = Query(default=None, description="Optional base date override"),
     ) -> dict[str, Any]:
         """Retrieve dynamic morning digest for employee (§14.2, §14.8)."""
-        return secretary_service.get_morning_digest(
-            employee_id=employee_id, demo_today=demo_today
-        )
+        return secretary_service.get_morning_digest(employee_id=employee_id)
 
     @app.post("/api/secretary/confirm", dependencies=[Depends(verify_api_key)])
     def confirm_stagnation_card(req: ConfirmCardRequest) -> dict[str, Any]:
@@ -482,8 +481,10 @@ def create_app(
                 card_id=card_id,
                 action=req.action,
                 edited_body=req.edited_body,
-                item_key=req.item_key,
             )
+        except LookupError as exc:
+            # Owning employee has no profile: the secretary never fabricates one (V-10).
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except Exception as exc:

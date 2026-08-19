@@ -149,14 +149,6 @@ class Profile:
             parts.append(f"{item.key}: {item.body}")
         return "\n".join(parts)
 
-    def get_public_text(self) -> str:
-        """Combine only public profile items into text for public embedding."""
-        parts = [f"{self.name} - {self.role}"]
-        for item in self.items:
-            if item.visibility == "public":
-                parts.append(f"{item.key}: {item.body}")
-        return "\n".join(parts)
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "employee_id": self.employee_id,

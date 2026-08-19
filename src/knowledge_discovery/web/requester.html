@@ -241,7 +241,7 @@
           return `
             <div class="reminder-row">
               <div><strong>${esc(r.title)}</strong></div>
-              <span class="status-tag ${tagClass}">${tagText} (${esc(r.due_date)})</span>
+              <span class="status-tag ${tagClass}">${esc(tagText)} (${esc(r.due_date)})</span>
             </div>`;
         }).join("");
       }

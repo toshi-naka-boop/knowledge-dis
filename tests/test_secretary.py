@@ -16,8 +16,10 @@ DeterministicEmbedder, and FakeConnectionInferencer.
 
 import os
 import sys
+import threading
 import unittest
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -43,6 +45,7 @@ from knowledge_discovery.matching import (  # noqa: E402
 )
 from knowledge_discovery.models import (  # noqa: E402
     Agent,
+    Card,
     MailSeed,
     Profile,
     ProfileItem,
@@ -63,6 +66,23 @@ TODAY_STR = TODAY.isoformat()
 
 def _iso(d: date) -> str:
     return d.isoformat()
+
+
+class FakeLLMClient:
+    """Minimal stand-in for a google.genai.Client, exposing only the
+    `.models.generate_content(model=, contents=)` surface that
+    generate_question_draft()/extract_profile_diff() call (§14.4/§14.5,
+    V-8/E-7/S-6 LLM wiring). `respond` maps the prompt text to a response text.
+    """
+
+    def __init__(self, respond) -> None:  # respond: Callable[[str], str]
+        self._respond = respond
+        self.calls: list[str] = []
+        self.models = self
+
+    def generate_content(self, model: str, contents: str) -> SimpleNamespace:
+        self.calls.append(contents)
+        return SimpleNamespace(text=self._respond(contents))
 
 
 class SecretaryTestBase(unittest.TestCase):
@@ -532,6 +552,284 @@ class TestAuditMasksSecretaryIntents(SecretaryTestBase):
                 self.assertNotIn("item_key", r["display_payload"])
 
         self.assertEqual(found_intents, masked_intents)
+
+
+# (h) Concurrent confirm: CAS allows only one query dispatch (V-6/S-8) --------
+
+
+class TestConfirmCardConcurrentCAS(SecretaryTestBase):
+    def test_concurrent_double_confirm_dispatches_query_only_once(self) -> None:
+        self._add_matching_candidate()
+        task = self._make_high_score_task(task_id="task_concurrent_confirm")
+        self.store.save_task(task)
+        self.secretary.run_sweep(demo_today=TODAY_STR)
+
+        card = self.store.find_open_card_for_task("emp_owner", task.task_id)
+        self.assertEqual(card.tier, "request_draft")
+
+        results: list[dict] = []
+        errors: list[Exception] = []
+        lock = threading.Lock()
+
+        def _confirm() -> None:
+            try:
+                res = self.secretary.confirm_stagnation_card(
+                    card.card_id, edited_question="Need advice on the Kubernetes upgrade."
+                )
+                with lock:
+                    results.append(res)
+            except Exception as exc:  # noqa: BLE001 - surfaced via assertion below
+                with lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=_confirm) for _ in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [])
+        query_messages = [m for m in self.store.list_messages() if m.intent == "query"]
+        self.assertEqual(len(query_messages), 1)
+
+        final_card = self.store.get_card(card.card_id)
+        self.assertEqual(final_card.status, "confirmed")
+        self.assertEqual(final_card.linked_query_audit_id, query_messages[0].audit_id)
+
+        statuses = {r["status"] for r in results}
+        self.assertIn("confirmed", statuses)
+        self.assertTrue(statuses <= {"confirmed", "already_confirmed"})
+
+
+# (i) Profile diff reflection is additive: never overwrites/reflips existing --
+# items (V-7/S-7)
+
+
+class TestProfileDiffReflectionIsAdditive(SecretaryTestBase):
+    def test_apply_with_key_collision_adds_new_item_without_overwriting_existing(self) -> None:
+        owner = "emp_collide"
+        profile = Profile(
+            employee_id=owner,
+            name="Collide Owner",
+            role="Engineer",
+            items=[
+                ProfileItem(
+                    key="current_work",
+                    body="Original hand-written current work description.",
+                    source="job_doc",
+                    visibility="private",
+                    reviewed=True,
+                )
+            ],
+        )
+        self.matching_engine.compute_profile_embedding(profile)
+        self.store.save_profile(profile)
+
+        mail = MailSeed(
+            mail_id="mail_collide",
+            owner_employee_id=owner,
+            subject="Update",
+            body="Leading a new logistics optimization project this quarter for the region.",
+            processed=False,
+        )
+        self.store.save_mail_seed(mail)
+
+        self.secretary.run_sweep(demo_today=TODAY_STR)
+        diff_cards = [
+            c for c in self.store.list_cards(owner_employee_id=owner, status="open") if c.type == "profile_diff"
+        ]
+        self.assertEqual(len(diff_cards), 1)
+        # Heuristic fallback (no llm_client configured in this fixture) always
+        # proposes item_key="current_work", colliding with the existing item.
+        self.assertEqual(diff_cards[0].payload["item_key"], "current_work")
+
+        result = self.secretary.review_profile_diff(diff_cards[0].card_id, action="apply")
+        self.assertEqual(result["status"], "applied")
+        self.assertNotEqual(result["item_key"], "current_work")
+        self.assertTrue(result["item_key"].startswith("current_work_mail_"))
+
+        updated = self.store.get_profile(owner)
+        original_item = updated.get_item("current_work")
+        self.assertIsNotNone(original_item)
+        self.assertEqual(original_item.body, "Original hand-written current work description.")
+        self.assertEqual(original_item.source, "job_doc")
+        self.assertEqual(original_item.visibility, "private")  # never flipped to public
+
+        new_item = updated.get_item(result["item_key"])
+        self.assertIsNotNone(new_item)
+        self.assertEqual(new_item.visibility, "public")
+        self.assertEqual(new_item.source, "mail_seed")
+
+    def test_apply_without_existing_profile_raises_lookup_error_not_fabricated(self) -> None:
+        card = Card(
+            card_id="card_diff_orphan",
+            owner_employee_id="emp_no_profile",
+            type="profile_diff",
+            tier=None,
+            payload={"item_key": "current_work", "body_draft": "Some proposed text.", "source_mail_id": "mail_x"},
+            status="open",
+        )
+        self.store.save_card(card)
+
+        with self.assertRaises(LookupError):
+            self.secretary.review_profile_diff(card.card_id, action="apply")
+
+        # No dummy profile was created as a side effect of the failed attempt.
+        self.assertIsNone(self.store.get_profile("emp_no_profile"))
+
+
+# (j) Re-sweep on an already-promoted request_draft card is a no-op beyond ----
+# score/evidence_line (V-9/E-6)
+
+
+class TestRequestDraftResweepIsIdempotent(SecretaryTestBase):
+    def test_resweep_within_same_band_does_not_rerun_preview_or_draft(self) -> None:
+        self._add_matching_candidate()
+        task = self._make_high_score_task(task_id="task_idempotent_resweep")
+        self.store.save_task(task)
+
+        self.secretary.run_sweep(demo_today=TODAY_STR)
+        card1 = self.store.find_open_card_for_task("emp_owner", task.task_id)
+        self.assertEqual(card1.tier, "request_draft")
+        first_draft = card1.payload["question_draft"]
+        first_preview = card1.payload["preview"]
+
+        preview_msgs_after_first = [m for m in self.store.list_messages() if m.intent == "preview_search"]
+        self.assertEqual(len(preview_msgs_after_first), 1)
+
+        # Push the score further within the SAME (>= T2) band; no tier change.
+        task.reschedule_count += 2
+        self.store.save_task(task)
+
+        result2 = self.secretary.run_sweep(demo_today=TODAY_STR)
+        self.assertEqual(result2["cards_promoted"], 0)
+
+        card2 = self.store.get_card(card1.card_id)
+        self.assertEqual(card2.tier, "request_draft")
+        # Score/evidence_line DO update...
+        self.assertNotEqual(card2.payload["score"], card1.payload["score"])
+        # ...but the draft and preview are frozen from the initial promotion.
+        self.assertEqual(card2.payload["question_draft"], first_draft)
+        self.assertEqual(card2.payload["preview"], first_preview)
+
+        preview_msgs_after_second = [m for m in self.store.list_messages() if m.intent == "preview_search"]
+        self.assertEqual(len(preview_msgs_after_second), 1)  # no new audit row
+
+
+# (k) dismiss_card is restricted to stagnation/open cards (E-8) ---------------
+
+
+class TestDismissCardValidation(SecretaryTestBase):
+    def test_dismiss_rejects_profile_diff_card(self) -> None:
+        diff_card = Card(
+            card_id="card_diff_reject",
+            owner_employee_id="emp_x",
+            type="profile_diff",
+            tier=None,
+            payload={"item_key": "current_work", "body_draft": "text"},
+            status="open",
+        )
+        self.store.save_card(diff_card)
+        with self.assertRaises(ValueError):
+            self.secretary.dismiss_card(diff_card.card_id)
+
+    def test_dismiss_rejects_non_open_stagnation_card(self) -> None:
+        self._add_matching_candidate()
+        task = self._make_high_score_task(task_id="task_dismiss_reject")
+        self.store.save_task(task)
+        self.secretary.run_sweep(demo_today=TODAY_STR)
+        stag_card = self.store.find_open_card_for_task("emp_owner", task.task_id)
+        self.secretary.confirm_stagnation_card(stag_card.card_id, edited_question="Need help.")
+
+        with self.assertRaises(ValueError):
+            self.secretary.dismiss_card(stag_card.card_id)
+
+
+# (l) LLM wiring: question draft & diff extraction use llm_client when -------
+# configured; explicit null diff never falls back to the heuristic (V-8/E-7/S-6)
+
+
+class TestLLMClientWiring(SecretaryTestBase):
+    @staticmethod
+    def _llm_respond(contents: str) -> str:
+        if "Write a single natural question" in contents:
+            return "LLM-drafted question: any advice on the Kubernetes upgrade project?"
+        if "extract a suggested profile item" in contents:
+            return '{"item_key": "current_work", "body_draft": "LLM-summarized project update."}'
+        return "null"
+
+    def test_question_draft_and_diff_extraction_use_llm_when_configured(self) -> None:
+        fake_llm = FakeLLMClient(self._llm_respond)
+        secretary = SecretaryService(
+            store=self.store,
+            kd_service=self.kd_service,
+            matching_engine=self.matching_engine,
+            llm_client=fake_llm,
+            t1=3.0,
+            t2=7.0,
+        )
+
+        self._add_matching_candidate()
+        task = self._make_high_score_task(task_id="task_llm_wired")
+        self.store.save_task(task)
+
+        mail = MailSeed(
+            mail_id="mail_llm_wired",
+            owner_employee_id="emp_owner",
+            subject="Project note",
+            body="We wrapped up the migration ahead of schedule.",
+            processed=False,
+        )
+        self.store.save_mail_seed(mail)
+
+        secretary.run_sweep(demo_today=TODAY_STR)
+
+        stag_card = self.store.find_open_card_for_task("emp_owner", task.task_id)
+        self.assertEqual(stag_card.tier, "request_draft")
+        self.assertEqual(
+            stag_card.payload["question_draft"],
+            "LLM-drafted question: any advice on the Kubernetes upgrade project?",
+        )
+
+        diff_cards = [
+            c
+            for c in self.store.list_cards(owner_employee_id="emp_owner", status="open")
+            if c.type == "profile_diff"
+        ]
+        self.assertEqual(len(diff_cards), 1)
+        self.assertEqual(diff_cards[0].payload["item_key"], "current_work")
+        self.assertEqual(diff_cards[0].payload["body_draft"], "LLM-summarized project update.")
+
+        # The LLM path was actually exercised, not the deterministic
+        # template / heuristic (raw email paste) fallback.
+        self.assertTrue(any("Write a single natural question" in c for c in fake_llm.calls))
+        self.assertTrue(any("extract a suggested profile item" in c for c in fake_llm.calls))
+
+    def test_llm_explicit_null_diff_creates_no_card_and_skips_heuristic_fallback(self) -> None:
+        fake_llm = FakeLLMClient(lambda contents: "null")
+        secretary = SecretaryService(
+            store=self.store,
+            kd_service=self.kd_service,
+            matching_engine=self.matching_engine,
+            llm_client=fake_llm,
+            t1=3.0,
+            t2=7.0,
+        )
+        mail = MailSeed(
+            mail_id="mail_llm_null",
+            owner_employee_id="emp_owner",
+            subject="FYI",
+            body="Nothing notable here, just routine correspondence.",
+            processed=False,
+        )
+        self.store.save_mail_seed(mail)
+
+        secretary.run_sweep(demo_today=TODAY_STR)
+
+        reloaded = self.store.get_mail_seed("mail_llm_null")
+        self.assertTrue(reloaded.processed)
+        diff_cards = [c for c in self.store.list_cards(status="open") if c.type == "profile_diff"]
+        self.assertEqual(len(diff_cards), 0)
 
 
 if __name__ == "__main__":

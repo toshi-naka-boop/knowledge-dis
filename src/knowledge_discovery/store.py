@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
+import threading
 from typing import Any
 
 from knowledge_discovery.models import (
@@ -19,6 +20,7 @@ from knowledge_discovery.models import (
     Profile,
     Schedule,
     Task,
+    utc_now_iso,
 )
 
 
@@ -90,11 +92,6 @@ class Store(ABC):
         pass
 
     @abstractmethod
-    def get_task(self, task_id: str) -> Task | None:
-        """Retrieve a task by task_id."""
-        pass
-
-    @abstractmethod
     def list_tasks(self, owner_employee_id: str | None = None) -> list[Task]:
         """List tasks, optionally filtered by owner_employee_id."""
         pass
@@ -103,11 +100,6 @@ class Store(ABC):
     @abstractmethod
     def save_schedule(self, schedule: Schedule) -> None:
         """Save or update a schedule reminder."""
-        pass
-
-    @abstractmethod
-    def get_schedule(self, item_id: str) -> Schedule | None:
-        """Retrieve a schedule by item_id."""
         pass
 
     @abstractmethod
@@ -162,6 +154,24 @@ class Store(ABC):
         pass
 
     @abstractmethod
+    def try_confirm_card(self, card_id: str) -> tuple[Card | None, bool]:
+        """Atomically transition a card's status from 'open' to 'confirmed' (CAS, §14.4).
+
+        Returns (card, won):
+        - (None, False) if no card with this card_id exists.
+        - (card, True) if THIS call performed the open->confirmed transition; the
+          returned card reflects the post-transition ('confirmed') state.
+        - (card, False) if the card exists but was not in 'open' status (already
+          'confirmed' by a concurrent caller, or 'dismissed'/'resolved'/'applied');
+          the returned card reflects its current stored state.
+
+        Implementations must guarantee at most one caller ever observes won=True
+        for a given card_id (Firestore: @firestore.transactional; in-memory: a
+        lock guarding the read-check-write).
+        """
+        pass
+
+    @abstractmethod
     def clear(self) -> None:
         """Clear all stored data (useful for test isolation)."""
         pass
@@ -179,6 +189,7 @@ class InMemoryStore(Store):
         self._schedules: dict[str, Schedule] = {}
         self._mail_seeds: dict[str, MailSeed] = {}
         self._cards: dict[str, Card] = {}
+        self._card_lock = threading.Lock()
 
     def save_agent(self, agent: Agent) -> None:
         """Save or update an agent record in the registry."""
@@ -260,10 +271,6 @@ class InMemoryStore(Store):
         stored = deepcopy(task)
         self._tasks[stored.task_id] = stored
 
-    def get_task(self, task_id: str) -> Task | None:
-        task = self._tasks.get(task_id)
-        return deepcopy(task) if task is not None else None
-
     def list_tasks(self, owner_employee_id: str | None = None) -> list[Task]:
         tasks = list(self._tasks.values())
         if owner_employee_id is not None:
@@ -274,10 +281,6 @@ class InMemoryStore(Store):
     def save_schedule(self, schedule: Schedule) -> None:
         stored = deepcopy(schedule)
         self._schedules[stored.item_id] = stored
-
-    def get_schedule(self, item_id: str) -> Schedule | None:
-        s = self._schedules.get(item_id)
-        return deepcopy(s) if s is not None else None
 
     def list_schedules(self, owner_employee_id: str | None = None) -> list[Schedule]:
         schedules = list(self._schedules.values())
@@ -344,6 +347,19 @@ class InMemoryStore(Store):
             ):
                 results.append(deepcopy(c))
         return results
+
+    def try_confirm_card(self, card_id: str) -> tuple[Card | None, bool]:
+        """Atomically transition a card's status from 'open' to 'confirmed' (CAS)."""
+        with self._card_lock:
+            card = self._cards.get(card_id)
+            if card is None:
+                return None, False
+            if card.status != "open":
+                return deepcopy(card), False
+            card.status = "confirmed"
+            card.updated_at = utc_now_iso()
+            self._cards[card.card_id] = deepcopy(card)
+            return deepcopy(card), True
 
     def clear(self) -> None:
         """Clear all stored data."""
