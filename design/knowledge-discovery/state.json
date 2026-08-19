@@ -1,22 +1,22 @@
 {
-  "currentNode": "設計",
-  "status": "in_progress",
-  "designVersion": "v7",
-  "approvedDesignVersion": "v7",
-  "approvedDesignSha256": "0f4dde9369f9ca748922f1ef093c2c0ab43f5d1cfab6e70f286af244e1478da0",
-  "approvedAt": "2026-08-18T02:10:00+09:00",
-  "approvalEvidence": "v7:0f4dde9369f9 で承認",
-  "requiredApprovalFingerprint": "v7:0f4dde9369f9",
+  "currentNode": "承認CP",
+  "status": "awaiting_user",
+  "designVersion": "v9",
+  "approvedDesignVersion": null,
+  "approvedDesignSha256": null,
+  "approvedAt": null,
+  "approvalEvidence": null,
+  "requiredApprovalFingerprint": "v9:9df6a687bb7b",
   "baseline": "4f0a856768de17b014af65b2bf3160a2db94156d",
-  "criticRound": 2,
+  "criticRound": 7,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "spec v7（秘書層M3）を受けて design.md 追補を起草→批評1巡→M3実装（Cloud Run同居→GEAP Agent Runtime載せ替えの2段構え）。8/29機能凍結・8/31 17:00 PDT締切",
+  "nextAction": "design v9（M3追補・round-7反映）の承認待ち。承認後: M3実装（A段: Cloud Run同居）→反証→B段載せ替え判断",
   "delegation": {
-    "批評": "claude-opus-5[1m] design-critic（round-4, round-5）",
+    "批評": "claude-opus-5[1m] design-critic + codex/gpt-5.6-sol xhigh（round-7クロスベンダー）",
     "実装": "antigravity/gemini-3.7-flash-high（agy models出力から選定。批評側Claudeとのクロスベンダー独立性を優先）"
   },
   "lastUpdated": "2026-08-19"

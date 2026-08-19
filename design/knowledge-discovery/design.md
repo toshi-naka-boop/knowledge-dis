@@ -1,8 +1,19 @@
-# knowledge-discovery 設計書 v7
+# knowledge-discovery 設計書 v9
 
-入力: `spec.md` v5（C-22追随の文言修正を反映した版）
-生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映
+入力: `spec.md` v7（v1〜v15は v5 入力のまま変更なし。§14以降が v7 の FR16〜24 に対応）
+生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映
 状態: 改訂版（承認CP待ち）
+
+**v9での変更点（批評round-7由来）**:
+- C-26/X-1: プレビュー専用の `embedding_public` を新設（1段目ランキングからもprivateの影響を排除）。プレビューと正式実行の候補差は仕様として明示しUI文言に反映
+- C-27/X-5: Scheduler起動をOIDCからAPIキーヘッダ方式に変更（実デプロイの `--allow-unauthenticated`＋DEMO_API_KEY と両立）。本番構成のOIDCはwrite-up将来項目へ。A段の定期起動に検証ゴール18aを追加
+- C-28: 日付基準 `DEMO_TODAY` を導入（シードは相対日付から生成、収録日ずれに耐える）
+- C-29: `deliver=False` フラグ案を廃止。プレビューは送信層に到達し得ない純粋関数の直接呼び出しとする（構造的無痕跡）
+- C-30/X-2/X-3: cards の状態機械を明文化（tier昇格・自動終了・dismissed/confirmed後の再発火規則・confirmのCAS・プレビュー0件）
+- X-4: `profiles.items.source` に `"mail_seed"` を追加
+- 枠外指摘: mail_seed由来項目の visibility 既定は public（業務由来デフォルト公開の原則に従う）と明記
+
+**v8の設計方針（追補の背骨）**: 秘書は**新しい配送経路を持たない**。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）には一切手を入れず、その**入口の手前に「気づく・調べる・下書きする」段を足すだけ**とする。人を巻き込む操作は常に既存フローの起点（質問投入）を経由する。
 
 ---
 
@@ -104,12 +115,13 @@ profiles/{employee_id}
   │    {
   │      key: "current_work" | "expertise" | "background" | <自由キー>,
   │      body: string,
-  │      source: "job_doc" | "seed_synth",
+  │      source: "job_doc" | "seed_synth" | "mail_seed",
   │      visibility: "public" | "private",
   │      reviewed: boolean
   │    }, ...
   │  ]
-  └─ embedding: vector            # 全項目（public+private）から生成
+  ├─ embedding: vector            # 全項目（public+private）から生成
+  └─ embedding_public: vector     # public項目のみから生成（v9新設。プレビュー検索§14.4専用。§9-3の再生成時に両方更新）
 ```
 
 - `current_work` はマッチングの主材料のため詳細に書く（シードデータ設計指針）。396体の合成プロフィールも同一schema
@@ -193,12 +205,15 @@ messages/{audit_id}
 | 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
 | 何を流せるか（統制） | スキーマレジストリ＋`supported_intents`検証（送信層） | Model Armor |
 | 何が流れたか（監査） | `messages` コレクション＋監査ダッシュボード | Agent Observability |
+| いつ動くか（トリガー、v8追加） | Cloud Scheduler（OIDC）→ Cloud Run 同居の秘書 | GEAP Agent Runtime 常駐の秘書＋Scheduler |
+
+このうち「誰が居るか」は v8 で**実採用に昇格**する（GEAP Agent Registry への実登録。§14.7）。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
 
 ## 9. プロフィール生成・レビュー（最小化。C-20ユーザー判断）
 
 1. 下書き生成はバッチスクリプト（模擬職務文書→Gemini 3.7 Flash→Firestore投入）。UIなし
 2. レビュー画面は**visibilityトグルのみの最小1画面**。本文修正はFirestore直編集で代替。デモ動画には登場させない
-3. レビュー確定で `reviewed=true` 一括更新＋embedding再生成
+3. レビュー確定で `reviewed=true` 一括更新＋embedding・embedding_public（v9新設）の再生成
 4. spec FR2/FR3はこの最小実装で充足する（デモに映る必要はない）
 
 ## 10. 検証可能なゴール
@@ -215,12 +230,23 @@ messages/{audit_id}
 9. 異なる質問3種で画面用ファネルの上位20件が変化することを確認できる
 10. 用語（レビュー/同意/公開範囲）が統一され「承認」が使われていないことを確認できる
 11. クライアントSDKからの直接読み取りがSecurity Rulesで拒否されることを確認できる
+12. （M3）`DEMO_TODAY` を固定し停滞条件を満たすシードタスクを投入して `POST /api/secretary/sweep` を実行すると、`score ≥ T2` の「つながりリクエスト案」カード（evidence_line・質問下書き・候補＋理由つき）が本人のダイジェストにのみ現れ、**この時点で `messages` に `connect_ask` / `connect_ask_private` が1件も増えていない**こと、およびプレビュー候補の `cited_item_keys` に private 項目が含まれないこと（embedding_public＋public限定コンテキストの確認）を確認できる（プレビュー無痕跡・public限定の最重要ゴール）
+13. （M3）カードの「依頼する」確定で既存の質問経路が走り、ゴール1〜6の挙動（配送・同意・辞退・非公開打診）がそのまま成立することを確認できる。カードが `confirmed` になり `linked_query_audit_id` が記録される。confirm を二重POSTしても質問投入が1回しか起きないことを確認できる（CAS）
+14. （M3）sweep を同日中に再実行しても open カードが重複生成されず（冪等性）、`notice` カードがスコア T2 超えで同一カードのまま `request_draft` に昇格し、タスクを done にした次の sweep で `resolved` に閉じることを確認できる（状態機械）
+15. （M3）ダイジェストに schedules 由来の期日リマインド（経費締切・週報・会議準備・ジャーナル）が期日超過→当日→翌日の順で表示されることを確認できる
+16. （M3）mail_seeds 投入→sweep→差分提案カード→「反映」で `profiles.items` に `reviewed=true` の項目が追加され embedding が再生成され、直後の質問で当該項目が `cited_item_keys` に現れ得ることを確認できる
+17. （M3）監査画面に `stagnation_detected` / `preview_search` / `profile_diff_proposed` の行が「内容非表示」のマスク表示で現れ、タスク名・質問下書き・候補名が表示されないことを確認できる（fail-closedの適用確認）
+18. （M3・A段）Cloud Scheduler ジョブが構成され、`gcloud scheduler jobs run` の手動発火で sweep が実行される（Cloud Run ログに sweep 実行行が出る）こと、および `X-API-Key` ヘッダなしの `POST /api/secretary/sweep` が 401/403 で拒否されることを確認できる
+19. （M3・B段のみ）Cloud Scheduler → Agent Runtime 経由で sweep が実行されることを確認できる（A段提出時は対象外）
 
 ## 11. デモ動画の構成（3分・英語）
 
-1. **幸福経路（〜100秒）**: 暗黙知系の質問 → 監査画面でファネル「400件（スケール表示）→接点推論→配送3件・落選1件（理由付き）」 → 候補本人の画面に質問＋AI推定の候補理由 → 1体同意→MTG成立が双方に届く／1体辞退（資料添付）→依頼者に届く（§6-5の台本構成）
-2. **非公開項目打診（〜40秒）**: private項目を持つ候補への打診が本人にだけ届く → 監査画面では「内容非表示」の行 → 依頼者画面では通常候補と見分けがつかない → ナレーション「開示するかどうかは、本人だけが決める」
-3. **統制の3点セット（〜20秒）**: アーキ図カットで `agents` レジストリ（誰が居るか）＋スキーマレジストリ（何を流せるか）＋監査ログ（何が流れたか）を示す。尺が余れば未登録型の拒否（赤表示）を実演
+1. **秘書の朝（〜30秒、v8で追加・冒頭シーン）**: 本人がUIを開く → モーニングダイジェスト（経費締切・週報・会議準備のリマインド）の**地続きに**停滞カード「Riverside Clinic移転のタスク、期日を2回延ばし5日止まっています。手がかりを持っていそうな人を探してあります」→ 候補＋理由を確認 → 質問下書きを一部編集して「依頼する」。ナレーション「質問はタイプするものではなく、秘書が先に気づくものになる」
+2. **幸福経路（〜85秒）**: （確定された質問から接続）監査画面でファネル「400件（スケール表示）→接点推論→配送3件・落選1件（理由付き）」 → 候補本人の画面に質問＋AI推定の候補理由 → 1体同意→MTG成立が双方に届く／1体辞退（資料添付）→依頼者に届く（§6-5の台本構成）
+3. **非公開項目打診（〜40秒）**: private項目を持つ候補への打診が本人にだけ届く → 監査画面では「内容非表示」の行 → 依頼者画面では通常候補と見分けがつかない → ナレーション「開示するかどうかは、本人だけが決める」
+4. **統制の3点セット（〜20秒）**: アーキ図カットで `agents` レジストリ（誰が居るか）＋スキーマレジストリ（何を流せるか）＋監査ログ（何が流れたか）＋トリガー（いつ動くか: Scheduler→将来はAgent Runtime）を示す。尺が余れば未登録型の拒否（赤表示）を実演
+
+秒数配分は目安（合計175秒＋タイトル・クロージング）。プレビュー無痕跡（候補者は確定まで何も知らない）は冒頭シーンのナレーションで一言添える（Fortified文脈での秘書の統制主張はこの1点に絞り、秘書機能自体を売りにしない——spec v7の位置づけ通り）。
 
 ## 12. spec.md v4との対応
 
@@ -236,12 +262,152 @@ messages/{audit_id}
 | FR12（監査ダッシュボード） | §7 |
 | FR13（400名分投入） | §3 |
 | FR14（デモ構成） | §11 |
-| FR15（アーキ図・write-up） | 実装後タスク（§8のGEAP言及、§4-4の主張範囲を反映すること） |
+| FR15（アーキ図・write-up） | 実装後タスク（§8のGEAP言及、§4-4の主張範囲、§14.6の同型パターン、将来構成（Spark/Agent Runtime/苦手先回り）を反映すること） |
+| FR16（巡回） | §14.1, §14.7 |
+| FR17〜18（停滞スコア・2段閾値） | §14.3 |
+| FR19（プレビュー無痕跡・public限定） | §14.4 |
+| FR20（本人確定・配送権限なし） | §14.4 |
+| FR21（監査への専用intent記録） | §14.6 |
+| FR22（モーニングダイジェスト） | §14.2, §14.8 |
+| FR23（プロフィール差分提案） | §14.5 |
+| FR24（苦手先回り・stretch） | 実装なし。write-up・アーキ図将来構成（§14.6の監査パターンとガードレールを流用） |
 
-## 13. 未決のまま残す事項
+## 14. 秘書プロアクティブ層（M3、spec v7 FR16〜24）
+
+### 14.1 全体像
+
+```mermaid
+flowchart TD
+    Sched[Cloud Scheduler<br>定期起動 OIDC] -->|POST /api/secretary/sweep| Sweep[秘書sweep<br>4名分を巡回]
+    TasksC[(tasks)] --> Sweep
+    SchedC[(schedules)] --> Sweep
+    MailC[(mail_seeds)] --> Sweep
+    Sweep -->|閾値超え| Cards[(cards<br>停滞カード/差分提案カード)]
+    Sweep -.専用intentで記録<br>内容はfail-closedマスク.-> Msg[(messages)]
+
+    UI[本人UI] -->|GET /api/secretary/digest| Digest[モーニングダイジェスト<br>= 期日リマインド 動的生成<br>+ openなcards]
+    Cards --> Digest
+    Digest -->|依頼する 確定| Confirm[POST /api/secretary/confirm<br>編集済み質問文]
+    Confirm -->|既存 /api/query と同一経路| Disc2[既存ディスカバリ層<br>§1〜§2 無変更]
+    Digest -->|差分カードをレビュー| ProfUpd[profiles更新<br>+ embedding再生成]
+```
+
+- 秘書は独立した受信エージェントではなく、**各社員の個人エージェントの一責務**として実装する（共通の secretary モジュールが owner ごとに動く）。`agents` レジストリの `supported_intents` は変更しない（秘書は何も受信しない。送信＝監査記録のみ）
+- **巡回は冪等**: カードの生成・更新・終了は §14.2 の状態機械に従う（同一 `(owner, task_id)` に open カードは常に高々1枚。Scheduler の多重発火・手動再実行で重複カードが出ない）
+
+### 14.2 データモデル（Firestore、新規4コレクション）
+
+```
+tasks/{task_id}
+  ├─ owner_employee_id, title, description
+  ├─ status: "todo" | "in_progress" | "done"
+  ├─ due_date, created_at, last_updated_at
+  ├─ reschedule_count: number          # シードで直接与える（履歴配列は持たない。導出計算を作らない）
+  └─ status_changed_at: timestamp      # 着手なし判定用（created_at == status_changed_at かつ todo）
+
+schedules/{item_id}
+  ├─ owner_employee_id
+  ├─ kind: "expense_deadline" | "weekly_report" | "monthly_report"
+  │        | "meeting_prep" | "meeting_review" | "journal"
+  └─ title, due_date                   # 具体日付のインスタンスをシード投入（繰り返しルールエンジンは作らない）
+
+mail_seeds/{mail_id}
+  ├─ owner_employee_id, subject, body, received_at
+  └─ processed: boolean                # 差分提案生成済みフラグ
+
+cards/{card_id}
+  ├─ owner_employee_id
+  ├─ type: "stagnation" | "profile_diff"
+  ├─ tier: "notice" | "request_draft" | null   # stagnationのみ（T1帯/T2帯。v9新設）
+  ├─ payload: map                      # stagnation: {task_id, score, evidence_line, question_draft?, preview?: {candidates:[{employee_id, reason_text}]}}
+  │                                    # profile_diff: {item_key, body_draft, source_mail_id}
+  ├─ status: "open" | "confirmed" | "dismissed" | "applied" | "resolved"
+  ├─ resolved_reason: string | null    # resolved時のみ（"task_done" | "score_below_t1"）
+  ├─ linked_query_audit_id: string | null   # confirmed時に既存フローのquery audit_idを記録
+  └─ created_at, updated_at
+```
+
+**stagnationカードの状態機械（C-30/X-2対応。sweepごとに task×owner 単位で評価）**:
+
+| 現在の状態 | sweep時の条件 | 遷移 |
+|---|---|---|
+| カードなし | score ≥ T2 | `open/request_draft` を生成（プレビュー実行・質問下書きつき） |
+| カードなし | T1 ≤ score < T2 | `open/notice` を生成 |
+| `open/notice` | score ≥ T2 | **同一カードを `request_draft` に昇格**（プレビュー実行・質問下書き追加） |
+| `open/*` | T1 ≤ score（帯変化なし） | score・evidence_line のみ更新 |
+| `open/*` | score < T1 または task done | `resolved`（理由記録。古い警告を残さない） |
+| `dismissed` | （任意） | 同一タスクでは再生成しない（本人の意思を尊重。ただし due_date がリスケされたら別の停滞として再判定可） |
+| `confirmed` | （任意） | 同一タスクでは新規カードを作らない（依頼済み） |
+
+- `request_draft` から score が T1帯へ下がっても降格しない（作成済みの下書きは無害。resolvedの条件のみで閉じる）
+- **プレビューが0件**（全候補が接点なし）の場合: `request_draft` にせず `notice` に留め、カードに「候補が見つかりませんでした」を明示する（隠さない）
+
+- モーニングダイジェストは**永続化しない**。`GET /api/secretary/digest?employee_id=` が「期日リマインド（schedules を日付ルールで評価: 期日超過・当日・翌日）＋ open な cards」を毎回動的に組み立てて返す。ダイジェスト自体の既読管理は作らない
+
+### 14.3 停滞スコア（ルールベース・2段閾値。FR17〜18）
+
+```
+score = W_OVERDUE   × min(期日超過日数, CAP)
+      + W_STALE     × min(無更新日数, CAP)
+      + W_RESCHED   × reschedule_count
+      + W_NEGLECT   × 相対停滞(0/1)
+      + W_UNTOUCHED × 着手なし(0/1)
+```
+
+- **相対停滞**: 本人の他タスクに `last_updated_at` が直近 `NEGLECT_WINDOW` 日以内のものが1件以上あり、かつ当該タスクの無更新日数 ≥ `NEGLECT_WINDOW` のとき 1（全タスクが止まっていれば休暇・繁忙として発火しない）
+- **着手なし**: `status=="todo"` かつ `status_changed_at == created_at`（一度もstatus遷移していない）のとき 1
+- 全シグナルが tasks コレクションの値だけから決定的に計算できる。**LLM は判定に一切使わない**（ledger記載の却下済み前提）
+- 重み・`T1`（気づき）・`T2`（リクエスト案）・`CAP`・`NEGLECT_WINDOW` は env 定数とし、シードデータで較正（§13）。`T1 < T2` を起動時にassert
+- **evidence_line（判定根拠一行）は発火したシグナルからテンプレート合成**する（例:「期日を2回延ばし、他のタスクは動いているのにこれだけ5日止まっています」）。LLM生成にしない（根拠が数値と1対1対応する説明可能性を守る）
+- `T1 ≤ score < T2`: 気づきカード（`question_draft`/`preview` なし）。`score ≥ T2`: プレビュー検索（§14.4）を実行し、質問下書き＋候補＋理由まで揃えた「つながりリクエスト案」カード
+
+### 14.4 プレビュー検索と依頼確定（FR19〜20）
+
+- **プレビュー検索は既存マッチングの純粋関数部分だけを直接呼ぶ**（C-29対応: `deliver=False` のようなブールフラグは採用しない。既存の候補計算関数は送信を持たない純粋関数として既に分離されており、プレビュー経路は送信層のコードに到達し得ない——フラグの付け忘れで痕跡が漏れる余地を構造的に無くす）。書き込みは `messages` への監査記録1件のみ（§14.6）
+- **public限定は両段に適用する（C-26/X-1対応）**: 1段目ランキングは `embedding_public`（§3）を対象にベクトル検索し、2段目推論は public 項目のみをコンテキストに渡す。これによりプレビューの選定・理由のどちらにも private が影響せず、`cited_item_keys` にも構造的に混入しない（渡していないものは引用できない）。`VECTOR_FLOOR`（0.62、全項目embeddingで較正済み）はプレビューには適用しない——プレビューは上位k件の「当たり」提示であり、落選判定を主張しない（落選判定は正式実行のみ）
+- 質問下書き（`question_draft`）はタスクの title/description から Gemini が生成し、**AI発言として明示**（v4原則）。本人はカード上で編集できる
+- **依頼確定（`POST /api/secretary/confirm`）は、編集済み質問文を既存の質問投入経路にそのまま渡す**。プレビュー結果は再利用しない（捨てる）。確定後は通常の質問と完全に同一の処理（正式な2段目推論は private 込み・全項目embeddingで走り直し、非公開打診 §4 もここで初めて発動し得る）
+  - **プレビューと正式実行の候補は一致を保証しない**（embedding対象とマスク条件が異なるため。C-26の帰結）。これは仕様として明示する: カードUIに「実際の依頼時には、非公開情報も含めた再検索により候補が変わることがあります」の固定文言を置く。デモ台本ではシード較正により同一候補になるケースを選んで収録する
+  - **confirmの並行実行はFirestoreトランザクションのCASで排他する（X-3対応）**: `open → confirmed` の遷移と `linked_query_audit_id` の記録を1トランザクションで行い、既に `confirmed` のカードへのconfirmは既存の `linked_query_audit_id` を返すだけで質問投入を行わない（ダブルクリック・二重POSTで配送が重複しない）。質問投入が失敗した場合はカードを `open` に戻してエラー表示（再試行可能）
+- **候補者側に痕跡を残さない**: プレビューでは `connect_ask` 系のメッセージ・通知・カードを一切生成しない。検証ゴール12で「sweep後に messages に connect_ask が0件」をassertする
+- 停滞検知・カード・ダイジェストは本人UI以外に露出しない（上司・同僚向けの画面はそもそも存在しない。監査画面はマスク済み事実のみ→§14.6）
+
+### 14.5 プロフィール差分提案（FR23）
+
+1. sweep が `processed==false` の mail_seeds を読み、現在のプロフィールとの差分候補を Gemini で抽出（出力スキーマ: `{item_key, body_draft} | null`。差分なしなら null を許す）→ `profile_diff` カード生成、`processed=true`
+2. 本人のレビュー操作は4択: **反映**（既定の導線） / **編集して反映** / **公開範囲を非公開にして反映** / **見送り**。見送りはUI上、明確な秘匿性がある場合の選択肢として配置（文言で誘導）。**visibility の既定は public**（業務由来項目デフォルト公開の原則。spec FR2と同じ整理）
+3. 反映時: `profiles.items` に `{key, body, source: "mail_seed", visibility, reviewed: true}` を追加し、**embedding と embedding_public の両方を再生成**（§9-3 の既存バッチ関数を単一プロフィール用に再利用）。カードは `applied`
+4. 差分提案文はAI発言として明示。反映されるまで索引・マッチングには一切影響しない（未レビューのAI生成文を本人名義で流通させない、の適用）
+
+### 14.6 監査との接続（FR21）
+
+- 新intent 3種をスキーマレジストリに登録: `stagnation_detected` / `preview_search` / `profile_diff_proposed`。いずれも `from = <owner>のagent_id`、`to = "system"`、配送なし（監査記録のみ）
+- **平文表示ホワイトリストに追加しない** → 既存のfail-closed規則（§3）がそのまま効き、監査画面では「秘書による停滞検知（内容非表示）」等の事実行のみ表示される。タスク名・質問下書き・候補名は監査画面に出ない
+  - これは非公開打診と同じ整理:「**事実は記録され、内容は本人にしか見えない**」。FR20（検知事実を本人以外に通知しない）と FR21（監査に記録する）はこの機構で両立する。write-upでも同型のパターンとして語る
+- `preview_search` の payload には候補 employee_id 一覧・スコアを記録する（監査の実体は保持。表示だけがマスク）
+
+### 14.7 GEAP 2段構えと定期起動（spec 制約「GEAP採用」）
+
+- **A段（M3の完了条件）**: secretary モジュールを既存 Cloud Run サービスに同居させ、Cloud Scheduler → `POST /api/secretary/sweep` を **APIキーヘッダ方式**で叩く（C-27対応: 実デプロイは `--allow-unauthenticated`＋`DEMO_API_KEY` 保護であり、OIDC化はサービス全体のIAM認証を要求してUIのAPIキー方式と両立しない。SchedulerジョブのHTTPターゲットにヘッダ `X-API-Key: <DEMO_API_KEY>` を設定する）。デモ・開発では同エンドポイントを手動トリガーできる。**本番構成でのOIDC＋専用SA化はwrite-upの将来項目として明記**（デモの脅威モデルでは既存の単一APIキー保護の内側に収まる、というC-24と同じ整理）
+- **日付基準 `DEMO_TODAY`（C-28対応）**: sweep・digest の「今日」は env `DEMO_TODAY`（ISO日付）を基準にする（未設定なら実日付）。シード投入スクリプトは `--today` 引数から相対日付（「期日3日前」「5日間未更新」等）で絶対日付を計算して書き込む。これにより収録日がずれても「シード再投入 or `DEMO_TODAY` 設定」のどちらかで停滞スコア・リマインド表示が決定的に再現できる。検証ゴール12〜17は `DEMO_TODAY` 固定で実行する
+- **B段（A段の完了後にのみ着手）**: 秘書を ADK エージェントとして GEAP Agent Runtime（API名 ReasoningEngine）へデプロイし、Scheduler の呼び先を Runtime の query API に切り替える。Runtime 上の秘書は Cloud Run の `/api/secretary/*` を内部APIとして呼ぶ（APIキーは Secret Manager 経由）。**詰まったらA段のまま提出**（フォールバック。アーキ図はB段構成で描き、実デプロイ状態をREADMEに正直に記載）
+- **GEAP Agent Registry への実登録**: 4体＋秘書を Agent Registry に登録するデプロイ手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+- §8 の GEAP 対応表に1行追記する: 「いつ動くか（トリガー） | Cloud Scheduler | GEAP Agent Runtime＋Scheduler」
+
+### 14.8 UI（ダイジェストの見せ方）
+
+- 既存の本人UI（依頼者UI）の最上部に「モーニングダイジェスト」パネルを追加。並び順: 期日リマインド（超過→当日→翌日）→ 停滞カード → 差分提案カード。停滞カードは日常リマインドと**地続きの1カード**として同じ見た目の枠に置く（spec FR22。「監視者の警告」ではなく「秘書の朝の一言」に見せる位置づけの実装）
+- リマインド行は表示のみ（クリック動作・既読管理なし）。回答機能は持たない（非スコープ）
+- 秘書の人格化（アバター・名前・口調）は**未決**（spec準拠）。既定は無人格のカード表示とし、人格化する場合もラベルと文体の差し替えのみで実装が変わらない構造にする（カード生成とUI表示を分離しておく）
+
+## 15. 未決のまま残す事項
 
 - デモの舞台・模擬社員4名の人物設定（8/19までに決定。シードデータ設計のクリティカルパス。「確実に落ちる1体」の意図設計を含む）
 - 辞退理由の入力形式（自由記述のみ / テンプレ併用）
 - k=3・ファネル20件・`CONNECTION_THRESHOLD`（暫定0.5）・`VECTOR_FLOOR` は暫定値。シードデータで較正する。**較正が収束しない場合のフォールバック**: 台本用に意図設計した「確実に落ちる1体」はベクトル下限（決定的）だけで落ちるため、LLM score の較正が不安定でもデモの落選シーンは成立する（C-23）
 - Firestore複合ベクトルインデックス（レジストリ登録済みフィルタ併用）の可否確認は**実装最初のタスク**（不可なら全件検索+コード側フィルタで代替、400件なら性能問題なし）
 - 2段目推論4並列の1回あたりレイテンシ実測
+- （M3）停滞スコアの重み・`T1`/`T2`・`CAP`・`NEGLECT_WINDOW` の具体値（シード較正。デモ用シードは `T2` を確実に超える値で作り込む）
+- （M3）秘書のUI人格化の要否（spec未決に追随。§14.8の分離構造により後決めで実装影響なし）
+- （M3）プロフィール差分提案シーンをデモ3分尺に含めるか（§11の尺次第。含めない場合もREADME・write-upで提示）
+- （M3・B段）Agent Runtime 載せ替えの着手判断: A段完了・デモ収録可能状態を確認してから。8/27時点で未着手ならB段は将来構成の記載のみとする

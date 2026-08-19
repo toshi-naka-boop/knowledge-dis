@@ -4,6 +4,18 @@
 
 ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
 
+## 批評round-7（design v8 M3追補）の帰結 — 2026-08-19
+
+原文: reviews/round-7.md（critic: claude design-critic = claude-opus-5[1m]）＋ reviews/round-7-codex-raw.txt（codex/gpt-5.6-sol xhigh、クロスベンダー）。指摘10件（重複3組、実質7論点）は全件「設計」種別のため design.md v9 改訂で全受理・解決。前提ルーティング（ユーザー質問）は発生なし。
+
+- **C-26 / X-1（high・両ベンダー一致）**: プレビュー1段目が全項目embeddingを再利用しprivateが選定に影響（FR19違反） → `profiles.embedding_public` 新設、プレビューは両段public限定。VECTOR_FLOORはプレビュー非適用（落選判定を主張しない）。プレビューと正式実行の候補差は仕様として明示しUI固定文言化
+- **C-27 / X-5（high/mid）**: Scheduler OIDCが実デプロイの `--allow-unauthenticated`＋DEMO_API_KEYと両立しない／A段起動の検証ゴール欠落 → APIキーヘッダ方式（`X-API-Key`）に変更、本番OIDC化はwrite-up将来項目。ゴール18（ジョブ手動発火＋キーなし401）を追加
+- **C-28（high）**: 「今日」の基準とシード日付が未定義で収録日ずれに脆い → env `DEMO_TODAY` 導入、シードは `--today` からの相対日付生成。ゴール12〜17は DEMO_TODAY 固定で実行
+- **C-29（mid）**: `deliver=False` フラグがfail-open（既存 `run_matching` は送信を持たない純粋関数） → フラグ案廃止、プレビューは純粋関数の直接呼び出し（送信層コードに到達し得ない構造的無痕跡）
+- **C-30 / X-2 / X-3（mid/high/high）**: cards状態遷移の未定義（T1→T2昇格・回復時終了・dismissed/confirmed後の再発火・プレビュー0件・confirm多重実行） → §14.2に状態機械表を明文化（tier新設・resolved自動終了・dismissedは同一タスク非再生成・confirmはFirestoreトランザクションのCAS＋失敗時open戻し）
+- **X-4（mid）**: `source: "mail_seed"` がprofiles schemaの許容値外 → enumに追加
+- **枠外（claude総評）**: mail_seed由来項目のvisibility既定未記載 → 「既定public（業務由来デフォルト公開の原則）」を§14.5に明記
+
 ## 前提変更の記録（重要）
 
 2026-08-18、design.md v4 の承認CPでユーザーから前提の誤りが指摘され、spec.md が v2〜v4 へ全面改訂された（詳細は spec.md の改訂経緯セクション）。design.md v1〜v4 と批評ラウンド1〜3の指摘（C-1〜C-15）は**旧2レーン構造を前提としたもの**であり、多くは機構ごと廃止された。以下の索引は「解決済み」ではなく「前提変更により消滅 or 縮小継承」として読むこと。批評エージェントは、廃止済み機構（来歴検証・reject_visibility・定時応答・ロール別射影・セッションロール認証・辞退不可視）の復活を提案しないこと。
