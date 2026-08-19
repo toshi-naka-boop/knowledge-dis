@@ -28,11 +28,15 @@ class SchemaRegistry:
             "decline_with_reason",
             "reject_unregistered_type",
             "reject_unsupported_intent",
+            "stagnation_detected",
+            "preview_search",
+            "profile_diff_proposed",
         }
     )
 
     # Whitelist of payload types allowed for unmasked display when audit_payload is None.
-    # Note: connect_ask_private is intentionally excluded because it must be masked in audit view.
+    # Note: connect_ask_private, stagnation_detected, preview_search, and profile_diff_proposed
+    # are intentionally excluded so they are fail-closed masked in audit view (§14.6, C-21).
     AUDIT_WHITELIST: frozenset[str] = frozenset(
         {
             "query",
@@ -140,6 +144,27 @@ class SchemaRegistry:
                 return False, "reject_unsupported_intent requires 'attempted_intent'"
             if not isinstance(payload.get("supported_intents"), list):
                 return False, "reject_unsupported_intent requires list 'supported_intents'"
+            return True, None
+
+        elif payload_type == "stagnation_detected":
+            if not payload.get("task_id") or not isinstance(payload["task_id"], str):
+                return False, "stagnation_detected requires non-empty string 'task_id'"
+            if "score" not in payload or not isinstance(payload["score"], (int, float)):
+                return False, "stagnation_detected requires numeric 'score'"
+            return True, None
+
+        elif payload_type == "preview_search":
+            if not payload.get("task_id") or not isinstance(payload["task_id"], str):
+                return False, "preview_search requires non-empty string 'task_id'"
+            if "candidates" not in payload or not isinstance(payload["candidates"], list):
+                return False, "preview_search requires list 'candidates'"
+            return True, None
+
+        elif payload_type == "profile_diff_proposed":
+            if not payload.get("mail_id") or not isinstance(payload["mail_id"], str):
+                return False, "profile_diff_proposed requires non-empty string 'mail_id'"
+            if not payload.get("item_key") or not isinstance(payload["item_key"], str):
+                return False, "profile_diff_proposed requires non-empty string 'item_key'"
             return True, None
 
         return True, None

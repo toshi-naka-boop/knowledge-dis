@@ -11,7 +11,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from knowledge_discovery.models import Agent, Message, Profile
+from knowledge_discovery.models import (
+    Agent,
+    Card,
+    MailSeed,
+    Message,
+    Profile,
+    Schedule,
+    Task,
+)
 from knowledge_discovery.store import Store
 
 try:
@@ -169,9 +177,182 @@ class FirestoreStore(Store):
                 results.append(msg)
         return results
 
+    # -------------------------------------------------------------------------
+    # Task operations (tasks collection)
+    # -------------------------------------------------------------------------
+
+    def save_task(self, task: Task) -> None:
+        """Save or update a task record."""
+        doc_ref = self.db.collection("tasks").document(task.task_id)
+        doc_ref.set(task.to_dict())
+
+    def get_task(self, task_id: str) -> Task | None:
+        """Retrieve a task by task_id."""
+        doc = self.db.collection("tasks").document(task_id).get()
+        if hasattr(doc, "exists") and not doc.exists:
+            return None
+        data = doc.to_dict() if hasattr(doc, "to_dict") else None
+        if not data:
+            return None
+        return Task.from_dict(data)
+
+    def list_tasks(self, owner_employee_id: str | None = None) -> list[Task]:
+        """List tasks, optionally filtered by owner_employee_id."""
+        col = self.db.collection("tasks")
+        if owner_employee_id is not None:
+            docs = col.where("owner_employee_id", "==", owner_employee_id).stream()
+        else:
+            docs = col.stream()
+        tasks: list[Task] = []
+        for doc in docs:
+            data = doc.to_dict() if hasattr(doc, "to_dict") else None
+            if data:
+                tasks.append(Task.from_dict(data))
+        return tasks
+
+    # -------------------------------------------------------------------------
+    # Schedule operations (schedules collection)
+    # -------------------------------------------------------------------------
+
+    def save_schedule(self, schedule: Schedule) -> None:
+        """Save or update a schedule reminder."""
+        doc_ref = self.db.collection("schedules").document(schedule.item_id)
+        doc_ref.set(schedule.to_dict())
+
+    def get_schedule(self, item_id: str) -> Schedule | None:
+        """Retrieve a schedule by item_id."""
+        doc = self.db.collection("schedules").document(item_id).get()
+        if hasattr(doc, "exists") and not doc.exists:
+            return None
+        data = doc.to_dict() if hasattr(doc, "to_dict") else None
+        if not data:
+            return None
+        return Schedule.from_dict(data)
+
+    def list_schedules(self, owner_employee_id: str | None = None) -> list[Schedule]:
+        """List schedules, optionally filtered by owner_employee_id."""
+        col = self.db.collection("schedules")
+        if owner_employee_id is not None:
+            docs = col.where("owner_employee_id", "==", owner_employee_id).stream()
+        else:
+            docs = col.stream()
+        schedules: list[Schedule] = []
+        for doc in docs:
+            data = doc.to_dict() if hasattr(doc, "to_dict") else None
+            if data:
+                schedules.append(Schedule.from_dict(data))
+        return schedules
+
+    # -------------------------------------------------------------------------
+    # MailSeed operations (mail_seeds collection)
+    # -------------------------------------------------------------------------
+
+    def save_mail_seed(self, mail: MailSeed) -> None:
+        """Save or update an email seed record."""
+        doc_ref = self.db.collection("mail_seeds").document(mail.mail_id)
+        doc_ref.set(mail.to_dict())
+
+    def get_mail_seed(self, mail_id: str) -> MailSeed | None:
+        """Retrieve an email seed by mail_id."""
+        doc = self.db.collection("mail_seeds").document(mail_id).get()
+        if hasattr(doc, "exists") and not doc.exists:
+            return None
+        data = doc.to_dict() if hasattr(doc, "to_dict") else None
+        if not data:
+            return None
+        return MailSeed.from_dict(data)
+
+    def list_mail_seeds(
+        self, owner_employee_id: str | None = None, unprocessed_only: bool = False
+    ) -> list[MailSeed]:
+        """List mail seeds, optionally filtered by owner and/or unprocessed status."""
+        col = self.db.collection("mail_seeds")
+        query = col
+        if owner_employee_id is not None:
+            query = query.where("owner_employee_id", "==", owner_employee_id)
+        if unprocessed_only:
+            query = query.where("processed", "==", False)
+        docs = query.stream()
+        mails: list[MailSeed] = []
+        for doc in docs:
+            data = doc.to_dict() if hasattr(doc, "to_dict") else None
+            if data:
+                mails.append(MailSeed.from_dict(data))
+        return mails
+
+    # -------------------------------------------------------------------------
+    # Card operations (cards collection)
+    # -------------------------------------------------------------------------
+
+    def save_card(self, card: Card) -> None:
+        """Save or update a secretary card."""
+        doc_ref = self.db.collection("cards").document(card.card_id)
+        doc_ref.set(card.to_dict())
+
+    def get_card(self, card_id: str) -> Card | None:
+        """Retrieve a card by card_id."""
+        doc = self.db.collection("cards").document(card_id).get()
+        if hasattr(doc, "exists") and not doc.exists:
+            return None
+        data = doc.to_dict() if hasattr(doc, "to_dict") else None
+        if not data:
+            return None
+        return Card.from_dict(data)
+
+    def list_cards(
+        self, owner_employee_id: str | None = None, status: str | None = None
+    ) -> list[Card]:
+        """List cards, optionally filtered by owner_employee_id and/or status."""
+        col = self.db.collection("cards")
+        query = col
+        if owner_employee_id is not None:
+            query = query.where("owner_employee_id", "==", owner_employee_id)
+        if status is not None:
+            query = query.where("status", "==", status)
+        docs = query.stream()
+        cards: list[Card] = []
+        for doc in docs:
+            data = doc.to_dict() if hasattr(doc, "to_dict") else None
+            if data:
+                cards.append(Card.from_dict(data))
+        return cards
+
+    def find_open_card_for_task(self, owner_employee_id: str, task_id: str) -> Card | None:
+        """Find an open stagnation card for the given task and owner."""
+        col = self.db.collection("cards")
+        docs = (
+            col.where("owner_employee_id", "==", owner_employee_id)
+            .where("type", "==", "stagnation")
+            .where("status", "==", "open")
+            .where("payload.task_id", "==", task_id)
+            .limit(1)
+            .stream()
+        )
+        for doc in docs:
+            data = doc.to_dict() if hasattr(doc, "to_dict") else None
+            if data:
+                return Card.from_dict(data)
+        return None
+
+    def find_cards_for_task(self, owner_employee_id: str, task_id: str) -> list[Card]:
+        """Find all stagnation cards for the given task and owner."""
+        col = self.db.collection("cards")
+        docs = (
+            col.where("owner_employee_id", "==", owner_employee_id)
+            .where("type", "==", "stagnation")
+            .where("payload.task_id", "==", task_id)
+            .stream()
+        )
+        cards: list[Card] = []
+        for doc in docs:
+            data = doc.to_dict() if hasattr(doc, "to_dict") else None
+            if data:
+                cards.append(Card.from_dict(data))
+        return cards
+
     def clear(self) -> None:
-        """Clear all stored data across agents, profiles, and messages collections."""
-        for col_name in ("agents", "profiles", "messages"):
+        """Clear all stored data across all collections."""
+        for col_name in ("agents", "profiles", "messages", "tasks", "schedules", "mail_seeds", "cards"):
             col = self.db.collection(col_name)
             docs = col.stream()
             for doc in docs:

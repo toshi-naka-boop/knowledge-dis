@@ -25,7 +25,9 @@ from knowledge_discovery.models import (
     ConnectionDetails,
     ConnectionInferenceResult,
     FunnelCandidate,
+    PreviewCandidate,
     Profile,
+    ProfileItem,
 )
 
 
@@ -214,15 +216,98 @@ class MatchingEngine:
         self.funnel_limit = funnel_limit
 
     def compute_profile_embedding(self, profile: Profile) -> list[float]:
-        """Compute and set embedding for a profile using all item bodies (public + private).
+        """Compute and set embedding and embedding_public for a profile.
 
-        Name/role/item keys are excluded: they dilute the similarity between the
-        question and the item bodies that actually carry the matching signal.
+        - embedding: generated from all items (public + private).
+        - embedding_public: generated from only public items (preview search §14.4).
         """
         item_text = " ".join(item.body for item in profile.items)
         emb = self.embedder.embed(item_text)
         profile.embedding = emb
+
+        public_items = [item for item in profile.items if item.visibility == "public"]
+        public_item_text = " ".join(item.body for item in public_items)
+        emb_pub = self.embedder.embed(public_item_text)
+        profile.embedding_public = emb_pub
+
         return emb
+
+    def preview_search(
+        self,
+        question: str,
+        registered_agents: list[Agent],
+        profiles: dict[str, Profile],
+        max_candidates: int = 3,
+        exclude_employee_id: str | None = None,
+    ) -> list[PreviewCandidate]:
+        """Execute pure, candidate-isolated preview search (public only, no side effects, §14.4).
+
+        Strict Rules:
+        1. 1st stage vector ranking strictly targets embedding_public.
+        2. VECTOR_FLOOR is NOT applied to preview.
+        3. 2nd stage inference receives ONLY a public-items view of the profile.
+        4. Completely pure: zero message dispatch, zero notifications, zero candidate trace.
+        """
+        q_emb = self.embedder.embed(question)
+        active_agents = [
+            a for a in registered_agents
+            if a.active and (exclude_employee_id is None or a.employee_id != exclude_employee_id)
+        ]
+
+        # 1st stage: rank by embedding_public
+        ranked: list[tuple[Agent, Profile, float]] = []
+        for agent in active_agents:
+            prof = profiles.get(agent.employee_id)
+            if prof is None:
+                continue
+            if prof.embedding_public is None:
+                self.compute_profile_embedding(prof)
+            sim = self.embedder.similarity(q_emb, prof.embedding_public or [])
+            ranked.append((agent, prof, sim))
+
+        # Sort descending by vector similarity
+        ranked.sort(key=lambda x: x[2], reverse=True)
+
+        candidates: list[PreviewCandidate] = []
+        for agent, prof, sim in ranked:
+            # Build strictly public-only profile context for isolated Stage-2 inference (C-26/X-1)
+            public_items = [
+                ProfileItem(
+                    key=item.key,
+                    body=item.body,
+                    source=item.source,
+                    visibility="public",
+                    reviewed=item.reviewed,
+                )
+                for item in prof.items
+                if item.visibility == "public"
+            ]
+            public_prof = Profile(
+                employee_id=prof.employee_id,
+                name=prof.name,
+                role=prof.role,
+                items=public_items,
+                embedding=prof.embedding_public,
+                embedding_public=prof.embedding_public,
+            )
+
+            res = self.inferencer.infer_connection(question, public_prof)
+            if res.connection is not None and res.connection.score >= self.connection_threshold:
+                # Cited item keys must only come from public items
+                safe_cited = [k for k in res.cited_item_keys if public_prof.get_item(k) is not None]
+                candidates.append(
+                    PreviewCandidate(
+                        employee_id=prof.employee_id,
+                        name=prof.name,
+                        reason_text=res.connection.reason_text,
+                        cited_item_keys=safe_cited,
+                        score=res.connection.score,
+                    )
+                )
+                if len(candidates) >= max_candidates:
+                    break
+
+        return candidates
 
     def screen_funnel(self, question: str, all_profiles: list[Profile]) -> list[FunnelCandidate]:
         """Track 1: Screen funnel ranking top 20 across all profiles for scale display (C-16)."""

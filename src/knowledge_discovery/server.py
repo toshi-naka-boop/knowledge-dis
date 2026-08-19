@@ -19,6 +19,7 @@ from typing import Any
 
 from knowledge_discovery.matching import DeterministicEmbedder, FakeConnectionInferencer, MatchingEngine
 from knowledge_discovery.models import Attachment
+from knowledge_discovery.secretary import SecretaryService
 from knowledge_discovery.service import KnowledgeDiscoveryService
 from knowledge_discovery.store import InMemoryStore, Store
 
@@ -98,6 +99,22 @@ class ConsentRequest(BaseModel):  # type: ignore[misc]
     decision: str = Field(..., description="Consent decision: 'granted' or 'declined'")
     reason_text: str = Field(default="", description="Optional note or decline reason")
     attachment: AttachmentModel | None = Field(default=None, description="Optional attachment")
+
+
+class SweepRequest(BaseModel):  # type: ignore[misc]
+    demo_today: str | None = Field(default=None, description="Optional ISO date (YYYY-MM-DD) to override today")
+
+
+class ConfirmCardRequest(BaseModel):  # type: ignore[misc]
+    card_id: str = Field(..., description="ID of the stagnation card to confirm")
+    edited_question: str = Field(..., description="Inquiry question (AI draft or user edited)")
+
+
+class ProfileDiffReviewRequest(BaseModel):  # type: ignore[misc]
+    action: str = Field(..., description="'apply' | 'edit_apply' | 'private_apply' | 'dismiss'")
+    edited_body: str | None = Field(default=None, description="Optional edited body text for edit_apply")
+    item_key: str | None = Field(default=None, description="Optional custom key for profile item")
+
 
 
 # -----------------------------------------------------------------------------
@@ -414,6 +431,71 @@ def create_app(
             },
             "records": records,
         }
+
+    secretary_service = SecretaryService(
+        store=store,
+        kd_service=service,
+        matching_engine=service.matching_engine,
+    )
+
+    # -------------------------------------------------------------------------
+    # Secretary Endpoints (§14)
+    # -------------------------------------------------------------------------
+
+    @app.post("/api/secretary/sweep", dependencies=[Depends(verify_api_key)])
+    def run_secretary_sweep(
+        req: SweepRequest | None = None,
+        demo_today: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        """Execute proactive secretary sweep across all tasks and mail seeds (§14.1)."""
+        target_today = (req.demo_today if req and req.demo_today else None) or demo_today
+        return secretary_service.run_sweep(demo_today=target_today)
+
+    @app.get("/api/secretary/digest", dependencies=[Depends(verify_api_key)])
+    def get_morning_digest(
+        employee_id: str = Query(..., description="Employee ID"),
+        demo_today: str | None = Query(default=None, description="Optional base date override"),
+    ) -> dict[str, Any]:
+        """Retrieve dynamic morning digest for employee (§14.2, §14.8)."""
+        return secretary_service.get_morning_digest(
+            employee_id=employee_id, demo_today=demo_today
+        )
+
+    @app.post("/api/secretary/confirm", dependencies=[Depends(verify_api_key)])
+    def confirm_stagnation_card(req: ConfirmCardRequest) -> dict[str, Any]:
+        """Confirm a stagnation card and dispatch discovery query (§14.4)."""
+        try:
+            return secretary_service.confirm_stagnation_card(
+                card_id=req.card_id,
+                edited_question=req.edited_question,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+    @app.post("/api/secretary/profile-diff/{card_id}/review", dependencies=[Depends(verify_api_key)])
+    def review_profile_diff(card_id: str, req: ProfileDiffReviewRequest) -> dict[str, Any]:
+        """Review profile diff proposal with 4 choices (§14.5)."""
+        try:
+            return secretary_service.review_profile_diff(
+                card_id=card_id,
+                action=req.action,
+                edited_body=req.edited_body,
+                item_key=req.item_key,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+    @app.post("/api/secretary/cards/{card_id}/dismiss", dependencies=[Depends(verify_api_key)])
+    def dismiss_secretary_card(card_id: str) -> dict[str, Any]:
+        """Dismiss a secretary card (§14.2)."""
+        try:
+            return secretary_service.dismiss_card(card_id=card_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
     @app.post("/api/probe/unregistered-intent", dependencies=[Depends(verify_api_key)])
     def probe_unregistered_intent() -> dict[str, Any]:

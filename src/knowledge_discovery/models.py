@@ -113,6 +113,7 @@ class Profile:
         role: Job role / title.
         items: List of ProfileItem objects.
         embedding: Vector embedding generated from all items (public + private).
+        embedding_public: Vector embedding generated from only public items (preview search §14.4).
     """
 
     employee_id: str
@@ -120,6 +121,7 @@ class Profile:
     role: str
     items: list[ProfileItem] = field(default_factory=list)
     embedding: list[float] | None = None
+    embedding_public: list[float] | None = None
 
     def get_item(self, key: str) -> ProfileItem | None:
         """Find profile item by its key."""
@@ -147,6 +149,14 @@ class Profile:
             parts.append(f"{item.key}: {item.body}")
         return "\n".join(parts)
 
+    def get_public_text(self) -> str:
+        """Combine only public profile items into text for public embedding."""
+        parts = [f"{self.name} - {self.role}"]
+        for item in self.items:
+            if item.visibility == "public":
+                parts.append(f"{item.key}: {item.body}")
+        return "\n".join(parts)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "employee_id": self.employee_id,
@@ -154,6 +164,7 @@ class Profile:
             "role": self.role,
             "items": [item.to_dict() for item in self.items],
             "embedding": list(self.embedding) if self.embedding is not None else None,
+            "embedding_public": list(self.embedding_public) if self.embedding_public is not None else None,
         }
 
     @classmethod
@@ -169,6 +180,7 @@ class Profile:
             role=data.get("role", ""),
             items=items,
             embedding=data.get("embedding"),
+            embedding_public=data.get("embedding_public"),
         )
 
 
@@ -309,3 +321,215 @@ class RequesterCandidateStatus:
     meeting_duration: int | None = None
     decline_reason: str | None = None
     attachment: dict[str, Any] | None = None
+
+
+@dataclass
+class Task:
+    """Task entity for secretary stagnation detection (§14.2).
+
+    Attributes:
+        task_id: Unique task identifier.
+        owner_employee_id: Identifier of the employee owning this task.
+        title: Task title.
+        description: Detailed task description.
+        status: 'todo' | 'in_progress' | 'done'.
+        due_date: Due date in ISO format (YYYY-MM-DD).
+        created_at: ISO8601 creation timestamp.
+        last_updated_at: ISO8601 last updated timestamp.
+        reschedule_count: Number of times this task has been rescheduled.
+        status_changed_at: ISO8601 timestamp of last status change.
+    """
+
+    task_id: str
+    owner_employee_id: str
+    title: str
+    description: str = ""
+    status: str = "todo"  # "todo" | "in_progress" | "done"
+    due_date: str = ""
+    created_at: str = field(default_factory=utc_now_iso)
+    last_updated_at: str = field(default_factory=utc_now_iso)
+    reschedule_count: int = 0
+    status_changed_at: str = field(default_factory=utc_now_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "owner_employee_id": self.owner_employee_id,
+            "title": self.title,
+            "description": self.description,
+            "status": self.status,
+            "due_date": self.due_date,
+            "created_at": self.created_at,
+            "last_updated_at": self.last_updated_at,
+            "reschedule_count": self.reschedule_count,
+            "status_changed_at": self.status_changed_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Task:
+        return cls(
+            task_id=data["task_id"],
+            owner_employee_id=data["owner_employee_id"],
+            title=data.get("title", ""),
+            description=data.get("description", ""),
+            status=data.get("status", "todo"),
+            due_date=data.get("due_date", ""),
+            created_at=data.get("created_at", utc_now_iso()),
+            last_updated_at=data.get("last_updated_at", utc_now_iso()),
+            reschedule_count=int(data.get("reschedule_count", 0)),
+            status_changed_at=data.get("status_changed_at", utc_now_iso()),
+        )
+
+
+@dataclass
+class Schedule:
+    """Schedule reminder entity for morning digest (§14.2).
+
+    Attributes:
+        item_id: Unique schedule identifier.
+        owner_employee_id: Identifier of the employee.
+        kind: 'expense_deadline' | 'weekly_report' | 'monthly_report' |
+              'meeting_prep' | 'meeting_review' | 'journal'.
+        title: Schedule title / description.
+        due_date: Due date in ISO format (YYYY-MM-DD).
+    """
+
+    item_id: str
+    owner_employee_id: str
+    kind: str
+    title: str
+    due_date: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "item_id": self.item_id,
+            "owner_employee_id": self.owner_employee_id,
+            "kind": self.kind,
+            "title": self.title,
+            "due_date": self.due_date,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Schedule:
+        return cls(
+            item_id=data["item_id"],
+            owner_employee_id=data["owner_employee_id"],
+            kind=data.get("kind", ""),
+            title=data.get("title", ""),
+            due_date=data.get("due_date", ""),
+        )
+
+
+@dataclass
+class MailSeed:
+    """Email seed record for proactive profile diff proposals (§14.2, §14.5).
+
+    Attributes:
+        mail_id: Unique mail identifier.
+        owner_employee_id: Employee owning the mailbox.
+        subject: Mail subject line.
+        body: Mail body text.
+        received_at: ISO8601 received timestamp.
+        processed: Whether a profile diff card has been generated.
+    """
+
+    mail_id: str
+    owner_employee_id: str
+    subject: str
+    body: str
+    received_at: str = field(default_factory=utc_now_iso)
+    processed: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mail_id": self.mail_id,
+            "owner_employee_id": self.owner_employee_id,
+            "subject": self.subject,
+            "body": self.body,
+            "received_at": self.received_at,
+            "processed": self.processed,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> MailSeed:
+        return cls(
+            mail_id=data["mail_id"],
+            owner_employee_id=data["owner_employee_id"],
+            subject=data.get("subject", ""),
+            body=data.get("body", ""),
+            received_at=data.get("received_at", utc_now_iso()),
+            processed=bool(data.get("processed", False)),
+        )
+
+
+@dataclass
+class Card:
+    """Secretary card for stagnation alerts or profile diff proposals (§14.2).
+
+    Attributes:
+        card_id: Unique card identifier.
+        owner_employee_id: Identifier of the card recipient employee.
+        type: 'stagnation' | 'profile_diff'.
+        tier: 'notice' | 'request_draft' | None.
+        payload: Card payload (stagnation details or profile diff proposal).
+        status: 'open' | 'confirmed' | 'dismissed' | 'applied' | 'resolved'.
+        resolved_reason: 'task_done' | 'score_below_t1' | None.
+        linked_query_audit_id: Linked query audit_id if confirmed.
+        created_at: ISO8601 timestamp.
+        updated_at: ISO8601 timestamp.
+    """
+
+    card_id: str
+    owner_employee_id: str
+    type: str  # "stagnation" | "profile_diff"
+    tier: str | None = None  # "notice" | "request_draft" | None
+    payload: dict[str, Any] = field(default_factory=dict)
+    status: str = "open"  # "open" | "confirmed" | "dismissed" | "applied" | "resolved"
+    resolved_reason: str | None = None  # "task_done" | "score_below_t1" | None
+    linked_query_audit_id: str | None = None
+    created_at: str = field(default_factory=utc_now_iso)
+    updated_at: str = field(default_factory=utc_now_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "card_id": self.card_id,
+            "owner_employee_id": self.owner_employee_id,
+            "type": self.type,
+            "tier": self.tier,
+            "payload": dict(self.payload),
+            "status": self.status,
+            "resolved_reason": self.resolved_reason,
+            "linked_query_audit_id": self.linked_query_audit_id,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Card:
+        return cls(
+            card_id=data["card_id"],
+            owner_employee_id=data["owner_employee_id"],
+            type=data.get("type", "stagnation"),
+            tier=data.get("tier"),
+            payload=dict(data.get("payload", {})),
+            status=data.get("status", "open"),
+            resolved_reason=data.get("resolved_reason"),
+            linked_query_audit_id=data.get("linked_query_audit_id"),
+            created_at=data.get("created_at", utc_now_iso()),
+            updated_at=data.get("updated_at", utc_now_iso()),
+        )
+
+
+@dataclass
+class PreviewCandidate:
+    """Candidate identified during secretary preview search (§14.4).
+
+    Strict requirement: Generated purely using public items & embedding_public.
+    """
+
+    employee_id: str
+    name: str
+    reason_text: str
+    cited_item_keys: list[str]
+    score: float
+

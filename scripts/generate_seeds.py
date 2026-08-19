@@ -21,11 +21,21 @@ Follows design.md §3 and seed-spec.md:
 from __future__ import annotations
 
 import argparse
+from datetime import date, datetime, timedelta, timezone
+import os
 import sys
 from typing import Any
 
 from knowledge_discovery.matching import DeterministicEmbedder, Embedder
-from knowledge_discovery.models import Agent, Profile, ProfileItem
+from knowledge_discovery.models import (
+    Agent,
+    MailSeed,
+    Profile,
+    ProfileItem,
+    Schedule,
+    Task,
+    utc_now_iso,
+)
 from knowledge_discovery.store import Store
 
 
@@ -468,30 +478,160 @@ def generate_all_seeds(
     all_profiles = fixed_profiles + synthetic_profiles
     emb = embedder or DeterministicEmbedder()
 
-    # Precompute vector embeddings for all 400 profiles
+    # Precompute vector embeddings (both full and public-only) for all 400 profiles (§14.4)
     for profile in all_profiles:
         item_text = " ".join(item.body for item in profile.items)
         profile.embedding = emb.embed(item_text)
 
+        public_items = [it for it in profile.items if it.visibility == "public"]
+        public_item_text = " ".join(it.body for it in public_items)
+        profile.embedding_public = emb.embed(public_item_text)
+
     return fixed_agents, all_profiles
+
+
+def get_base_today(today_str: str | None = None) -> date:
+    """Resolve base date for relative seed calculation (§14.7)."""
+    raw = today_str or os.environ.get("DEMO_TODAY")
+    if raw:
+        try:
+            if "T" in raw:
+                return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+            return date.fromisoformat(raw.strip())
+        except (ValueError, TypeError):
+            pass
+    return datetime.now(timezone.utc).date()
+
+
+def build_m3_tasks(today_str: str | None = None) -> list[Task]:
+    """Generate M3 seed tasks for requester persona Jordan Lee (§14.2, §14.3)."""
+    ref_today = get_base_today(today_str)
+
+    # 1. Stagnant task: T2 exceeding
+    # Overdue 3d, stale 5d, reschedule 2, untouched 1, relative neglect 1 -> Score 17.0 >> T2 (7.0)
+    task_stagnant = Task(
+        task_id="task_jordan_riverside_clinic",
+        owner_employee_id="emp_jordan_lee",
+        title="Riverside Clinic Relocation Assessment",
+        description="Need to find suitable medical office site with required zoning (C-2/O-M) and parking ratios for Riverside Clinic relocation.",
+        status="todo",
+        due_date=(ref_today - timedelta(days=3)).isoformat(),
+        created_at=(ref_today - timedelta(days=10)).isoformat() + "T09:00:00Z",
+        last_updated_at=(ref_today - timedelta(days=5)).isoformat() + "T09:00:00Z",
+        reschedule_count=2,
+        status_changed_at=(ref_today - timedelta(days=10)).isoformat() + "T09:00:00Z",
+    )
+
+    # 2. Active task 1: updated 1 day ago -> triggers relative neglect for stagnant task
+    task_active1 = Task(
+        task_id="task_jordan_nurse_staffing_renewal",
+        owner_employee_id="emp_jordan_lee",
+        title="Metro General Nurse Placement Contract Renewal",
+        description="Negotiate 2026 contract terms and clinician rate cards.",
+        status="in_progress",
+        due_date=(ref_today + timedelta(days=5)).isoformat(),
+        created_at=(ref_today - timedelta(days=4)).isoformat() + "T10:00:00Z",
+        last_updated_at=(ref_today - timedelta(days=1)).isoformat() + "T14:00:00Z",
+        reschedule_count=0,
+        status_changed_at=(ref_today - timedelta(days=3)).isoformat() + "T10:00:00Z",
+    )
+
+    # 3. Active task 2
+    task_active2 = Task(
+        task_id="task_jordan_credentialing_audit",
+        owner_employee_id="emp_jordan_lee",
+        title="Allied Health Clinician Credentialing Verification",
+        description="Audit clinician files for upcoming joint commission review.",
+        status="todo",
+        due_date=(ref_today + timedelta(days=2)).isoformat(),
+        created_at=(ref_today - timedelta(days=2)).isoformat() + "T08:00:00Z",
+        last_updated_at=(ref_today - timedelta(days=2)).isoformat() + "T08:00:00Z",
+        reschedule_count=0,
+        status_changed_at=(ref_today - timedelta(days=2)).isoformat() + "T08:00:00Z",
+    )
+
+    return [task_stagnant, task_active1, task_active2]
+
+
+def build_m3_schedules(today_str: str | None = None) -> list[Schedule]:
+    """Generate M3 schedule reminders covering overdue, today, tomorrow, upcoming (§14.2)."""
+    ref_today = get_base_today(today_str)
+
+    return [
+        Schedule(
+            item_id="sched_jordan_expense",
+            owner_employee_id="emp_jordan_lee",
+            kind="expense_deadline",
+            title="Submit Monthly Travel & Client Expense Report",
+            due_date=(ref_today - timedelta(days=1)).isoformat(),
+        ),
+        Schedule(
+            item_id="sched_jordan_weekly_report",
+            owner_employee_id="emp_jordan_lee",
+            kind="weekly_report",
+            title="Submit Healthcare Staffing Weekly Activity Report",
+            due_date=ref_today.isoformat(),
+        ),
+        Schedule(
+            item_id="sched_jordan_meeting_prep",
+            owner_employee_id="emp_jordan_lee",
+            kind="meeting_prep",
+            title="Prepare Discussion Points for Client Executive Review",
+            due_date=(ref_today + timedelta(days=1)).isoformat(),
+        ),
+        Schedule(
+            item_id="sched_jordan_journal",
+            owner_employee_id="emp_jordan_lee",
+            kind="journal",
+            title="Complete Weekly Tacit Knowledge & Account Log",
+            due_date=(ref_today + timedelta(days=3)).isoformat(),
+        ),
+    ]
+
+
+def build_m3_mail_seeds(today_str: str | None = None) -> list[MailSeed]:
+    """Generate M3 mail seed for proactive profile diff proposal (§14.5)."""
+    ref_today = get_base_today(today_str)
+
+    return [
+        MailSeed(
+            mail_id="mail_jordan_clinic_mou",
+            owner_employee_id="emp_jordan_lee",
+            subject="Update on ambulatory surgery center partnership discussions",
+            body=(
+                "Hi Jordan, regarding our discussions with St. Jude ASC, we have finalized the preliminary "
+                "staffing protocol for outpatient surgical teams. We are also tracking surgical suite utilization "
+                "patterns across our regional network. Please update your records."
+            ),
+            received_at=(ref_today - timedelta(days=1)).isoformat() + "T11:00:00Z",
+            processed=False,
+        )
+    ]
 
 
 def populate_store(
     store: Store,
     embedder: Embedder | None = None,
     dry_run: bool = False,
+    today: str | None = None,
 ) -> tuple[int, int]:
-    """Populate store with seed agents and profiles.
+    """Populate store with seed agents, profiles, and Milestone 3 secretary records.
 
     Returns:
         (agent_count, profile_count)
     """
     agents, profiles = generate_all_seeds(embedder=embedder)
+    m3_tasks = build_m3_tasks(today_str=today)
+    m3_schedules = build_m3_schedules(today_str=today)
+    m3_mail_seeds = build_m3_mail_seeds(today_str=today)
 
     if dry_run:
         print(f"=== DRY RUN: Seed Data Summary ===")
-        print(f"Total Agents to register: {len(agents)}")
-        print(f"Total Profiles to store:   {len(profiles)}")
+        print(f"Total Agents to register:  {len(agents)}")
+        print(f"Total Profiles to store:    {len(profiles)}")
+        print(f"Total M3 Tasks to store:    {len(m3_tasks)}")
+        print(f"Total M3 Schedules to store:{len(m3_schedules)}")
+        print(f"Total M3 MailSeeds to store:{len(m3_mail_seeds)}")
         print("\n--- Registered Agents (4) ---")
         for a in agents:
             print(f"  • {a.agent_id}: {a.display_name} (employee_id={a.employee_id}, active={a.active})")
@@ -512,7 +652,20 @@ def populate_store(
     for p in profiles:
         store.save_profile(p)
 
-    print(f"Successfully populated store with {len(agents)} agents and {len(profiles)} profiles.")
+    # Save M3 secretary seeds
+    for t in m3_tasks:
+        store.save_task(t)
+
+    for s in m3_schedules:
+        store.save_schedule(s)
+
+    for m in m3_mail_seeds:
+        store.save_mail_seed(m)
+
+    print(
+        f"Successfully populated store with {len(agents)} agents, {len(profiles)} profiles, "
+        f"{len(m3_tasks)} tasks, {len(m3_schedules)} schedules, and {len(m3_mail_seeds)} mail seeds."
+    )
     return len(agents), len(profiles)
 
 
@@ -523,6 +676,12 @@ def main() -> None:
     parser.add_argument("--use-firestore", action="store_true", help="Write to live Firestore instance.")
     parser.add_argument("--project", type=str, default=None, help="Google Cloud project ID.")
     parser.add_argument("--database", type=str, default=None, help="Firestore database ID.")
+    parser.add_argument(
+        "--today",
+        type=str,
+        default=None,
+        help="Base date for relative seed generation (YYYY-MM-DD). Defaults to DEMO_TODAY or today.",
+    )
     parser.add_argument(
         "--embedder",
         choices=["deterministic", "gemini"],
@@ -540,11 +699,11 @@ def main() -> None:
     if args.dry_run or not args.use_firestore:
         from knowledge_discovery.store import InMemoryStore
         store = InMemoryStore()
-        populate_store(store, dry_run=args.dry_run, embedder=embedder)
+        populate_store(store, dry_run=args.dry_run, embedder=embedder, today=args.today)
     else:
         from knowledge_discovery.firestore_store import FirestoreStore
         store = FirestoreStore(project=args.project, database=args.database)
-        populate_store(store, dry_run=False, embedder=embedder)
+        populate_store(store, dry_run=False, embedder=embedder, today=args.today)
 
 
 if __name__ == "__main__":

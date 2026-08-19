@@ -11,7 +11,15 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import Any
 
-from knowledge_discovery.models import Agent, Message, Profile
+from knowledge_discovery.models import (
+    Agent,
+    Card,
+    MailSeed,
+    Message,
+    Profile,
+    Schedule,
+    Task,
+)
 
 
 class Store(ABC):
@@ -75,6 +83,84 @@ class Store(ABC):
         """Retrieve messages involving the given entity (as sender, recipient, or participant)."""
         pass
 
+    # Task operations (tasks collection §14.2)
+    @abstractmethod
+    def save_task(self, task: Task) -> None:
+        """Save or update a task record."""
+        pass
+
+    @abstractmethod
+    def get_task(self, task_id: str) -> Task | None:
+        """Retrieve a task by task_id."""
+        pass
+
+    @abstractmethod
+    def list_tasks(self, owner_employee_id: str | None = None) -> list[Task]:
+        """List tasks, optionally filtered by owner_employee_id."""
+        pass
+
+    # Schedule operations (schedules collection §14.2)
+    @abstractmethod
+    def save_schedule(self, schedule: Schedule) -> None:
+        """Save or update a schedule reminder."""
+        pass
+
+    @abstractmethod
+    def get_schedule(self, item_id: str) -> Schedule | None:
+        """Retrieve a schedule by item_id."""
+        pass
+
+    @abstractmethod
+    def list_schedules(self, owner_employee_id: str | None = None) -> list[Schedule]:
+        """List schedules, optionally filtered by owner_employee_id."""
+        pass
+
+    # MailSeed operations (mail_seeds collection §14.2, §14.5)
+    @abstractmethod
+    def save_mail_seed(self, mail: MailSeed) -> None:
+        """Save or update an email seed record."""
+        pass
+
+    @abstractmethod
+    def get_mail_seed(self, mail_id: str) -> MailSeed | None:
+        """Retrieve an email seed by mail_id."""
+        pass
+
+    @abstractmethod
+    def list_mail_seeds(
+        self, owner_employee_id: str | None = None, unprocessed_only: bool = False
+    ) -> list[MailSeed]:
+        """List mail seeds, optionally filtered by owner and/or unprocessed status."""
+        pass
+
+    # Card operations (cards collection §14.2)
+    @abstractmethod
+    def save_card(self, card: Card) -> None:
+        """Save or update a secretary card."""
+        pass
+
+    @abstractmethod
+    def get_card(self, card_id: str) -> Card | None:
+        """Retrieve a card by card_id."""
+        pass
+
+    @abstractmethod
+    def list_cards(
+        self, owner_employee_id: str | None = None, status: str | None = None
+    ) -> list[Card]:
+        """List cards, optionally filtered by owner_employee_id and/or status."""
+        pass
+
+    @abstractmethod
+    def find_open_card_for_task(self, owner_employee_id: str, task_id: str) -> Card | None:
+        """Find an open stagnation card for the given task and owner."""
+        pass
+
+    @abstractmethod
+    def find_cards_for_task(self, owner_employee_id: str, task_id: str) -> list[Card]:
+        """Find all stagnation cards for the given task and owner."""
+        pass
+
     @abstractmethod
     def clear(self) -> None:
         """Clear all stored data (useful for test isolation)."""
@@ -89,10 +175,13 @@ class InMemoryStore(Store):
         self._profiles: dict[str, Profile] = {}
         self._messages: list[Message] = []
         self._messages_by_id: dict[str, Message] = {}
+        self._tasks: dict[str, Task] = {}
+        self._schedules: dict[str, Schedule] = {}
+        self._mail_seeds: dict[str, MailSeed] = {}
+        self._cards: dict[str, Card] = {}
 
     def save_agent(self, agent: Agent) -> None:
         """Save or update an agent record in the registry."""
-        # Store a deepcopy to avoid external mutable state side-effects
         stored = deepcopy(agent)
         self._agents[stored.agent_id] = stored
 
@@ -133,7 +222,6 @@ class InMemoryStore(Store):
         """Save or update a message record."""
         stored = deepcopy(message)
         if stored.audit_id in self._messages_by_id:
-            # Update existing message in list and dict
             for idx, existing in enumerate(self._messages):
                 if existing.audit_id == stored.audit_id:
                     self._messages[idx] = stored
@@ -167,9 +255,103 @@ class InMemoryStore(Store):
                 results.append(deepcopy(msg))
         return results
 
+    # Task operations
+    def save_task(self, task: Task) -> None:
+        stored = deepcopy(task)
+        self._tasks[stored.task_id] = stored
+
+    def get_task(self, task_id: str) -> Task | None:
+        task = self._tasks.get(task_id)
+        return deepcopy(task) if task is not None else None
+
+    def list_tasks(self, owner_employee_id: str | None = None) -> list[Task]:
+        tasks = list(self._tasks.values())
+        if owner_employee_id is not None:
+            tasks = [t for t in tasks if t.owner_employee_id == owner_employee_id]
+        return [deepcopy(t) for t in tasks]
+
+    # Schedule operations
+    def save_schedule(self, schedule: Schedule) -> None:
+        stored = deepcopy(schedule)
+        self._schedules[stored.item_id] = stored
+
+    def get_schedule(self, item_id: str) -> Schedule | None:
+        s = self._schedules.get(item_id)
+        return deepcopy(s) if s is not None else None
+
+    def list_schedules(self, owner_employee_id: str | None = None) -> list[Schedule]:
+        schedules = list(self._schedules.values())
+        if owner_employee_id is not None:
+            schedules = [s for s in schedules if s.owner_employee_id == owner_employee_id]
+        return [deepcopy(s) for s in schedules]
+
+    # MailSeed operations
+    def save_mail_seed(self, mail: MailSeed) -> None:
+        stored = deepcopy(mail)
+        self._mail_seeds[stored.mail_id] = stored
+
+    def get_mail_seed(self, mail_id: str) -> MailSeed | None:
+        m = self._mail_seeds.get(mail_id)
+        return deepcopy(m) if m is not None else None
+
+    def list_mail_seeds(
+        self, owner_employee_id: str | None = None, unprocessed_only: bool = False
+    ) -> list[MailSeed]:
+        mails = list(self._mail_seeds.values())
+        if owner_employee_id is not None:
+            mails = [m for m in mails if m.owner_employee_id == owner_employee_id]
+        if unprocessed_only:
+            mails = [m for m in mails if not m.processed]
+        return [deepcopy(m) for m in mails]
+
+    # Card operations
+    def save_card(self, card: Card) -> None:
+        stored = deepcopy(card)
+        self._cards[stored.card_id] = stored
+
+    def get_card(self, card_id: str) -> Card | None:
+        c = self._cards.get(card_id)
+        return deepcopy(c) if c is not None else None
+
+    def list_cards(
+        self, owner_employee_id: str | None = None, status: str | None = None
+    ) -> list[Card]:
+        cards = list(self._cards.values())
+        if owner_employee_id is not None:
+            cards = [c for c in cards if c.owner_employee_id == owner_employee_id]
+        if status is not None:
+            cards = [c for c in cards if c.status == status]
+        return [deepcopy(c) for c in cards]
+
+    def find_open_card_for_task(self, owner_employee_id: str, task_id: str) -> Card | None:
+        for c in self._cards.values():
+            if (
+                c.owner_employee_id == owner_employee_id
+                and c.type == "stagnation"
+                and c.status == "open"
+                and c.payload.get("task_id") == task_id
+            ):
+                return deepcopy(c)
+        return None
+
+    def find_cards_for_task(self, owner_employee_id: str, task_id: str) -> list[Card]:
+        results: list[Card] = []
+        for c in self._cards.values():
+            if (
+                c.owner_employee_id == owner_employee_id
+                and c.type == "stagnation"
+                and c.payload.get("task_id") == task_id
+            ):
+                results.append(deepcopy(c))
+        return results
+
     def clear(self) -> None:
         """Clear all stored data."""
         self._agents.clear()
         self._profiles.clear()
         self._messages.clear()
         self._messages_by_id.clear()
+        self._tasks.clear()
+        self._schedules.clear()
+        self._mail_seeds.clear()
+        self._cards.clear()
