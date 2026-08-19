@@ -7,7 +7,7 @@
   "approvedAt": "2026-08-19T10:30:00+09:00",
   "approvalEvidence": "v9:9df6a687bb7b 承認",
   "requiredApprovalFingerprint": "v9:9df6a687bb7b",
-  "baseline": "4f0a856768de17b014af65b2bf3160a2db94156d",
+  "baseline": "360f2617999b9c9bb52147f44b4d436a63c36b15",
   "criticRound": 7,
   "openIssueIds": [],
   "requiredReads": [
