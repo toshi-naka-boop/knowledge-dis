@@ -1,5 +1,5 @@
 {
-  "currentNode": "実装",
+  "currentNode": "反証",
   "status": "in_progress",
   "designVersion": "v9",
   "approvedDesignVersion": "v9",
@@ -8,16 +8,16 @@
   "approvalEvidence": "v9:9df6a687bb7b 承認",
   "requiredApprovalFingerprint": "v9:9df6a687bb7b",
   "baseline": "360f2617999b9c9bb52147f44b4d436a63c36b15",
-  "criticRound": 7,
+  "criticRound": 8,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "M3実装（A段: Cloud Run同居。design.md §14・ゴール12〜18）を委譲実行→完了条件は呼び出し側が検証→反証round-8",
+  "nextAction": "反証round-8実行中（正しさ/安全性=design-critic、過剰実装=codex）。指摘のルーティング後、A段完了→デモ準備へ",
   "delegation": {
     "批評": "claude-opus-5[1m] design-critic + codex/gpt-5.6-sol xhigh（round-7クロスベンダー）",
-    "実装": "antigravity/gemini-3.7-flash-high（agy models出力から選定。批評側Claudeとのクロスベンダー独立性を優先）"
+    "実装": "antigravity/gemini-3.7-flash-high（M1/M2/M3 build）＋claude/sonnet（M3テスト補完）"
   },
   "lastUpdated": "2026-08-19"
 }
