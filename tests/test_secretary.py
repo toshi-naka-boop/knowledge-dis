@@ -831,6 +831,56 @@ class TestLLMClientWiring(SecretaryTestBase):
         diff_cards = [c for c in self.store.list_cards(status="open") if c.type == "profile_diff"]
         self.assertEqual(len(diff_cards), 0)
 
+    def test_llm_failure_leaves_mail_unprocessed_and_next_sweep_retries(self) -> None:
+        # R-2: an LLM failure (exception or empty response) must not consume the
+        # mail seed as if it were an explicit "no diff" — the next sweep retries.
+        def failing(contents: str) -> str:
+            if "extract a suggested profile item" in contents:
+                raise RuntimeError("api down")
+            return "null"
+
+        fake_llm = FakeLLMClient(failing)
+        secretary = SecretaryService(
+            store=self.store,
+            kd_service=self.kd_service,
+            matching_engine=self.matching_engine,
+            llm_client=fake_llm,
+            t1=3.0,
+            t2=7.0,
+        )
+        mail = MailSeed(
+            mail_id="mail_llm_fail",
+            owner_employee_id="emp_owner",
+            subject="Zoning update",
+            body="Confidential client detail that must not be pasted verbatim.",
+            processed=False,
+        )
+        self.store.save_mail_seed(mail)
+
+        secretary.run_sweep(demo_today=TODAY_STR)
+
+        reloaded = self.store.get_mail_seed("mail_llm_fail")
+        self.assertFalse(reloaded.processed, "failure must leave the mail retryable")
+        diff_cards = [c for c in self.store.list_cards(status="open") if c.type == "profile_diff"]
+        self.assertEqual(len(diff_cards), 0, "no heuristic mail-paste card on failure")
+
+        # Same for an empty response (API hiccup, not a deliberate null).
+        fake_llm._respond = lambda contents: ""
+        secretary.run_sweep(demo_today=TODAY_STR)
+        self.assertFalse(self.store.get_mail_seed("mail_llm_fail").processed)
+
+        # Recovery: once the LLM answers, the retried mail yields a card.
+        fake_llm._respond = lambda contents: (
+            '{"item_key": "expertise", "body_draft": "Zoning negotiation experience."}'
+            if "extract a suggested profile item" in contents
+            else "null"
+        )
+        secretary.run_sweep(demo_today=TODAY_STR)
+        self.assertTrue(self.store.get_mail_seed("mail_llm_fail").processed)
+        diff_cards = [c for c in self.store.list_cards(status="open") if c.type == "profile_diff"]
+        self.assertEqual(len(diff_cards), 1)
+        self.assertEqual(diff_cards[0].payload["item_key"], "expertise")
+
 
 if __name__ == "__main__":
     unittest.main()

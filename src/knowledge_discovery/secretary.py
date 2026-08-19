@@ -221,6 +221,11 @@ def generate_question_draft(task: Task, llm_client: Any | None = None) -> str:
     return fallback
 
 
+# Sentinel: LLM was configured but unreachable / returned garbage. Distinct from
+# None ("no diff") so the caller can leave the mail unconsumed and retry (R-2).
+EXTRACTION_FAILED = object()
+
+
 def extract_profile_diff(
     mail: MailSeed,
     current_profile: Profile | None = None,
@@ -255,11 +260,15 @@ If no meaningful knowledge is found, return null."""
             resp_text = response.text.strip() if hasattr(response, "text") and response.text else ""
             cleaned = re.sub(r"^```(?:json)?\s*", "", resp_text)
             cleaned = re.sub(r"\s*```$", "", cleaned).strip()
-            if not cleaned or cleaned == "null":
+            if cleaned == "null":
                 # Explicit "no diff": LLM was reachable and deliberately found
                 # nothing worth proposing. Do NOT fall through to the heuristic
                 # (design §14.5-1: null must be expressible; V-8/S-6).
                 return None
+            if not cleaned:
+                # Empty response is an API failure, not a deliberate null.
+                # Leave the mail unconsumed so the next sweep retries (R-2).
+                return EXTRACTION_FAILED
             data = json.loads(cleaned)
             if isinstance(data, dict) and "body_draft" in data:
                 key = data.get("item_key", "current_work")
@@ -268,12 +277,12 @@ If no meaningful knowledge is found, return null."""
                     return key, body
             return None
         except Exception:
-            # LLM call/parse failed: fall through to the heuristic fallback below
-            # (design: heuristic is a failure-only fallback, never the default path).
-            pass
+            # LLM call/parse failed. Do NOT copy mail text as a fallback (that
+            # re-opens S-6) and do NOT consume the mail — retry next sweep (R-2).
+            return EXTRACTION_FAILED
 
-    # Heuristic extraction fallback (reached only when llm_client is None, or the
-    # LLM call above raised — never the default path, V-8/S-6).
+    # Heuristic extraction fallback (reached only when llm_client is None,
+    # e.g. a local demo without GEMINI_API_KEY — never the default path, V-8/S-6).
     subj = mail.subject.strip()
     body = mail.body.strip()
     if len(body) > 10:
@@ -546,6 +555,10 @@ class SecretaryService:
         for mail in unprocessed_mails:
             owner_prof = self.store.get_profile(mail.owner_employee_id)
             diff_res = extract_profile_diff(mail, owner_prof, llm_client=self.llm_client)
+
+            if diff_res is EXTRACTION_FAILED:
+                # LLM failure: leave processed=False so the next sweep retries (R-2)
+                continue
 
             if diff_res is not None:
                 item_key, body_draft = diff_res

@@ -88,7 +88,14 @@
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 12px;">
-        <span class="badge">Requester: Jordan Lee (Staffing)</span>
+        <!-- Demo device: same one-person-plays-all dropdown as candidate.html (README: demo simplification). R-1 -->
+        <select id="requesterSelect" class="badge" onchange="switchRequester(this.value)" title="Demo: switch whose screen you are viewing">
+          <option value="emp_jordan_lee" selected>Jordan Lee (Staffing)</option>
+          <option value="emp_marcus_delgado">Marcus Delgado</option>
+          <option value="emp_rachel_kim">Rachel Kim</option>
+          <option value="emp_elena_vasquez">Elena Vasquez</option>
+          <option value="emp_tom_whitfield">Tom Whitfield</option>
+        </select>
         <div class="nav-links">
           <a href="/requester" class="active">Requester</a>
           <a href="/candidate">Candidate</a>
@@ -167,7 +174,13 @@
     function esc(v) {
       return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     }
-    const REQUESTER_ID = "emp_jordan_lee";
+    let REQUESTER_ID = "emp_jordan_lee";
+
+    function switchRequester(id) {
+      REQUESTER_ID = id;
+      fetchDigest();
+      fetchStatuses();
+    }
     let pollInterval = null;
 
     const DEMO_QUESTIONS = {
