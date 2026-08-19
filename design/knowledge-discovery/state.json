@@ -1,6 +1,6 @@
 {
-  "currentNode": "完了",
-  "status": "done",
+  "currentNode": "設計",
+  "status": "in_progress",
   "designVersion": "v7",
   "approvedDesignVersion": "v7",
   "approvedDesignSha256": "0f4dde9369f9ca748922f1ef093c2c0ab43f5d1cfab6e70f286af244e1478da0",
@@ -14,10 +14,10 @@
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "design-loop完了（設計v7承認・実装M1/M2・反証round-6クローズ・Cloud Run本番稼働）。残タスクはループ外の提出物制作: デモ台本→動画(3分英語)→アーキ図→英語write-up→Devpost提出。8/29機能凍結・8/31 17:00 PDT締切",
+  "nextAction": "spec v7（秘書層M3）を受けて design.md 追補を起草→批評1巡→M3実装（Cloud Run同居→GEAP Agent Runtime載せ替えの2段構え）。8/29機能凍結・8/31 17:00 PDT締切",
   "delegation": {
     "批評": "claude-opus-5[1m] design-critic（round-4, round-5）",
     "実装": "antigravity/gemini-3.7-flash-high（agy models出力から選定。批評側Claudeとのクロスベンダー独立性を優先）"
   },
-  "lastUpdated": "2026-08-18"
+  "lastUpdated": "2026-08-19"
 }
