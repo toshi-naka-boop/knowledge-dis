@@ -1,5 +1,14 @@
 # ledger: knowledge-discovery
 
+## 反証round-9（round-8修正のクローズ検証）の帰結 — 2026-08-19
+
+原文: reviews/round-9.md（critic: claude design-critic = claude-opus-5[1m]、fresh）。**round-8の10論点は10/10クローズ確認**（high 3件は原文の破綻シナリオ再実行で再現消滅を実測）。新規2件はメインループ（Claude Fable 5）が直接修正し、テスト84件全パス:
+
+- **R-1（設計/high・受理）**: V-10修正の副作用で差分提案カードが不可視（digestがJordan固定、mail所有者はMarcus） → requester.htmlに**candidate.htmlと同一のデモ用1人切替ドロップダウン**を追加（round-6 S-3で意図的仕様として受理済みの機構の踏襲。design §14.8はUIの人物固定を規定しないため実装レベルで解決、design改訂・再承認なし）
+- **R-2（実装/mid・受理）**: LLM失敗（例外・空応答）を「差分なし」と同一視しmailを無音消費 → `EXTRACTION_FAILED` sentinelで三値化（差分あり/明示null/失敗）。失敗時はprocessed=Falseのまま次回sweepで再試行。失敗時のヒューリスティック（メール本文コピー）も廃止（S-6残滓の完全閉塞。ヒューリスティックはllm_client未設定の環境のみ）。回帰テスト追加（失敗→未消費→復旧の一連）
+
+M3（秘書プロアクティブ層・A段）の反証工程はこれで収束。ループ外残タスク: デプロイ＋シード再投入、Cloud Schedulerジョブ設置（ゴール18）、B段載せ替え判断（8/27期限）、デモ台本。
+
 ## 反証round-8（M3実装・3レンズ）のルーティング — 2026-08-19
 
 原文: reviews/round-8-correctness.md（V-6〜V-10）/ round-8-safety.md（S-6〜S-10）/ round-8-excess-codex-raw.txt（E-6〜E-10。critic: claude design-critic ×2 = claude-opus-5[1m]、過剰実装レンズ = codex/gpt-5.6-sol xhigh）。15件・重複統合で実質10論点、**全件「実装」種別として受理**（設計差し戻しなし）。修正はCC内sonnetサブエージェントへ委譲、修正後に再検証・再反証。

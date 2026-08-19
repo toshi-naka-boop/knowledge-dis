@@ -1,6 +1,6 @@
 {
-  "currentNode": "反証",
-  "status": "in_progress",
+  "currentNode": "完了",
+  "status": "done",
   "designVersion": "v9",
   "approvedDesignVersion": "v9",
   "approvedDesignSha256": "9df6a687bb7bbe589b9d2b476191f8b1cfc9945d1f29907e6310f38d910ec344",
@@ -8,16 +8,17 @@
   "approvalEvidence": "v9:9df6a687bb7b 承認",
   "requiredApprovalFingerprint": "v9:9df6a687bb7b",
   "baseline": "360f2617999b9c9bb52147f44b4d436a63c36b15",
-  "criticRound": 8,
+  "criticRound": 9,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "反証round-8実行中（正しさ/安全性=design-critic、過剰実装=codex）。指摘のルーティング後、A段完了→デモ準備へ",
+  "nextAction": "M3（A段）design-loop完了（design v9承認・実装・反証round-8/9クローズ・84テスト）。残タスクはループ外: デプロイ＋シード再投入（DEMO_TODAY運用）→Cloud Schedulerジョブ設置（ゴール18検証）→B段Agent Runtime載せ替え判断（8/27まで）→GEAP Agent Registry実登録→デモ台本・収録。8/29機能凍結・8/31 17:00 PDT締切",
   "delegation": {
     "批評": "claude-opus-5[1m] design-critic + codex/gpt-5.6-sol xhigh（round-7クロスベンダー）",
-    "実装": "antigravity/gemini-3.7-flash-high（M1/M2/M3 build）＋claude/sonnet（M3テスト補完）"
+    "実装": "antigravity/gemini-3.7-flash-high（M1/M2/M3 build）＋claude/sonnet（M3テスト補完）",
+    "反証": "claude-opus-5[1m] design-critic ×3（round-8 正しさ/安全性、round-9）+ codex/gpt-5.6-sol xhigh（round-8 過剰実装）"
   },
   "lastUpdated": "2026-08-19"
 }
