@@ -691,6 +691,12 @@ def main() -> None:
         help="Base date for relative seed generation (YYYY-MM-DD). Defaults to DEMO_TODAY or today.",
     )
     parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Delete all collections (agents/profiles/messages/tasks/schedules/mail_seeds/cards) "
+        "before seeding. Use for a demo reset (requires --use-firestore).",
+    )
+    parser.add_argument(
         "--embedder",
         choices=["deterministic", "gemini"],
         default="deterministic",
@@ -711,6 +717,9 @@ def main() -> None:
     else:
         from knowledge_discovery.firestore_store import FirestoreStore
         store = FirestoreStore(project=args.project, database=args.database)
+        if args.clear:
+            print("Clearing all collections before seeding (--clear)...")
+            store.clear()
         populate_store(store, dry_run=False, embedder=embedder, today=args.today)
 
 
