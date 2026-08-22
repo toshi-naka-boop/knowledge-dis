@@ -14,11 +14,11 @@
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "M3（A段）design-loop完了（design v9承認・実装・反証round-8/9クローズ・84テスト）。残タスクはループ外: デプロイ＋シード再投入（DEMO_TODAY運用）→Cloud Schedulerジョブ設置（ゴール18検証）→B段Agent Runtime載せ替え判断（8/27まで）→GEAP Agent Registry実登録→デモ台本・収録。8/29機能凍結・8/31 17:00 PDT締切",
+  "nextAction": "M3 A段は本番稼働（rev 00005、DEMO_TODAY=2026-08-23、Cloud Scheduler kd-secretary-sweep 毎朝8:00 JST、ゴール12〜18本番スモーク済み）。残: B段Agent Runtime載せ替え判断（8/27まで）→GEAP Agent Registry実登録→デモ台本・収録（収録日: README『Demo reset & recording-day procedure』で --clear 再投入＋DEMO_TODAY更新）→アーキ図・write-up→Devpost提出。8/29機能凍結・8/31 17:00 PDT締切",
   "delegation": {
     "批評": "claude-opus-5[1m] design-critic + codex/gpt-5.6-sol xhigh（round-7クロスベンダー）",
     "実装": "antigravity/gemini-3.7-flash-high（M1/M2/M3 build）＋claude/sonnet（M3テスト補完）",
     "反証": "claude-opus-5[1m] design-critic ×3（round-8 正しさ/安全性、round-9）+ codex/gpt-5.6-sol xhigh（round-8 過剰実装）"
   },
-  "lastUpdated": "2026-08-19"
+  "lastUpdated": "2026-08-23"
 }
