@@ -90,6 +90,39 @@ secret). Firestore is created in native mode via gcloud and has no client-SDK
 rules deployed — client SDK access is denied by default; every read/write goes
 through the server, which applies the requester/audit projections.
 
+## Secretary sweep trigger (Cloud Scheduler, design v9 §14.7 A-stage)
+
+The proactive secretary (`POST /api/secretary/sweep`) is fired daily by a Cloud
+Scheduler HTTP job that carries the demo API key as a header (the service stays
+`--allow-unauthenticated`; the endpoint itself returns 401 without the key).
+Production would use OIDC + a dedicated invoker SA (write-up future item).
+
+```bash
+gcloud scheduler jobs create http kd-secretary-sweep \
+  --location=asia-northeast1 --schedule="0 8 * * *" --time-zone=Asia/Tokyo \
+  --uri="https://<SERVICE_URL>/api/secretary/sweep" --http-method=POST \
+  --headers="X-API-Key=<DEMO_API_KEY>" --attempt-deadline=180s
+
+gcloud scheduler jobs run kd-secretary-sweep --location=asia-northeast1   # manual fire
+```
+
+## Demo reset & recording-day procedure
+
+Seed dates are relative to a base date; the server evaluates "today" from
+`DEMO_TODAY` (ISO date, falls back to the real UTC date). To reset for a recording:
+
+```bash
+# 1. wipe everything (agents/profiles/messages/tasks/schedules/mail_seeds/cards) and reseed
+GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=<PROJECT_ID> GOOGLE_CLOUD_LOCATION=global PYTHONPATH=src \
+  .venv/bin/python scripts/generate_seeds.py --use-firestore --project <PROJECT_ID> \
+  --embedder gemini --clear --today YYYY-MM-DD
+
+# 2. pin the same date on the service
+gcloud run services update knowledge-discovery --region=asia-northeast1 --update-env-vars DEMO_TODAY=YYYY-MM-DD
+
+# 3. run one sweep (or wait for the Scheduler job) so the digest cards exist
+```
+
 ## Demo-mode simplifications (deliberate)
 
 - Single shared demo API key; the candidate screen has a persona switcher so
