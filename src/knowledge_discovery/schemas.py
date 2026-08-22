@@ -169,6 +169,13 @@ class SchemaRegistry:
 
         return True, None
 
+    # Fact-line notes for fail-closed masked rows (content never shown). UI language is English.
+    MASKED_NOTES: dict[str, str] = {
+        "stagnation_detected": "Secretary: stagnation detected (content hidden)",
+        "preview_search": "Secretary: preview search run, nothing delivered (content hidden)",
+        "profile_diff_proposed": "Secretary: profile addition proposed to owner (content hidden)",
+    }
+
     @classmethod
     def get_audit_view(cls, message: Message) -> dict[str, Any]:
         """Compute the fail-closed audit view payload for dashboard presentation (C-21).
@@ -185,8 +192,10 @@ class SchemaRegistry:
         if message.payload_type in cls.AUDIT_WHITELIST:
             return dict(message.payload)
 
-        # Fail-closed fallback: never display unverified/unwhitelisted payload in plain text
+        # Fail-closed fallback: never display unverified/unwhitelisted payload in plain text.
+        # Secretary intents (design §14.6) get an explicit English fact-line; anything
+        # else gets the generic masked note. Either way the content stays hidden.
         return {
             "masked": True,
-            "note": "表示不可（マスク既定）",
+            "note": cls.MASKED_NOTES.get(message.payload_type, "Not displayable (masked by default)"),
         }

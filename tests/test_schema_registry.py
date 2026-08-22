@@ -153,7 +153,7 @@ class TestSchemaRegistry(unittest.TestCase):
         )
         view_fail_closed = SchemaRegistry.get_audit_view(msg_unwhitelisted)
         self.assertTrue(view_fail_closed.get("masked"))
-        self.assertEqual(view_fail_closed.get("note"), "表示不可（マスク既定）")
+        self.assertEqual(view_fail_closed.get("note"), "Not displayable (masked by default)")
 
 
 if __name__ == "__main__":
