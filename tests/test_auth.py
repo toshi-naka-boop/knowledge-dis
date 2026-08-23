@@ -53,6 +53,7 @@ try:
         validate_iap_audience_format,
     )
     from knowledge_discovery.server import create_app
+    from knowledge_discovery.tenancy import ContextRouter, TenantContext, TenantRegistry
 
     HAS_FASTAPI = True
 except ImportError:
@@ -151,11 +152,20 @@ class TestIapJwtVerification(unittest.TestCase):
         self.cert_cache._transport = self.transport
         self.store = InMemoryStore()
         self.store.save_identity("rachel.kim@meridian-care.example", "emp_rachel_kim")
-        self.resolver = IapResolver(
-            store=self.store,
-            audience=TEST_AUDIENCE,
-            allowed_domains=["meridian-care.example"],
+        self.registry = TenantRegistry.single(
+            tenant_id="meridian",
+            email_domains=["meridian-care.example"],
+            api_key="unused-in-iap-mode",
             system_accounts=["kd-sweeper@my-project.iam.gserviceaccount.com"],
+        )
+        self.router = ContextRouter(
+            self.registry,
+            context_factory=lambda tenant: TenantContext(tenant=tenant, store=self.store),
+        )
+        self.resolver = IapResolver(
+            registry=self.registry,
+            router=self.router,
+            audience=TEST_AUDIENCE,
             cert_cache=self.cert_cache,
         )
 

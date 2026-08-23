@@ -64,32 +64,34 @@ Open `http://localhost:8080/requester?api_key=<your-demo-key>` (also
 score ~0.59 in that space; the default 0.20 suits only the offline test
 embedder).
 
-## Authentication (design v15 §16.1, Part A)
+## Authentication (design v15 §16.1)
 
 `AUTH_MODE` selects how each request's `Principal` (`mode: demo|human|system`,
 `tenant_id`, `employee_id`, `email`) is resolved. Every route enforces a
-default-deny permission table over this Principal (design.md §16.1); the two
-modes below are the only ones implemented so far — tenancy (Part B, multiple
-Firestore databases) and data connectors (Part C/D) are future work, so
-`tenant_id` is currently always the fixed value `meridian`.
+default-deny permission table over this Principal (design.md §16.1). Both
+modes below resolve `tenant_id` from the tenant ledger (see "Tenants" below,
+design.md §16.2) rather than a fixed constant.
 
-- **`AUTH_MODE=demo_key` (default)**: unchanged from the pre-Part-A behavior.
-  `X-API-Key` header or `api_key` query parameter must match `DEMO_API_KEY`;
-  every request resolves to `mode=demo` and each API trusts the identity it
-  is given in the request body/path (single shared key, single actor plays
-  all personas — see "Demo-mode simplifications" below).
+- **`AUTH_MODE=demo_key` (default)**: unchanged from the pre-Part-A behavior,
+  except the tenant is now whichever tenant's key matched. `X-API-Key` header
+  or `api_key` query parameter must match one tenant's key in the ledger;
+  the request resolves to `mode=demo` bound to that tenant, and each API
+  trusts the identity it is given in the request body/path (single shared
+  key *per tenant*, single actor plays all personas within it — see
+  "Demo-mode simplifications" below).
 - **`AUTH_MODE=iap`**: for Cloud Run behind Identity-Aware Proxy
   (`--no-allow-unauthenticated`, IAP enabled on the service). Requests must
   carry `X-Goog-IAP-JWT-Assertion`; it is verified with
   `google.oauth2.id_token.verify_token` (ES256, IAP's public key endpoint,
   `clock_skew_in_seconds=30`, issuer `https://cloud.google.com/iap`, `email`
-  claim required). The verified email resolves to a Principal:
-  - listed in `IAP_SYSTEM_ACCOUNTS` (comma-separated service account emails,
-    e.g. the Scheduler jobs' OIDC identity) -> `mode=system`
-  - domain in `IAP_ALLOWED_DOMAINS` (comma-separated, e.g.
-    `meridian-care.example`) and registered in the `identities` collection
-    (seeded by `scripts/generate_seeds.py`) -> `mode=human`, `employee_id`
-    resolved from the identity record
+  claim required). The verified email resolves to a Principal via the tenant
+  ledger:
+  - email listed in some tenant's `system_accounts` (e.g. that tenant's
+    Scheduler job's OIDC identity) -> `mode=system`, bound to that tenant
+  - email's domain listed in some tenant's `email_domains`, and the email is
+    registered in that tenant's own `identities` collection (seeded by
+    `scripts/generate_seeds.py --database <tenant's database>`) -> `mode=human`,
+    `employee_id` resolved from that tenant's identity record
   - otherwise -> `403`
   - `IAP_AUDIENCE` (Cloud Run IAP format:
     `/projects/<PROJECT_NUMBER>/locations/<REGION>/services/<SERVICE>`) is
@@ -104,10 +106,80 @@ Firestore databases) and data connectors (Part C/D) are future work, so
 used by `requester.html`/`candidate.html` to hide the demo persona switcher
 once `mode != demo`.
 
+## Tenants (design v15 §16.2, Part B)
+
+Each tenant is a separate Firestore **database** under the same GCP project —
+not a separate process, and not a query-time filter. A request only ever sees
+`ContextRouter.for_tenant(principal.tenant_id)`'s own `Store`; there is no
+`X-KD-Tenant` header, no all-tenant API key, and no code path that queries
+across tenants. **Blast radius**: a leaked tenant API key (or a compromised
+IAP identity bound to that tenant) exposes that tenant's data only — every
+other tenant is untouched. Firestore Security Rules are not part of this
+boundary (they don't apply to the server's own client); the boundary is
+"every route only ever asks for its own tenant's context, and there is no
+function that returns another tenant's".
+
+**Ledger** — env `TENANTS_JSON`, a JSON array; unset defaults to today's
+single-tenant setup (`meridian` / `(default)` / `meridian-care.example` /
+`DEMO_API_KEY`):
+
+```json
+[
+  {
+    "tenant_id": "meridian",
+    "database": "(default)",
+    "email_domains": ["meridian-care.example"],
+    "api_key_env": "DEMO_API_KEY",
+    "system_accounts": ["kd-scheduler-sa@<PROJECT_ID>.iam.gserviceaccount.com"]
+  },
+  {
+    "tenant_id": "acme",
+    "database": "kd-tenant-acme",
+    "email_domains": ["acme.example"],
+    "api_key": "literal-key-for-local-testing-only",
+    "system_accounts": []
+  }
+]
+```
+
+Each row needs either `api_key` (a literal value, local/testing only) or
+`api_key_env` (the name of an env var holding the key — the production way,
+so keys live in Secret Manager, not the ledger). Startup fails closed if
+`tenant_id`, `database`, any `email_domains` entry, or the resolved `api_key`
+repeats across tenants.
+
+- **API keys are per-tenant** (§16.2 C-42/W-2): `demo`/`system` principals are
+  bound to whichever tenant's key matched theirs; there is no key that spans
+  tenants. Cloud Scheduler jobs and the B-stage Agent Runtime are one set
+  *per tenant* (each Runtime's `KD_API_KEY` env holds that tenant's key).
+- **Process-lifetime cache**: `ContextRouter` builds each tenant's
+  Store/Service/Secretary lazily, on first request, and caches them for the
+  life of the process. Editing `TENANTS_JSON` only takes effect after a
+  restart (`gcloud run services update ... --update-env-vars` triggers one);
+  there is no live cache-invalidation endpoint.
+- **Second database (real Firestore) — create, seed, verify, delete**:
+
+  ```bash
+  # 1. create the database (one-time)
+  gcloud firestore databases create --database=kd-tenant-b --location=asia-northeast1 --type=firestore-native
+
+  # 2. seed it (identities included) via --database
+  GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=<PROJECT_ID> PYTHONPATH=src \
+    .venv/bin/python scripts/generate_seeds.py --use-firestore --project <PROJECT_ID> \
+    --database kd-tenant-b --embedder gemini
+
+  # 3. add the tenant to TENANTS_JSON, redeploy/restart the service, and confirm
+  #    with that tenant's key that /api/agents, /api/secretary/digest, etc. only
+  #    ever return kd-tenant-b's data (goal 25's real-Firestore smoke check)
+
+  # 4. delete the verification database when done
+  gcloud firestore databases delete --database=kd-tenant-b --quiet
+  ```
+
 ## Tests
 
 ```bash
-.venv/bin/python -m unittest discover -s tests   # 64 tests, no network/credentials needed
+.venv/bin/python -m unittest discover -s tests   # ~200 tests, no network/credentials needed (13 B-stage tests skip without google-adk)
 ```
 
 All external services (Firestore, Gemini) sit behind interfaces with in-memory

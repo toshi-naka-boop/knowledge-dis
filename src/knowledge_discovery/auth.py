@@ -1,19 +1,19 @@
-"""Principal resolution and authentication (design.md §16.1, FR25-26, Part A).
+"""Principal resolution and authentication (design.md §16.1/§16.2, FR25-27).
 
 This module is the single differentiation point between the demo API-key
-world and IAP-authenticated production. All server.py routes depend on
-`PrincipalResolver.resolve(request) -> Principal`; Part B (tenancy) is meant
-to slot in underneath this same interface without touching server.py's
-routing logic.
+world and IAP-authenticated production, and (Part B) the point where a
+credential is bound to a tenant. All server.py routes depend on
+`PrincipalResolver.resolve(request) -> Principal`.
 
 - `Principal`: the resolved caller identity (mode/tenant_id/employee_id/email).
 - `DemoKeyResolver`: AUTH_MODE=demo_key. Reproduces the pre-existing
-  X-API-Key / api_key check byte-for-byte; tenant_id is a fixed constant
-  (Part B will replace this with a tenant ledger lookup).
+  X-API-Key / api_key check byte-for-byte, except the tenant_id is now
+  whichever tenant's key matched (design §16.2 C-42/W-2: "どの鍵と一致した
+  かでテナントに束縛される", no key spans multiple tenants).
 - `IapResolver`: AUTH_MODE=iap. Verifies the `X-Goog-IAP-JWT-Assertion`
   header with `google.oauth2.id_token.verify_token`, then resolves the
-  verified email to a tenant-scoped Principal via system_accounts /
-  IAP_ALLOWED_DOMAINS / Store.get_identity.
+  verified email to a tenant-scoped Principal via the TenantRegistry's
+  system_accounts / email_domains and that tenant's Store.get_identity.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ except ImportError as exc:  # pragma: no cover
         "knowledge_discovery.auth requires fastapi (see scripts/requirements.txt)"
     ) from exc
 
-from knowledge_discovery.store import Store
+from knowledge_discovery.tenancy import ContextRouter, TenantRegistry
 
 # Cloud Run IAP audience format: /projects/<PROJECT_NUMBER>/locations/<REGION>/services/<SERVICE>
 IAP_AUDIENCE_PATTERN = re.compile(r"^/projects/\d+/locations/[a-z0-9-]+/services/[a-z0-9-]+$")
@@ -74,24 +74,27 @@ def _forbidden(detail: str) -> HTTPException:
 
 
 class DemoKeyResolver(PrincipalResolver):
-    """AUTH_MODE=demo_key: single shared key, single tenant (current behavior).
+    """AUTH_MODE=demo_key: the key presented determines the tenant (§16.2).
 
-    Every caller who presents the right key gets mode="demo" with no
+    Every caller who presents a key registered in the tenant ledger gets
+    mode="demo" bound to whichever tenant that key belongs to, with no
     employee_id -- each API's own request payload supplies the acting
-    identity (unchanged from the pre-Part-A behavior).
+    identity (unchanged from the pre-Part-A behavior). There is no key that
+    spans multiple tenants and no way to address another tenant from this
+    resolver (design §16.2: "全テナント横断の鍵...は置かない").
     """
 
-    def __init__(self, expected_api_key: str, tenant_id: str = "meridian") -> None:
-        self.expected_api_key = expected_api_key
-        self.tenant_id = tenant_id
+    def __init__(self, registry: TenantRegistry) -> None:
+        self.registry = registry
 
     def resolve(self, request: Request) -> Principal:
         provided_key = request.headers.get("x-api-key") or request.query_params.get("api_key")
-        if not provided_key or provided_key != self.expected_api_key:
+        tenant = self.registry.resolve_by_api_key(provided_key) if provided_key else None
+        if tenant is None:
             raise _unauthorized(
                 "Invalid or missing API key. Provide header 'X-API-Key' or query parameter 'api_key'."
             )
-        return Principal(mode="demo", tenant_id=self.tenant_id, employee_id=None, email=None)
+        return Principal(mode="demo", tenant_id=tenant.tenant_id, employee_id=None, email=None)
 
 
 class _CachingCertsRequest:
@@ -158,25 +161,24 @@ class _CachingCertsRequest:
 class IapResolver(PrincipalResolver):
     """AUTH_MODE=iap: verify the IAP-signed JWT and resolve email -> Principal.
 
-    Part A ships with a single tenant (tenant_id fixed), matching the
-    demo-mode default; Part B will replace this with a per-domain tenant
-    lookup without changing this class's external contract.
+    The tenant is resolved from the TenantRegistry (§16.2): a system_accounts
+    match binds mode=system to that account's tenant; otherwise the email
+    domain resolves a tenant and that tenant's own Store.get_identity (via
+    ContextRouter) resolves the employee_id for mode=human. IAP_ALLOWED_DOMAINS
+    / IAP_SYSTEM_ACCOUNTS envs are absorbed into the ledger (no separate
+    single-tenant fallback list; not backward compatible with Part A's env vars).
     """
 
     def __init__(
         self,
-        store: Store,
+        registry: TenantRegistry,
+        router: ContextRouter,
         audience: str,
-        allowed_domains: list[str],
-        system_accounts: list[str],
-        tenant_id: str = "meridian",
         cert_cache: _CachingCertsRequest | None = None,
     ) -> None:
-        self.store = store
+        self.registry = registry
+        self.router = router
         self.audience = audience
-        self.allowed_domains = {d.strip().lower() for d in allowed_domains if d.strip()}
-        self.system_accounts = {s.strip().lower() for s in system_accounts if s.strip()}
-        self.tenant_id = tenant_id
         self._cert_request = cert_cache or _CachingCertsRequest()
 
     def resolve(self, request: Request) -> Principal:
@@ -208,18 +210,21 @@ class IapResolver(PrincipalResolver):
             raise _unauthorized("IAP assertion is missing the required 'email' claim.")
         email = str(email).strip().lower()
 
-        if email in self.system_accounts:
-            return Principal(mode="system", tenant_id=self.tenant_id, employee_id=None, email=email)
+        system_tenant = self.registry.resolve_by_system_account(email)
+        if system_tenant is not None:
+            return Principal(mode="system", tenant_id=system_tenant.tenant_id, employee_id=None, email=email)
 
         domain = email.rsplit("@", 1)[-1] if "@" in email else ""
-        if domain not in self.allowed_domains:
+        tenant = self.registry.resolve_by_email_domain(domain)
+        if tenant is None:
             raise _forbidden("Email domain is not registered for any tenant.")
 
-        employee_id = self.store.get_identity(email)
+        tenant_store = self.router.for_tenant(tenant.tenant_id).store
+        employee_id = tenant_store.get_identity(email)
         if employee_id is None:
             raise _forbidden("No employee identity is registered for this email.")
 
-        return Principal(mode="human", tenant_id=self.tenant_id, employee_id=employee_id, email=email)
+        return Principal(mode="human", tenant_id=tenant.tenant_id, employee_id=employee_id, email=email)
 
 
 def validate_iap_audience_format(audience: str) -> None:
@@ -232,23 +237,19 @@ def validate_iap_audience_format(audience: str) -> None:
 
 
 def build_principal_resolver(
-    store: Store,
-    expected_api_key: str,
+    registry: TenantRegistry,
+    router: ContextRouter,
     auth_mode: str | None = None,
-    tenant_id: str = "meridian",
 ) -> PrincipalResolver:
-    """Build the configured PrincipalResolver from AUTH_MODE / IAP_* env vars."""
+    """Build the configured PrincipalResolver from AUTH_MODE / IAP_AUDIENCE env vars.
+
+    The tenant ledger (registry) is the single source of truth for API keys,
+    email domains and system_accounts in both modes (§16.2); there is no
+    per-call tenant_id parameter to keep in sync with it.
+    """
     mode = auth_mode or os.environ.get("AUTH_MODE", "demo_key")
     if mode == "iap":
         audience = os.environ.get("IAP_AUDIENCE", "")
         validate_iap_audience_format(audience)
-        allowed_domains = [d for d in os.environ.get("IAP_ALLOWED_DOMAINS", "").split(",") if d.strip()]
-        system_accounts = [s for s in os.environ.get("IAP_SYSTEM_ACCOUNTS", "").split(",") if s.strip()]
-        return IapResolver(
-            store=store,
-            audience=audience,
-            allowed_domains=allowed_domains,
-            system_accounts=system_accounts,
-            tenant_id=tenant_id,
-        )
-    return DemoKeyResolver(expected_api_key=expected_api_key, tenant_id=tenant_id)
+        return IapResolver(registry=registry, router=router, audience=audience)
+    return DemoKeyResolver(registry=registry)
