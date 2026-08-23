@@ -1,5 +1,21 @@
 # ledger: knowledge-discovery
 
+## 反証round-14（接続部品 A〜D 実装・3レンズ）のルーティング — 2026-08-24
+
+原文: reviews/round-14-correctness.md（V-11〜V-15）／ round-14-safety.md（S-11〜S-13）／ round-14-excess-codex-raw.txt（E-11〜E-15。critic: claude design-critic ×2 = claude-opus-5[1m]、過剰実装 = codex/gpt-5.6-sol xhigh）。13件・重複統合で実質7論点、**全件「実装」種別として受理**（設計差し戻しなし）。修正は sonnet サブエージェントへ委譲、修正後に再検証・クローズ検証。
+
+- **V-11 / V-13 / E-11 / S-11（high・3レンズ一致）**: `google_workspace` で `GWS_SELF_EMPLOYEE_ID` 未設定だと全所有者を巡回し、作者1アカウントのデータが他人に帰属（fail-open）、空ストアでは fetch が走らずゴール28が構造的に不成立 → 単独モードを必須化（未設定は同期せず errors 記録＝fail-closed）、同期対象はその所有者1人のみ（空ストアでも fetch）
+- **V-12（high）**: Seed 既定でも全所有者に apply が走り gws データの誤 done・Firestore 1→801 クエリ → Seed では apply を呼ばない
+- **E-12 / S-12（high/low）**: 鍵キャッシュに設計外の猶予（2×TTL）→ 期限切れは401に
+- **E-13（mid）**: TENANTS_JSON の平文 api_key 経路 → 削除（api_key_env のみ）
+- **E-14（mid）**: probe の `--apply-to-memory` が sweep/digest を通らない見せかけ → 実 run_sweep→digest 経路に（件数・種別のみ表示）
+- **E-15（low）**: README「Every route」の誇張 → 権限表の実態に修正
+- **V-14 / S-13（low）**: 台帳の大文字小文字未正規化 → 小文字正規化後に一意性検査・照合
+- **V-15（low）**: sync_skipped の合算・cancelled_ids 未使用 → カウンタ分離・cancelled 削除
+
+**肯定的所見**: 権限表の全ルート実装・require_self 全列挙・consent 原子遷移（409/403）・本物JWTでの IAP 負系・iap での API キー経路の死・2テナント分離・M3 マスク回帰なし・既存199件の期待値不変を3レンズが確認。
+
+
 ## 批評round-13（design v13 接続部品・2巡目）の帰結 — 2026-08-23
 
 原文: reviews/round-13.md（claude C-41〜C-45）＋ round-13-codex-raw.txt（codex W-1〜W-5）。10件・重複統合で実質7論点、**全件受理**し v14 に反映。round-12 の8論点は両criticとも「概ね閉じた」と評価。
