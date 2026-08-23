@@ -165,8 +165,20 @@ deployment pins `resource_limits cpu=4/memory=8Gi`, `min_instances=1/max_instanc
 Scheduler fire succeeds in one attempt (HTTP 200, one sweep). Avoid hammering the Runtime
 concurrently in tests; the production schedule fires once a day.
 
-Demo-mode note: Runtime Sessions keep each employee's own digest summaries under
-their own `user_id` (owner-scoped); tracing is left disabled.
+Demo-mode notes: (1) the session `user_id` is asserted by the caller — anyone allowed to
+query the Runtime can name any user_id; the tool simply never lets the LLM pick a different
+employee (same single-key simplification as `/api/secretary/*`; production maps agent
+identity/IAM to employees). (2) Runtime Sessions keep each user_id's digest summaries;
+tracing is left disabled. (3) `kd-scheduler-sa` holds only a custom role with
+`aiplatform.reasoningEngines.query/get`.
+
+Teardown after the demo (stops all Runtime cost):
+
+```bash
+gcloud scheduler jobs delete kd-secretary-sweep-runtime --location=asia-northeast1 --quiet
+curl -X DELETE -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://asia-northeast1-aiplatform.googleapis.com/v1/projects/<PROJECT_ID>/locations/asia-northeast1/reasoningEngines/<ID>"
+```
 
 ## Demo reset & recording-day procedure
 
