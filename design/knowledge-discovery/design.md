@@ -1,8 +1,8 @@
-# knowledge-discovery 設計書 v11
+# knowledge-discovery 設計書 v12
 
-入力: `spec.md` v7（v1〜v15は v5 入力のまま変更なし。§14以降が v7 の FR16〜24 に対応）
-生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映 / v10: B段（Agent Runtime載せ替え）の詳細化（2026-08-23、ユーザー決定「B段を実施」を受けて§14.7を追補。A段は本番稼働済み・反証round-8/9クローズ済み） / v11: 批評round-10（claude C-31〜C-35 + codex Y-1〜Y-5）反映
-状態: 改訂版（承認CP待ち。v9承認済み部分は無変更、追補は§14.7 B段・§8対応表・§10ゴール19〜22・§15）
+入力: `spec.md` v8（§16 が v8 の FR25〜30「接続部品」に対応。§14〜§15 は v7 の FR16〜24）
+生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映 / v10: B段（Agent Runtime載せ替え）の詳細化（2026-08-23、ユーザー決定「B段を実施」を受けて§14.7を追補。A段は本番稼働済み・反証round-8/9クローズ済み） / v11: 批評round-10（claude C-31〜C-35 + codex Y-1〜Y-5）反映 / v12: 接続部品（spec v8 FR25〜30）の追補 §16（2026-08-23。v11承認済み部分は無変更）
+状態: 追補版（批評待ち・2巡予定。追補は §16・§10ゴール23〜29・§12対応表）
 
 **v9での変更点（批評round-7由来）**:
 - C-26/X-1: プレビュー専用の `embedding_public` を新設（1段目ランキングからもprivateの影響を排除）。プレビューと正式実行の候補差は仕様として明示しUI文言に反映
@@ -241,6 +241,13 @@ messages/{audit_id}
 20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_my_digest` が（引数なし・セッションの user_id で）呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返る＝**実モデル呼び出しが global エンドポイントで成功**することを確認できる。Runtime秘書のLLMツール一覧が `get_my_digest` のみであり、`run_daily_sweep` と書き込み系が**LLMツールとして存在しない**ことを確認できる。別の user_id のセッションから Jordan のダイジェストが読めないことを確認できる
 21. （M3・B段と独立）Agent Registry に、Cloud Run 上の4体エージェント（手動登録）と Runtime 秘書（自動登録）が**説明・能力情報つきで**一覧・検索できることを Console または API で確認できる。手動登録は 8/27 より前に完了している
 22. （M3・B段）(a) `secretary_agent` のツール関数・オペレーションの単体テストが HTTP フェイクでオフラインに通り、既存スイートが google-adk 未インストール環境でも壊れない（import失敗時 skipTest）こと、**および (b) ピン留め依存を入れた B段専用環境（`.venv-agent` 等）で同テストが skip 0件で通る**ことを確認できる（Y-5対応: 「ADKなしで壊れない」と「B段が動く」を別ゴールにする）
+23. （v8）`AUTH_MODE=iap` で、フェイク検証器により有効とされる IAP アサーションを持つリクエストが employee_id に解決され、他人の employee_id を指定した `/api/secretary/digest` `/api/requester/{id}/status` `/api/candidate/{agent}/asks` が 403、アサーションなし／検証失敗が 401 になることを確認できる。`AUTH_MODE=demo_key` では既存テスト全件（97＋13）が不変
+24. （v8）`/api/me` が mode / tenant_id / employee_id を返し、requester.html が `iap` のときペルソナ切替を表示しないことを確認できる
+25. （v8）2テナント（InMemory）で、テナントAで作ったプロフィール・カード・監査行がテナントBの全API（agents / query / requester status / candidate asks / secretary digest / audit）から見えないことを確認できる。実Firestoreで第2DB `kd-tenant-b` を作りシードを入れた状態で、テナント別に digest が分離されることを実機確認できる
+26. （v8）sweep が台帳の全テナントを処理し、テナント別件数を返すことを確認できる（Scheduler／Runtime は無変更で動く）
+27. （v8）`GoogleWorkspaceConnector` がフェイクAPI応答で tasks / schedules / mail_seeds に写像され、同じ入力の再同期で重複せず、due 変更で `reschedule_count` が +1 されることをオフラインで確認できる。件名・本文がログに出ないこと
+28. （v8）作者アカウントの読み取り専用ADCで `scripts/gws_probe.py` が件数を返し、`SOURCE_CONNECTOR=google_workspace` のローカル sweep で実データ由来のリマインド／停滞カードが digest に現れることを確認できる（記録は件数・種別のみ）
+29. （v8）README に認証モード・テナント台帳・コネクタ設定・IAP有効化／DWD手順が記載されていることを確認できる
 
 ## 11. デモ動画の構成（3分・英語）
 
@@ -273,6 +280,9 @@ messages/{audit_id}
 | FR21（監査への専用intent記録） | §14.6 |
 | FR22（モーニングダイジェスト） | §14.2, §14.8 |
 | FR23（プロフィール差分提案） | §14.5 |
+| FR25〜26（認証差し替え点・本人性突合） | §16.1 |
+| FR27（テナント＝DB分離） | §16.2 |
+| FR28〜30（データ源差し替え点・GWSコネクタ・sync-then-detect） | §16.3 |
 | FR24（苦手先回り・stretch） | 実装なし。write-up・アーキ図将来構成（§14.6の監査パターンとガードレールを流用） |
 
 ## 14. 秘書プロアクティブ層（M3、spec v7 FR16〜24）
@@ -433,3 +443,65 @@ score = W_OVERDUE   × min(期日超過日数, CAP)
 - （M3・B段）**着手決定（2026-08-23）**。8/27までにゴール19が通らなければA段で提出（§14.7の撤退条件）
 - （M3・B段）Cloud Run上4体の Agent Registry 手動登録: Registry API（Agent/Serviceリソース）の具体手順は実装時に確認。通らなければ将来項目として正直に記載
 - （M3・B段）Runtime秘書のカスタムSA化・Memory Bank利用は将来項目（write-up）
+
+## 16. 接続部品（spec v8 FR25〜30。v12追補）
+
+**背骨**: 3つとも「差し替え点（インターフェース）＋実装2つ（デモ用／本番用）＋envで切替」の同型。デモ経路（`demo_key`／1テナント／`seed`）の挙動は**変えない**（既存テスト97件＋B段13件が不変であることが回帰の定義）。既存の配送・同意・監査・マッチングのコードには触れない。
+
+### 16.1 認証の差し替え点（FR25〜26）
+
+```
+Principal { tenant_id: str, employee_id: str | None, mode: "demo_key" | "iap", email: str | None }
+PrincipalResolver.resolve(request) -> Principal   # 失敗は 401
+  ├─ DemoKeyResolver : 現行 verify_api_key と同一判定（X-API-Key / api_key）。tenant = 台帳の既定テナント、employee_id = None（各APIは従来どおり申告値を使う）
+  └─ IapResolver     : X-Goog-IAP-JWT-Assertion を google-auth で検証（ES256、IAP公開鍵 https://www.gstatic.com/iap/verify/public_key、audience = env IAP_AUDIENCE）
+                       → claim email → 台帳の email_domains でテナント確定 → テナントDBの identities/{email} で employee_id 確定。無ければ 403
+```
+
+- FastAPI の依存を `verify_api_key` から `get_principal` に置換する（全エンドポイント共通の1箇所）。`AUTH_MODE=demo_key|iap`（既定 demo_key）
+- **本人性突合（FR26）**: employee_id を受ける全API（`/api/secretary/*`、`/api/requester/{id}/status`、`/api/candidate/{agent_id}/*`）に `require_self(principal, employee_id)` を通す。`iap` モードで不一致なら 403、`demo_key` モードでは素通し（現行）。candidate 系は agent_id→employee_id を `agents` で引いて比較
+- **未検証ヘッダでの認証はしない**: `X-Goog-Authenticated-User-Email` は参考表示にのみ使い、認証判定は JWT 検証のみ。IAP を経由しないアクセス経路を残さないことは Cloud Run 側の設定（IAP統合＋`--no-allow-unauthenticated`）で担保し README に手順を書く（本体のデモサービスには掛けない＝鍵方式のUIと両立しないため。実機確認は任意の別サービスで。spec未決）
+- `/api/me` を追加（principal の mode/tenant/employee を返す）。requester.html / candidate.html は起動時に `/api/me` を見て、`iap` のときはペルソナ切替を隠し本人固定にする（demo_key では従来どおり）
+- `identities/{email} → employee_id` はテナントDBのコレクション。シードで4ペルソナ＋Jordan に `@meridian-care.example` の架空メールを投入
+- 依存: `google-auth`（google-cloud-firestore 経由で導入済み）のみ。新規パッケージなし
+
+### 16.2 テナント＝Firestoreデータベース分離（FR27）
+
+```
+TenantRegistry（env TENANTS_JSON、既定 [{"tenant_id":"meridian","database":"(default)","email_domains":["meridian-care.example"]}]）
+TenantContext { store, service(KnowledgeDiscoveryService), secretary(SecretaryService), matching }   # テナントごとに1組、遅延生成・キャッシュ
+ContextRouter.for_tenant(tenant_id) -> TenantContext
+```
+
+- 既存の「アプリ起動時に store/service/secretary を1組作る」構造を「テナントごとに1組」に一般化する。`demo_key` では既定テナント1組なので挙動は同一。InMemory でも同じルータ（テストは2テナントを InMemory で構成）
+- **到達不能性**: リクエストは `principal.tenant_id` の TenantContext だけを受け取る。他テナントの store を参照するコードパスは存在しない（横断クエリを書く場所がない）。これを「データ境界＝DB境界」として write-up に書く
+- 秘書の sweep（A段エンドポイント／B段 Runtime 経由どちらも）は台帳の全テナントを順に処理し、テナント別件数を返す。Scheduler・Runtime は無変更
+- シード投入は `--database` で対象DBを選ぶ（既存引数）。検証用に第2DB `kd-tenant-b` を `gcloud firestore databases create --database=kd-tenant-b --location=asia-northeast1 --type=firestore-native` で作り、小さなシードを入れて分離を実機確認する（後始末: DB削除）
+- Firestore Security Rules はDBごと。クライアントSDK直読み拒否の方針（§3）は各DBで同じ
+
+### 16.3 データ源の差し替え点（FR28〜30）
+
+```
+SourceConnector.sync(store, owner_employee_id, today) -> SyncSummary{tasks, schedules, mails}   # 冪等
+  ├─ SeedConnector            : 無操作（シード投入済み）
+  └─ GoogleWorkspaceConnector : Tasks / Calendar / Gmail の REST を google-auth の AuthorizedSession で呼ぶ（読み取り専用スコープ）。新規依存なし
+```
+
+- **sync-then-detect**: `SecretaryService.run_sweep` の先頭で、テナントの全所有者（agents 登録済み＋identities 登録済み）に対して `connector.sync` を実行してから検知に入る。`seed` では無操作なので既存の挙動・テストは不変。`SOURCE_CONNECTOR=seed|google_workspace`（既定 seed）
+- **所有者↔Googleアカウント**: 原則 `identities`（email）から。作者本人のADC（ユーザー資格情報）は自分のデータしか読めないため、env `GWS_SELF_EMPLOYEE_ID`（例 `emp_jordan_lee`）で「ADCの持ち主＝この社員」と宣言する単独モードを持つ。複数社員を読む本番形（サービスアカウント＋ドメイン全体委任）は手順のみREADMEに書き、実動確認はしない
+- **Tasks → tasks**: 全タスクリストの未完了タスク（title / notes→description / due / updated / status）。`task_id = gws_task_<tasklist>_<id>`。**リスケ計数**: 既存レコードの due と異なれば `reschedule_count += 1`（秘書が覚える）。`created_at` は初回同期日時、`status_changed_at` は status 変化を検出した同期日時（取得不能のため着手なしシグナルは実質0。§14.3は不変）。Tasks側で完了→`done`
+- **Calendar → schedules**: 今日〜N日先（既定3）の予定→ `meeting_prep`（due=開始日）、昨日〜今日の終了済み予定→ `meeting_review`。`item_id = gws_cal_<eventId>_<kind>`。経費・週報・ジャーナルの期日はカレンダーからは作らない（シード/社内ルール由来のまま）
+- **Gmail → mail_seeds**: 直近N日（既定7）・上限M件（既定20）の受信メール。本文は text/plain 優先でK文字（既定2000）に切り詰め。`mail_id = gws_mail_<msgId>`、既存IDは再投入しない、processed=false。**件名・本文はログ・監査payloadに出さない**。`GWS_GMAIL_ENABLED`（既定 false）で個別に有効化（作者判断で省略可）
+- 同期の失敗（API拒否・スコープ不足）は sweep の結果に `sync_errors` として件数で返し、検知は続行する（部分失敗で朝のカードを失わない）。認証情報・メール内容はエラーメッセージに含めない
+- 実動確認: `scripts/gws_probe.py`（件数と種別だけを表示。内容を出さない）→ ローカル InMemory 起動＋`SOURCE_CONNECTOR=google_workspace GWS_SELF_EMPLOYEE_ID=emp_jordan_lee` で sweep→digest に実データ由来のリマインド／停滞カードが現れることを確認。**収録はシードで行う**
+
+### 16.4 変更範囲
+
+- 触る: `server.py`（依存の置換・`/api/me`・require_self・ContextRouter）、`secretary.py`（sweep先頭の sync 呼び出し・テナントループは呼び出し側）、新規 `auth.py` / `tenancy.py` / `connectors/{base,seed,google_workspace}.py`、`store.py`/`firestore_store.py`（identities コレクションの追加のみ）、seeds（identities）、UI（`/api/me` を見てペルソナ切替を隠す）、README
+- 触らない: matching / transmission / schemas（マスク）/ 配送・同意・監査のロジック、B段 `secretary_agent`、Scheduler
+- テスト: 既存97＋13は demo_key/seed で不変。追加: 認証（検証成功・失敗・403・demo素通し）、テナント分離（2テナントInMemory横断ゼロ）、コネクタ写像（フェイクHTTP）、リスケ計数、sweepのsync-then-detect、`/api/me`
+
+### 16.5 撤退線・未決
+
+- 8/27 朝までに反証を通らない部品は「差し替え点＋`Seed`/`DemoKey` 実装のみ残し、実アダプタは将来項目」に落とす（ユーザー合意）
+- IAPの実有効化の実機確認（別サービス）と Gmail の実動確認は spec 未決（任意）
