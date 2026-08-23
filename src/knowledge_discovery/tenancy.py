@@ -32,6 +32,15 @@ DEFAULT_API_KEY_ENV = "DEMO_API_KEY"
 DEFAULT_API_KEY_FALLBACK = "demo-key-2026"
 
 
+def _normalize_strings(values: list[str]) -> tuple[str, ...]:
+    """Lowercase + strip email_domains / system_accounts before they become
+    dict keys (round-14 V-14/S-13): matches `IapResolver.resolve()`, which
+    already lowercases the verified JWT email before looking it up here, so
+    a hand-authored `TENANTS_JSON` entry can't silently evade the startup
+    duplicate-domain/account check or the runtime lookup by case alone."""
+    return tuple(v.strip().lower() for v in values)
+
+
 @dataclass(frozen=True)
 class TenantConfig:
     """One row of the tenant ledger."""
@@ -105,18 +114,19 @@ class TenantRegistry:
     @staticmethod
     def _config_from_entry(entry: dict[str, Any], env: dict[str, str]) -> TenantConfig:
         tenant_id = entry["tenant_id"]
-        api_key = entry.get("api_key")
-        if not api_key:
-            api_key_env = entry.get("api_key_env")
-            if not api_key_env:
-                raise RuntimeError(f"Tenant {tenant_id!r} must set 'api_key' or 'api_key_env'.")
-            api_key = env.get(api_key_env, "")
+        api_key_env = entry.get("api_key_env")
+        if not api_key_env:
+            # Plain-text `api_key` in the ledger is not accepted (round-14
+            # E-13): keys live in env vars / Secret Manager, never in
+            # TENANTS_JSON itself.
+            raise RuntimeError(f"Tenant {tenant_id!r} must set 'api_key_env'.")
+        api_key = env.get(api_key_env, "")
         return TenantConfig(
             tenant_id=tenant_id,
             database=entry.get("database", DEFAULT_DATABASE),
-            email_domains=tuple(entry.get("email_domains", [])),
+            email_domains=_normalize_strings(entry.get("email_domains", [])),
             api_key=api_key,
-            system_accounts=tuple(entry.get("system_accounts", [])),
+            system_accounts=_normalize_strings(entry.get("system_accounts", [])),
         )
 
     @classmethod
@@ -136,9 +146,9 @@ class TenantRegistry:
                 TenantConfig(
                     tenant_id=tenant_id,
                     database=database,
-                    email_domains=tuple(email_domains or DEFAULT_EMAIL_DOMAINS),
+                    email_domains=_normalize_strings(list(email_domains or DEFAULT_EMAIL_DOMAINS)),
                     api_key=api_key,
-                    system_accounts=tuple(system_accounts or ()),
+                    system_accounts=_normalize_strings(list(system_accounts or ())),
                 )
             ]
         )

@@ -67,10 +67,13 @@ embedder).
 ## Authentication (design v15 §16.1)
 
 `AUTH_MODE` selects how each request's `Principal` (`mode: demo|human|system`,
-`tenant_id`, `employee_id`, `email`) is resolved. Every route enforces a
-default-deny permission table over this Principal (design.md §16.1). Both
-modes below resolve `tenant_id` from the tenant ledger (see "Tenants" below,
-design.md §16.2) rather than a fixed constant.
+`tenant_id`, `employee_id`, `email`) is resolved. Every `/api/*` route enforces
+a default-deny permission table over this Principal (design.md §16.1). Two
+exceptions carry no authentication at all, unchanged from before Part A: the
+static UI shells (`/`, `/requester`, `/candidate`, `/audit` — they contain no
+data of their own) and `GET /attachments/{id}` (pre-placed demo documents).
+Both modes below resolve `tenant_id` from the tenant ledger (see "Tenants"
+below, design.md §16.2) rather than a fixed constant.
 
 - **`AUTH_MODE=demo_key` (default)**: unchanged from the pre-Part-A behavior,
   except the tenant is now whichever tenant's key matched. `X-API-Key` header
@@ -136,17 +139,17 @@ single-tenant setup (`meridian` / `(default)` / `meridian-care.example` /
     "tenant_id": "acme",
     "database": "kd-tenant-acme",
     "email_domains": ["acme.example"],
-    "api_key": "literal-key-for-local-testing-only",
+    "api_key_env": "ACME_API_KEY",
     "system_accounts": []
   }
 ]
 ```
 
-Each row needs either `api_key` (a literal value, local/testing only) or
-`api_key_env` (the name of an env var holding the key — the production way,
-so keys live in Secret Manager, not the ledger). Startup fails closed if
-`tenant_id`, `database`, any `email_domains` entry, or the resolved `api_key`
-repeats across tenants.
+Each row needs `api_key_env` (the name of an env var holding the key, so keys
+live in Secret Manager / the local shell environment, never in the ledger
+itself as a literal value — round-14 E-13). Startup fails closed if
+`tenant_id`, `database`, the resolved `api_key`, or any `email_domains` /
+`system_accounts` entry (compared case-insensitively) repeats across tenants.
 
 - **API keys are per-tenant** (§16.2 C-42/W-2): `demo`/`system` principals are
   bound to whichever tenant's key matched theirs; there is no key that spans
@@ -175,6 +178,36 @@ repeats across tenants.
   # 4. delete the verification database when done
   gcloud firestore databases delete --database=kd-tenant-b --quiet
   ```
+
+## Data source connectors (design v15 §16.3)
+
+`SOURCE_CONNECTOR` selects what the secretary's sweep-time sync step (§14.7 /
+§16.3 "sync-then-detect") reads from before stagnation detection runs:
+
+- **`SOURCE_CONNECTOR=seed` (default)**: a no-op. The demo/offline-test data
+  already lives directly in `Store` (seeded by `scripts/generate_seeds.py`);
+  nothing is fetched or reconciled, and switching between `seed` and
+  `google_workspace` can never affect previously-synced `gws` data (a
+  `SeedConnector` sweep never touches Store's `gws` records at all).
+- **`SOURCE_CONNECTOR=google_workspace`**: pulls Tasks / Calendar / Gmail over
+  REST using the author's own ADC (read-only scopes). **`GWS_SELF_EMPLOYEE_ID`
+  is required** — there is no per-owner credential (Domain-Wide Delegation is
+  a future item), so this connector only ever supports single-owner mode: the
+  one employee_id it syncs. If `SOURCE_CONNECTOR=google_workspace` is set
+  without `GWS_SELF_EMPLOYEE_ID`, the sweep never fetches anything (fail
+  closed) and records a configuration error in `sync_errors` on every sweep
+  instead of guessing an owner.
+  - `GWS_GMAIL_ENABLED=false` (default): Gmail is opt-in. When `true`, only
+    messages the owner has labelled `kd-secretary` are read (`GWS_GMAIL_DAYS`,
+    default 7; `GWS_GMAIL_MAX_RESULTS`, default 20; `GWS_MAIL_BODY_CHARS`,
+    default 2000).
+  - `GWS_CAL_DAYS_AHEAD` (default 3): the Calendar lookahead window for
+    `meeting_prep` reminders.
+  - Author-ADC login: `gcloud auth application-default login --scopes=cloud-platform,tasks.readonly,calendar.readonly[,gmail.readonly]`.
+  - `PYTHONPATH=src .venv/bin/python scripts/gws_probe.py --owner <employee_id> [--apply-to-memory]`
+    prints fetch counts (and, with `--apply-to-memory`, a real
+    `run_sweep()`/`get_morning_digest()` result against a throwaway empty
+    `InMemoryStore`) — counts and kinds only, never titles/subjects/bodies.
 
 ## Tests
 

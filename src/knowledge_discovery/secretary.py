@@ -327,32 +327,57 @@ class SecretaryService:
     ) -> dict[str, int]:
         """Sync-then-detect's "sync" half (§16.3): pull each tenant owner's
         external data through `self.connector` and reconcile it via
-        `apply_fetch_result` before stagnation detection runs. `SeedConnector`
-        (the default) is a no-op, so this is a no-op in demo mode.
+        `apply_fetch_result` before stagnation detection runs.
 
-        Single-owner mode (`GWS_SELF_EMPLOYEE_ID`): only that owner is
-        synced; every other owner is counted as skipped rather than synced.
-        A connector/reconciliation failure for one owner is caught and
-        counted so it never halts the sweep (§16.3 failure handling) — and
-        never logs task/mail titles or bodies.
+        `SeedConnector` (the default) is a no-op *by construction here*: it
+        is never even asked to fetch, and `apply_fetch_result` is never
+        called (round-14 V-12) — a bare `isinstance` check short-circuits
+        before touching Store, so switching `SOURCE_CONNECTOR` back to
+        `seed` (or leaving it unset) can never mark previously-synced `gws`
+        data done/deleted, and demo mode pays zero extra Store queries.
+
+        Single-owner mode (`GWS_SELF_EMPLOYEE_ID`): the sync target is that
+        one owner *only* — not a filter over agents ∪ profiles, so it is
+        synced even if that owner has no agent/profile registered yet
+        (round-14 V-11; this is what makes the empty-`InMemoryStore` manual
+        gate in design §10 goal 28 actually fetch anything). Every other
+        registered owner is counted in `sync_skipped_owners` for
+        visibility, without ever being fetched. A connector/reconciliation
+        failure for one owner is caught and counted in `sync_errors` so it
+        never halts the sweep (§16.3 failure handling) — and never logs
+        task/mail titles or bodies.
         """
+        if isinstance(self.connector, SeedConnector):
+            return {
+                "sync_tasks": 0,
+                "sync_schedules": 0,
+                "sync_mails": 0,
+                "sync_skipped_owners": 0,
+                "sync_skipped_mails": 0,
+                "sync_errors": 0,
+            }
+
         today_str = ref_today.isoformat()
         self_only = os.environ.get("GWS_SELF_EMPLOYEE_ID", "").strip()
-        target_owners = {a.employee_id for a in registered_agents} | {
+        registered_owner_ids = {a.employee_id for a in registered_agents} | {
             p.employee_id for p in profiles_list
         }
+        if self_only:
+            target_owners = {self_only}
+            skipped_owner_ids = registered_owner_ids - target_owners
+        else:
+            target_owners = registered_owner_ids
+            skipped_owner_ids = set()
 
         stats = {
             "sync_tasks": 0,
             "sync_schedules": 0,
             "sync_mails": 0,
-            "sync_skipped": 0,
+            "sync_skipped_owners": len(skipped_owner_ids),
+            "sync_skipped_mails": 0,
             "sync_errors": 0,
         }
         for owner_id in sorted(target_owners):
-            if self_only and owner_id != self_only:
-                stats["sync_skipped"] += 1
-                continue
             try:
                 fetch_result = self.connector.fetch(owner_id, today_str)
                 summary = apply_fetch_result(self.store, owner_id, fetch_result, today_str)
@@ -362,7 +387,7 @@ class SecretaryService:
             stats["sync_tasks"] += summary.tasks
             stats["sync_schedules"] += summary.schedules
             stats["sync_mails"] += summary.mails
-            stats["sync_skipped"] += summary.skipped
+            stats["sync_skipped_mails"] += summary.skipped
             stats["sync_errors"] += len(summary.errors)
         return stats
 

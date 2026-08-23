@@ -39,6 +39,10 @@ os.environ["STAGNATION_T2"] = "7.0"
 os.environ["STAGNATION_CAP"] = "10"
 os.environ["STAGNATION_NEGLECT_WINDOW"] = "3"
 
+from knowledge_discovery.connectors import (  # noqa: E402
+    SeedConnector,
+    build_connector_from_env,
+)
 from knowledge_discovery.connectors.base import (  # noqa: E402
     FetchResult,
     SourceConnector,
@@ -1022,7 +1026,143 @@ class TestSyncThenDetect(SecretaryTestBase):
             result = secretary.run_sweep(demo_today=TODAY_STR)
 
         self.assertEqual(connector.calls, [owner_a])
-        self.assertEqual(result["sync_skipped"], 1)
+        self.assertEqual(result["sync_skipped_owners"], 1)
+
+    def test_self_employee_id_mode_syncs_owner_with_no_agent_or_profile_registered(self) -> None:
+        """round-14 V-11: single-owner mode's sync target is `GWS_SELF_EMPLOYEE_ID`
+        itself, not a filter over agents ∪ profiles -- so it must be fetched
+        even against a completely empty Store (no agents, no profiles). This is
+        the mechanism design §10 goal 28's empty-`InMemoryStore` manual gate
+        relies on to see any data at all.
+        """
+        self_owner = "emp_unregistered"
+        connector = FakeSourceConnector(
+            {
+                self_owner: FetchResult(
+                    tasks=[
+                        TaskRecord(
+                            source_id="gws_task_solo",
+                            title="Solo task",
+                            status="todo",
+                            last_updated_at="2026-06-01T00:00:00Z",
+                        )
+                    ],
+                    complete=True,
+                )
+            }
+        )
+        secretary = SecretaryService(
+            store=self.store,
+            kd_service=self.kd_service,
+            matching_engine=self.matching_engine,
+            t1=3.0,
+            t2=7.0,
+            connector=connector,
+        )
+
+        self.assertEqual(self.store.list_agents(), [])
+        self.assertEqual(self.store.list_profiles(), [])
+
+        with mock.patch.dict(os.environ, {"GWS_SELF_EMPLOYEE_ID": self_owner}):
+            result = secretary.run_sweep(demo_today=TODAY_STR)
+
+        self.assertEqual(connector.calls, [self_owner])
+        self.assertEqual(result["sync_tasks"], 1)
+        self.assertEqual(result["sync_skipped_owners"], 0)
+        self.assertIsNotNone(self.store.get_task("gws_task_solo"))
+
+    def test_google_workspace_without_self_employee_id_syncs_nothing_and_records_errors(self) -> None:
+        """round-14 V-11/V-13/S-11: SOURCE_CONNECTOR=google_workspace with
+        GWS_SELF_EMPLOYEE_ID unset must not attribute one author's data to
+        every registered owner. build_connector_from_env() must return a
+        connector whose fetch() always fails instead of the real one, so
+        _sync_owners' existing per-owner error handling records it in
+        sync_errors and detection still runs over whatever is already in
+        Store -- fail-closed without a server crash.
+        """
+        owner = "emp_owner"
+        self._register_owner(owner)
+        task = self._make_high_score_task(owner=owner)
+        self.store.save_task(task)
+
+        with mock.patch.dict(
+            os.environ, {"SOURCE_CONNECTOR": "google_workspace"}, clear=False
+        ):
+            os.environ.pop("GWS_SELF_EMPLOYEE_ID", None)
+            connector = build_connector_from_env()
+            secretary = SecretaryService(
+                store=self.store,
+                kd_service=self.kd_service,
+                matching_engine=self.matching_engine,
+                t1=3.0,
+                t2=7.0,
+                connector=connector,
+            )
+            result = secretary.run_sweep(demo_today=TODAY_STR)
+
+        self.assertEqual(result["sync_tasks"], 0)
+        self.assertEqual(result["sync_schedules"], 0)
+        self.assertEqual(result["sync_mails"], 0)
+        self.assertGreaterEqual(result["sync_errors"], 1)
+        # Pre-existing (seed) data is untouched and detection still ran.
+        card = self.store.find_open_card_for_task(owner, task.task_id)
+        self.assertIsNotNone(card)
+
+    def test_seed_connector_never_calls_apply_fetch_result(self) -> None:
+        """round-14 V-12: switching (or defaulting) to SeedConnector must not
+        run apply_fetch_result at all -- not even with an empty/no-op
+        FetchResult -- so it can never mark previously-synced source="gws"
+        tasks done or delete source="gws" schedules, and demo mode pays no
+        extra Store queries per owner.
+        """
+        owner = "emp_owner"
+        self._register_owner(owner)
+
+        gws_task = Task(
+            task_id="gws_task_existing",
+            owner_employee_id=owner,
+            title="Existing gws task",
+            status="todo",
+            due_date="",
+            created_at=TODAY_STR,
+            last_updated_at=TODAY_STR,
+            status_changed_at=TODAY_STR,
+            source="gws",
+        )
+        self.store.save_task(gws_task)
+        gws_schedule = Schedule(
+            item_id="gws_cal_ev1_meeting_prep",
+            owner_employee_id=owner,
+            kind="meeting_prep",
+            title="Existing gws meeting",
+            due_date=TODAY_STR,
+            source="gws",
+        )
+        self.store.save_schedule(gws_schedule)
+
+        secretary = SecretaryService(
+            store=self.store,
+            kd_service=self.kd_service,
+            matching_engine=self.matching_engine,
+            t1=3.0,
+            t2=7.0,
+            connector=SeedConnector(),
+        )
+
+        with mock.patch(
+            "knowledge_discovery.secretary.apply_fetch_result",
+            side_effect=AssertionError("apply_fetch_result must not be called for SeedConnector"),
+        ):
+            result = secretary.run_sweep(demo_today=TODAY_STR)
+
+        self.assertEqual(result["sync_tasks"], 0)
+        self.assertEqual(self.store.get_task("gws_task_existing").status, "todo")
+        self.assertIsNotNone(
+            next(
+                (s for s in self.store.list_schedules(owner_employee_id=owner) if s.item_id == "gws_cal_ev1_meeting_prep"),
+                None,
+            )
+        )
 
     def test_sync_failure_for_one_owner_does_not_halt_the_sweep(self) -> None:
         owner_failing = "emp_failing"

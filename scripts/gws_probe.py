@@ -10,24 +10,28 @@ connector's `fetch()` return value already withholds nothing but counts from
 this script by construction, but this script additionally never prints the
 record contents even though they are present in memory.
 
-`--apply-to-memory` additionally reconciles the fetch into a throwaway,
-empty `InMemoryStore` (via `apply_fetch_result`) and prints the resulting
-morning digest's counts by kind/tier only — still no titles or bodies.
+`--apply-to-memory` additionally builds a real SecretaryService (this
+connector injected, `GWS_SELF_EMPLOYEE_ID` forced to `--owner` so single-owner
+mode's sync target is exactly this probe, per §16.3) around a throwaway,
+empty `InMemoryStore`, and runs `run_sweep()` followed by
+`get_morning_digest()` — the same path design §10 goal 28's manual gate
+exercises — printing only reminder kind/due_category counts and stagnation/
+profile_diff card type/tier counts. Never titles, subjects, or bodies.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import datetime, timezone
 
-from knowledge_discovery.connectors.base import apply_fetch_result
 from knowledge_discovery.connectors.google_workspace import (
     GoogleWorkspaceConnector,
     default_session,
 )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--owner", required=True, help="Probe target's employee_id")
     parser.add_argument(
@@ -38,9 +42,12 @@ def main() -> int:
     parser.add_argument(
         "--apply-to-memory",
         action="store_true",
-        help="Reconcile the fetch into an empty InMemoryStore and print digest counts by kind (no titles/bodies).",
+        help=(
+            "Run a real run_sweep()/get_morning_digest() against an empty "
+            "InMemoryStore and print digest counts by kind/tier (no titles/bodies)."
+        ),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     today = args.today or datetime.now(timezone.utc).date().isoformat()
 
@@ -59,20 +66,62 @@ def main() -> int:
         print(f"  - {error}")
 
     if args.apply_to_memory:
+        from knowledge_discovery.matching import (
+            DeterministicEmbedder,
+            FakeConnectionInferencer,
+            MatchingEngine,
+        )
+        from knowledge_discovery.secretary import SecretaryService
+        from knowledge_discovery.service import KnowledgeDiscoveryService
         from knowledge_discovery.store import InMemoryStore
+        from knowledge_discovery.transmission import TransmissionLayer
+
+        # Single-owner mode (§16.3): the sync target is GWS_SELF_EMPLOYEE_ID
+        # itself, not a filter over agents ∪ profiles, so it is fetched even
+        # against a completely empty Store. Forced here rather than merely
+        # documented, so this probe can never accidentally run in the
+        # multi-owner (unsupported, fail-closed) mode.
+        os.environ["GWS_SELF_EMPLOYEE_ID"] = args.owner
 
         store = InMemoryStore()
-        summary = apply_fetch_result(store, args.owner, result, today)
-        kinds: dict[str, int] = {}
-        for schedule in store.list_schedules(owner_employee_id=args.owner):
-            kinds[schedule.kind] = kinds.get(schedule.kind, 0) + 1
-        statuses: dict[str, int] = {}
-        for task in store.list_tasks(owner_employee_id=args.owner):
-            statuses[task.status] = statuses.get(task.status, 0) + 1
-        print("--- applied to empty InMemoryStore ---")
-        print(f"synced tasks: {summary.tasks} by status: {statuses}")
-        print(f"synced schedules: {summary.schedules} by kind: {kinds}")
-        print(f"synced mails: {summary.mails} (skipped: {summary.skipped})")
+        matching_engine = MatchingEngine(
+            embedder=DeterministicEmbedder(),
+            inferencer=FakeConnectionInferencer(),
+            vector_floor=0.20,
+            connection_threshold=0.50,
+            max_dispatch_k=3,
+        )
+        kd_service = KnowledgeDiscoveryService(
+            store=store,
+            transmission=TransmissionLayer(store),
+            matching_engine=matching_engine,
+        )
+        secretary = SecretaryService(
+            store=store,
+            kd_service=kd_service,
+            matching_engine=matching_engine,
+            connector=connector,
+        )
+
+        sweep_result = secretary.run_sweep(demo_today=today)
+        digest = secretary.get_morning_digest(args.owner, demo_today=today)
+
+        reminder_counts: dict[str, int] = {}
+        for reminder in digest["reminders"]:
+            key = f"{reminder['kind']}/{reminder['due_category']}"
+            reminder_counts[key] = reminder_counts.get(key, 0) + 1
+
+        card_counts: dict[str, int] = {}
+        for card in digest["stagnation_cards"]:
+            key = f"stagnation/{card['tier']}"
+            card_counts[key] = card_counts.get(key, 0) + 1
+        if digest["profile_diff_cards"]:
+            card_counts["profile_diff"] = len(digest["profile_diff_cards"])
+
+        print("--- run_sweep -> get_morning_digest (empty InMemoryStore) ---")
+        print(f"sweep: {sweep_result}")
+        print(f"reminders by kind/due_category: {reminder_counts}")
+        print(f"cards by type/tier: {card_counts}")
     return 0
 
 

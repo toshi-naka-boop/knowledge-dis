@@ -281,7 +281,8 @@ class TestIapJwtVerification(unittest.TestCase):
 @unittest.skipUnless(HAS_CRYPTO and HAS_FASTAPI, "cryptography/google-auth/fastapi not available")
 class TestCertCache(unittest.TestCase):
     """Cert cache resilience: cache hits skip the network; a failed refetch
-    serves stale certs through a grace window, then fails closed (401)."""
+    past the freshness window fails closed (401) immediately, with no grace
+    period (design §16.1; round-14 E-12/S-12)."""
 
     def setUp(self) -> None:
         self.priv, self.pub_pem = _generate_ec_keypair()
@@ -295,23 +296,22 @@ class TestCertCache(unittest.TestCase):
         cache(url="https://www.gstatic.com/iap/verify/public_key")
         self.assertEqual(transport.call_count, 1)
 
-    def test_fetch_failure_within_grace_serves_stale(self) -> None:
+    def test_fetch_success_still_within_ttl_is_not_attempted(self) -> None:
         transport = _FakeCertsTransport(self.certs)
-        cache = _CachingCertsRequest(default_ttl_seconds=0.05)
+        cache = _CachingCertsRequest(default_ttl_seconds=60)
         cache._transport = transport
         first = cache(url="u")
-        time.sleep(0.08)  # past ttl, still within the 2x grace window
-        transport.raise_exc = RuntimeError("network down")
-        second = cache(url="u")
+        transport.raise_exc = RuntimeError("would fail if called")
+        second = cache(url="u")  # still within ttl: no refetch attempted
         self.assertIs(first, second)
 
-    def test_fetch_failure_beyond_grace_raises(self) -> None:
+    def test_fetch_failure_past_ttl_raises_immediately_no_grace(self) -> None:
         transport = _FakeCertsTransport(self.certs)
         cache = _CachingCertsRequest(default_ttl_seconds=0.05)
         cache._transport = transport
         cache(url="u")
+        time.sleep(0.08)  # past ttl: a stale-serving grace window must not exist
         transport.raise_exc = RuntimeError("network down")
-        time.sleep(0.15)  # past ttl*2 grace window entirely
         with self.assertRaises(RuntimeError):
             cache(url="u")
 

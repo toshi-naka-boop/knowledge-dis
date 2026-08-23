@@ -128,16 +128,64 @@ class TestTenantRegistryFromEnv(unittest.TestCase):
         env = {
             "TENANTS_JSON": (
                 '[{"tenant_id":"acme","database":"acme-db","email_domains":["acme.example"],'
-                '"api_key":"acme-key","system_accounts":["sa@acme.example"]},'
+                '"api_key_env":"ACME_KEY","system_accounts":["sa@acme.example"]},'
                 '{"tenant_id":"globex","database":"globex-db","email_domains":["globex.example"],'
                 '"api_key_env":"GLOBEX_KEY"}]'
             ),
+            "ACME_KEY": "acme-key-from-env",
             "GLOBEX_KEY": "globex-key-from-env",
         }
         registry = TenantRegistry.from_env(env=env)
         self.assertEqual(len(registry.tenants), 2)
-        self.assertEqual(registry.resolve_by_api_key("acme-key").tenant_id, "acme")
+        self.assertEqual(registry.resolve_by_api_key("acme-key-from-env").tenant_id, "acme")
         self.assertEqual(registry.resolve_by_api_key("globex-key-from-env").tenant_id, "globex")
+
+    def test_tenants_json_plaintext_api_key_is_rejected(self) -> None:
+        """round-14 E-13: `TENANTS_JSON` accepts only `api_key_env`; a literal
+        `api_key` field (even alongside a missing `api_key_env`) fails startup
+        rather than silently working as a second, less safe config path."""
+        env = {
+            "TENANTS_JSON": (
+                '[{"tenant_id":"acme","database":"acme-db","email_domains":["acme.example"],'
+                '"api_key":"acme-key-in-plaintext"}]'
+            ),
+        }
+        with self.assertRaises(RuntimeError):
+            TenantRegistry.from_env(env=env)
+
+    def test_email_domains_and_system_accounts_normalized_to_lowercase(self) -> None:
+        """round-14 V-14/S-13: ledger-side domains/system_accounts are
+        lowercased so they match the already-lowercased verified JWT email
+        IapResolver looks them up with."""
+        env = {
+            "TENANTS_JSON": (
+                '[{"tenant_id":"acme","database":"acme-db",'
+                '"email_domains":["Acme.EXAMPLE"],"api_key_env":"ACME_KEY",'
+                '"system_accounts":["SA@Acme.EXAMPLE"]}]'
+            ),
+            "ACME_KEY": "acme-key",
+        }
+        registry = TenantRegistry.from_env(env=env)
+        self.assertEqual(registry.resolve_by_email_domain("acme.example").tenant_id, "acme")
+        self.assertIsNone(registry.resolve_by_email_domain("Acme.EXAMPLE"))
+        self.assertEqual(registry.resolve_by_system_account("sa@acme.example").tenant_id, "acme")
+        self.assertIsNone(registry.resolve_by_system_account("SA@Acme.EXAMPLE"))
+
+    def test_duplicate_email_domain_differing_only_by_case_fails(self) -> None:
+        """Normalization must happen before the startup duplicate check, or a
+        hand-authored ledger could evade it by case alone (round-14 S-13)."""
+        env = {
+            "TENANTS_JSON": (
+                '[{"tenant_id":"t1","database":"db1","email_domains":["Shared.Example"],'
+                '"api_key_env":"K1"},'
+                '{"tenant_id":"t2","database":"db2","email_domains":["shared.example"],'
+                '"api_key_env":"K2"}]'
+            ),
+            "K1": "key1",
+            "K2": "key2",
+        }
+        with self.assertRaises(RuntimeError):
+            TenantRegistry.from_env(env=env)
 
 
 # -----------------------------------------------------------------------------

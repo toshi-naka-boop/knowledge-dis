@@ -665,6 +665,37 @@ class TestApplyFetchResult(unittest.TestCase):
         )
         self.assertIsNone(self._find_schedule("gws_cal_ev1_meeting_prep"))
 
+    def test_calendar_cancelled_event_deleted_even_on_incomplete_sync(self) -> None:
+        """round-14 V-15: `cancelled_ids` is a positive signal from the
+        source (the event really was reported cancelled), not an absence to
+        infer from, so it is reconciled away regardless of `result.complete`
+        -- unlike the out-of-window sweep, which is gated on completeness.
+        """
+        first = ScheduleRecord(
+            source_id="gws_cal_ev1_meeting_prep", kind="meeting_prep", title="Kickoff", due_date="2026-08-25"
+        )
+        other = ScheduleRecord(
+            source_id="gws_cal_ev2_meeting_prep", kind="meeting_prep", title="Unrelated", due_date="2026-08-26"
+        )
+        apply_fetch_result(
+            self.store, self.owner, FetchResult(schedules=[first, other], complete=True), self.today
+        )
+
+        apply_fetch_result(
+            self.store,
+            self.owner,
+            FetchResult(
+                schedules=[other],
+                cancelled_ids=["ev1"],
+                complete=False,
+                errors=["gmail.messages.get: HTTP 500"],
+            ),
+            self.today,
+        )
+        self.assertIsNone(self._find_schedule("gws_cal_ev1_meeting_prep"))
+        # The unrelated, still-reported schedule survives the incomplete sync.
+        self.assertIsNotNone(self._find_schedule("gws_cal_ev2_meeting_prep"))
+
     def test_calendar_reconciliation_skipped_on_incomplete_sync(self) -> None:
         first = ScheduleRecord(
             source_id="gws_cal_ev1_meeting_prep", kind="meeting_prep", title="Kickoff", due_date="2026-08-25"

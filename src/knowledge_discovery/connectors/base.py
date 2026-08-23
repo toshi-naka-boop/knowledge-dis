@@ -179,9 +179,12 @@ def apply_fetch_result(
           to this sync's timestamp only if status actually changed.
 
     Completeness barrier (W-3): destructive reconciliation — marking a
-    missing `source="gws"` task `"done"`, deleting an out-of-window or
-    `cancelled_ids` `source="gws"` schedule — runs only when `result.complete`
-    is True. Otherwise only upserts are applied.
+    missing `source="gws"` task `"done"`, deleting an out-of-window
+    `source="gws"` schedule — runs only when `result.complete` is True.
+    Otherwise only upserts are applied. `cancelled_ids` schedules are the one
+    exception (round-14 V-15): a reported cancellation is deleted regardless
+    of `result.complete`, since it is a positive signal from the source, not
+    an inference from absence.
 
     Mail seeds (part D): existing `mail_id`s are never re-inserted (append-
     only; no destructive reconciliation for messages that vanish from
@@ -263,14 +266,28 @@ def apply_fetch_result(
         summary.schedules += 1
 
     if result.complete:
-        # A source="gws" schedule this sync didn't return is either
-        # out-of-window or explicitly reported cancelled (cancelled events
-        # never appear in result.schedules) — either way, delete it.
+        # A source="gws" schedule this sync didn't return is out-of-window
+        # (cancelled events are handled explicitly below, independent of
+        # `complete`, since a reported cancellation is itself the positive
+        # signal — not an absence to infer from).
         for existing_schedule in store.list_schedules(
             owner_employee_id=owner_employee_id, source="gws"
         ):
             if existing_schedule.item_id not in fetched_schedule_ids:
                 store.delete_schedule(existing_schedule.item_id)
+
+    # Explicit cancellations (§16.3, round-14 V-15): `cancelled_ids` carries
+    # calendar event ids the source itself reported `status == "cancelled"`.
+    # Unlike the out-of-window sweep above, this is not gated on
+    # `result.complete` — a cancellation the source successfully told us
+    # about is a definitive signal, not an inference from absence, so it is
+    # reconciled away even when some other part of this sync failed. The
+    # schedule's kind (`meeting_prep`/`meeting_review`) isn't carried by
+    # `cancelled_ids`, so both possible item_ids are deleted (delete is a
+    # no-op for whichever one doesn't exist).
+    for event_id in result.cancelled_ids:
+        store.delete_schedule(f"gws_cal_{event_id}_meeting_prep")
+        store.delete_schedule(f"gws_cal_{event_id}_meeting_review")
 
     # -- Mail (part D) -----------------------------------------------------
     for mrecord in result.mails:

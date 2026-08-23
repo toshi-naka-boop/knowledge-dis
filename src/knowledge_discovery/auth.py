@@ -43,8 +43,9 @@ IAP_CLOCK_SKEW_SECONDS = 30
 
 # Default cert cache freshness window (Cache-Control max-age overrides this
 # when present on the certs response). "取得失敗時は期限内の旧鍵で継続、期限切れは401":
-# once a fetch fails, the previous certs keep being served for one more
-# window of the same length before the cache is considered truly expired.
+# while the cache is within this window, no network call is made at all; once
+# it elapses, a fresh fetch is required, and a failed fetch fails closed
+# immediately (no extra grace window past ttl — round-14 E-12/S-12).
 DEFAULT_CERT_CACHE_TTL_SECONDS = 3600
 
 
@@ -103,10 +104,11 @@ class _CachingCertsRequest:
 
     While the cached response is within its freshness window, no network
     call is made. Once the window elapses, a fresh fetch is attempted; if
-    that fetch fails, the stale response is still served for one further
-    window (grace period) before being treated as truly expired -- at which
-    point callers see a normal exception, which IapResolver turns into a
-    fail-closed 401 (not 503).
+    that fetch fails, the stale response is no longer served -- the
+    exception propagates immediately, which IapResolver turns into a
+    fail-closed 401 (not 503). Design §16.1: "取得失敗時は期限内の旧鍵で継続、
+    期限切れは401" -- there is no grace period beyond the freshness window
+    (round-14 E-12/S-12).
     """
 
     def __init__(self, default_ttl_seconds: int = DEFAULT_CERT_CACHE_TTL_SECONDS) -> None:
@@ -150,11 +152,8 @@ class _CachingCertsRequest:
                 self._ttl = self._max_age_from_headers(getattr(response, "headers", None)) or self._default_ttl
                 return response
             except Exception:
-                # Fetch failed: serve the stale response through one extra
-                # grace window (2x ttl total since the last good fetch)
-                # before giving up and letting the caller fail-closed.
-                if self._cached_response is not None and (now - self._fetched_at) < (self._ttl * 2):
-                    return self._cached_response
+                # Fetch failed past the freshness window: no grace period.
+                # Propagate so IapResolver.resolve() fails closed with 401.
                 raise
 
 
