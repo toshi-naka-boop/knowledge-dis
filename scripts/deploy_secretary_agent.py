@@ -101,6 +101,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Update an existing reasoningEngines resource instead of creating a new one",
     )
+    parser.add_argument("--cpu", default="4", help="resource_limits cpu (1,2,4,6,8). default 4")
+    parser.add_argument("--memory", default="8Gi", help="resource_limits memory, e.g. 8Gi. default 8Gi")
+    parser.add_argument("--min-instances", type=int, default=1)
+    parser.add_argument("--max-instances", type=int, default=2)
+    parser.add_argument(
+        "--container-concurrency", type=int, default=4,
+        help="Agent Engine container concurrency. Defaults were chosen after observing worker "
+             "restart loops (503 Service Unavailable) under the default limits (design v11 B-stage).",
+    )
     args = parser.parse_args(argv)
 
     if not args.project:
@@ -143,6 +152,10 @@ def main(argv: list[str] | None = None) -> int:
             extra_packages=[EXTRA_PACKAGE_DIR],
             env_vars=env_vars,
             display_name=args.display_name,
+            resource_limits={"cpu": args.cpu, "memory": args.memory},
+            min_instances=args.min_instances,
+            max_instances=args.max_instances,
+            container_concurrency=args.container_concurrency,
         )
     else:
         resource = agent_engines.create(
@@ -151,6 +164,10 @@ def main(argv: list[str] | None = None) -> int:
             extra_packages=[EXTRA_PACKAGE_DIR],
             env_vars=env_vars,
             display_name=args.display_name,
+            resource_limits={"cpu": args.cpu, "memory": args.memory},
+            min_instances=args.min_instances,
+            max_instances=args.max_instances,
+            container_concurrency=args.container_concurrency,
         )
 
     print(resource.resource_name)
