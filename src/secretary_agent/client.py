@@ -33,14 +33,17 @@ class SecretaryApiClient:
         base_url: str | None = None,
         api_key: str | None = None,
         session: requests.Session | None = None,
-        timeout: float = 30.0,
+        timeout: float | None = None,
     ) -> None:
         self._base_url = (base_url or os.environ["KD_API_BASE_URL"]).rstrip("/")
         self._api_key = api_key or os.environ["KD_API_KEY"]
         # Injectable so tests can substitute a fake Session instead of making
         # real network calls.
         self._session = session or requests.Session()
-        self._timeout = timeout
+        # B-1 (round-11): the first sweep after a reseed took ~31s in production
+        # (embedding_public + LLM question draft), so 30s produced a false
+        # failure. Default 120s stays inside the Scheduler attempt deadline (180s).
+        self._timeout = timeout if timeout is not None else float(os.environ.get("KD_API_TIMEOUT", "120"))
 
     def _headers(self) -> dict[str, str]:
         return {"X-API-Key": self._api_key}

@@ -103,7 +103,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--cpu", default="4", help="resource_limits cpu (1,2,4,6,8). default 4")
     parser.add_argument("--memory", default="8Gi", help="resource_limits memory, e.g. 8Gi. default 8Gi")
-    parser.add_argument("--min-instances", type=int, default=1)
+    parser.add_argument("--min-instances", type=int, default=0, help="0 = scale to zero when idle (no standing Agent Compute cost; round-11 B-2). Use 1 on recording day if cold-start latency matters.")
     parser.add_argument("--max-instances", type=int, default=2)
     parser.add_argument(
         "--container-concurrency", type=int, default=4,

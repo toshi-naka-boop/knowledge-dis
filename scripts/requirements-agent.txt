@@ -5,3 +5,4 @@
 google-adk==2.7.1
 google-cloud-aiplatform[agent_engines,adk]==1.165.1
 requests==2.34.2
+google-genai==2.19.0  # pinned: sole real-model path for goal 20 (round-11 B-4)
