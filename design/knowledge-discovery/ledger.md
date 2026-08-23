@@ -1,5 +1,16 @@
 # ledger: knowledge-discovery
 
+## 反証round-11（B段実装）の帰結 — 2026-08-23
+
+原文: reviews/round-11.md（critic: claude design-critic = claude-opus-5[1m]、3レンズを1人で順に）。B-1〜B-5、全件受理。中核（LLM非介入の決定的sweep・ツール1本の読み取り専用対話・失敗の非無音化・secret最小権限）は実機とコードの双方で成立を確認済み。
+
+- **B-1（high）**: sweepクライアントtimeout 30s < 再シード直後の初回sweep 30.8s → 既定120s（`KD_API_TIMEOUT` で上書き可。Scheduler deadline 180s内）
+- **B-2（mid）**: `min_instances=1`＋cpu4/8Giの常駐コスト（約$8〜10/日）が design「呼び出し時のみ課金」と矛盾 → 既定 `min_instances=0`（スケールtoゼロ）に変更、designのコスト記述を訂正、READMEに後始末（Scheduler削除＋Runtime削除）手順を追加。コールドスタートでの Scheduler 成功を単独テストで確認（結果は末尾）
+- **B-3（mid）**: user_id は自己申告で「本人スコープ」は過大／`kd-scheduler-sa` の `roles/aiplatform.user` が広すぎる → design/READMEの文言を「呼び出し側が申告するセッションID。デモ割り切り（S-10同型）、本番はエージェント・アイデンティティ／IAMとのマッピング」に訂正。SAはカスタムロール `kdReasoningEngineInvoker`（`aiplatform.reasoningEngines.query/get` のみ）に縮小し `aiplatform.user` を除去
+- **B-4（low）**: `google-genai` 未ピン留め → `google-genai==2.19.0` を requirements-agent.txt にピン留め
+- **B-5（low・受理／対応見送り）**: ToolContext・timeout・env をモック置換しており外部契約をテストで検証していない → ライブ検証（ゴール19〜21の実機確認）を ledger に記録済みで代替。凍結前の追加テストは見送り（write-upの既知制限に含める）
+
+
 ## B段実装・検証の記録 — 2026-08-23
 
 design v11 承認後の実装（secretary_agent パッケージ＝sonnet委譲、インフラ＝メインループ）。検証ゴール19〜22の結果:
