@@ -1,8 +1,8 @@
-# knowledge-discovery 設計書 v14
+# knowledge-discovery 設計書 v15
 
 入力: `spec.md` v8（§16 が v8 の FR25〜30「接続部品」に対応。§14〜§15 は v7 の FR16〜24）
-生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映 / v10: B段（Agent Runtime載せ替え）の詳細化（2026-08-23、ユーザー決定「B段を実施」を受けて§14.7を追補。A段は本番稼働済み・反証round-8/9クローズ済み） / v11: 批評round-10（claude C-31〜C-35 + codex Y-1〜Y-5）反映 / v12: 接続部品（spec v8 FR25〜30）の追補 §16（2026-08-23） / v13: 批評round-12（claude C-36〜C-40 + codex Z-1〜Z-6）反映 / v14: 批評round-13（claude C-41〜C-45 + codex W-1〜W-5）反映
-状態: 改訂版（承認CP待ち。追補は §16・§10ゴール23〜30・§12対応表。B段コードの変更は不要になった）
+生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映 / v10: B段（Agent Runtime載せ替え）の詳細化（2026-08-23、ユーザー決定「B段を実施」を受けて§14.7を追補。A段は本番稼働済み・反証round-8/9クローズ済み） / v11: 批評round-10（claude C-31〜C-35 + codex Y-1〜Y-5）反映 / v12: 接続部品（spec v8 FR25〜30）の追補 §16（2026-08-23） / v13: 批評round-12（claude C-36〜C-40 + codex Z-1〜Z-6）反映 / v14: 批評round-13（claude C-41〜C-45 + codex W-1〜W-5）反映（承認 v14:9d6eff76a780） / v15: ユーザー条件「Gmailも含める」を部品Dとして追加（A〜Cは v14 と同一）
+状態: 改訂版（v15 の再確認待ち。追補は §16・§10ゴール23〜30・§12対応表。B段コードの変更は不要になった）
 
 **v9での変更点（批評round-7由来）**:
 - C-26/X-1: プレビュー専用の `embedding_public` を新設（1段目ランキングからもprivateの影響を排除）。プレビューと正式実行の候補差は仕様として明示しUI文言に反映
@@ -245,8 +245,8 @@ messages/{audit_id}
 24. （部品A）`/api/me` が mode / tenant_id / employee_id を返し、requester.html が `human` のときペルソナ切替を隠すこと。権限表どおり human の sweep／probe が 403、system の human-facing 書き込みが 403 になること
 25. （部品B）2テナント（InMemory）で、テナントAのプロフィール・カード・監査行がテナントBの全APIから見えず、テナントAの鍵で system 主体がテナントBの digest を取れないこと。実Firestoreで第2DB `kd-tenant-b` にシードを入れ、テナント別に digest が分離されることを実機確認できる（確認後にDB削除）
 26. （部品B）テナント単位の鍵で sweep がそのテナントだけを処理すること。`IAP_AUDIENCE` の形式不正は iap モードでのみ起動失敗し、demo では不要なこと
-27. （部品C）`GoogleWorkspaceConnector` がフェイクAPI応答で tasks / schedules に写像され、同じ入力の再同期で重複も `reschedule_count` 増加もなく、初回同期で加算されず、due 変更で +1、`last_updated_at` が Tasks.updated を写し、completed と取得結果からの消滅が `done`（→ `resolved`）、ページング途中エラー時に破壊的 reconciliation が行われず、Calendar の窓外・取消が削除されることをオフラインで確認できる
-28. （部品C）作者アカウントの読み取り専用資格情報で `scripts/gws_probe.py` が件数を返し、シード無しの空 InMemory で `SOURCE_CONNECTOR=google_workspace GWS_SELF_EMPLOYEE_ID=…` の sweep→digest に実データ由来のリマインド／停滞カードが現れることを確認できる（記録は件数・種別のみ）
+27. （部品C／D）`GoogleWorkspaceConnector` がフェイクAPI応答で tasks / schedules / mail_seeds（ラベル絞り込み・本文切り詰め・既存ID非再投入・処理後の本文消去・14日削除）に写像され、同じ入力の再同期で重複も `reschedule_count` 増加もなく、初回同期で加算されず、due 変更で +1、`last_updated_at` が Tasks.updated を写し、completed と取得結果からの消滅が `done`（→ `resolved`）、ページング途中エラー時に破壊的 reconciliation が行われず、Calendar の窓外・取消が削除されることをオフラインで確認できる
+28. （部品C／D）作者アカウントの読み取り専用資格情報（tasks/calendar/gmail.readonly）で `scripts/gws_probe.py` が件数を返し、シード無しの空 InMemory で `SOURCE_CONNECTOR=google_workspace GWS_SELF_EMPLOYEE_ID=…` の sweep→digest に実データ由来のリマインド／停滞カードが現れ、`GWS_GMAIL_ENABLED=true`＋ラベル付きメールで差分提案カードが生成されることを確認できる（記録は件数・種別のみ。本文は記録しない）
 29. （共通）README に認証モード・権限表・テナント台帳（鍵と system_accounts）・コネクタ設定・IAP有効化／Scheduler OIDC／DWD 手順・Gmail の設計方針が記載されていること
 30. （共通）降格した部品がある場合、spec FR25〜30・README・本ゴールが「部品のみ（実アダプタは将来）」に同時に書き換えられていること
 
@@ -458,7 +458,7 @@ score = W_OVERDUE   × min(期日超過日数, CAP)
 | A | 認証の差し替え点 | Principal／権限表（全ルート default-deny）／IAP 検証（オフライン・本物JWT）／require_self 全列挙／`/api/me`／UI | 23・24 | demo のみ残し FR25〜26 を「部品のみ」に |
 | B | テナント＝DB | TenantRegistry／ContextRouter／テナント単位APIキー／identities／2テナントInMemory／第2DB smoke | 25・26 | 既定テナント1組のみ残し FR27 を「部品のみ」に |
 | C | データ源の差し替え点 | SourceConnector／Seed／GoogleWorkspace（**Tasks→Calendar**）／reconciliation／probe スクリプト／作者ADC確認 | 27・28 | Seed のみ残し FR28〜30 を「部品のみ」に |
-| — | Gmail アダプタ | **今回は作らない（stretch）**。ラベル opt-in・保持期限の設計文のみ残す | — | — |
+| D | Gmail アダプタ（ユーザー指示で含める。v15） | GoogleWorkspace の Gmail 部分／ラベル opt-in／保持期限／本文切り詰め／作者アカウントでの実動確認（ラベルを付けたメール1〜2通） | 27（Gmail写像・保持）・28（Gmail件数） | C までを残し FR29 の Gmail 部分を「部品のみ」に |
 
 実機依存の確認（第2DB・作者ADC）は「手動実機ゲート」、JWT・2テナント・フェイクAPIは「オフラインCIゲート」として分ける。撤退時は spec FR／README／ゴールを同時に降格し、完了扱いにしない。
 
@@ -515,7 +515,7 @@ ContextRouter.for_tenant(tenant_id) -> TenantContext
 ```
 SourceConnector.sync(store, owner_employee_id, today) -> SyncSummary{tasks, schedules, mails, skipped, errors, complete: bool}   # 冪等
   ├─ SeedConnector            : 無操作
-  └─ GoogleWorkspaceConnector : Tasks / Calendar の REST を google-auth AuthorizedSession で呼ぶ（読み取り専用スコープ）。Gmail は stretch（今回は未実装）
+  └─ GoogleWorkspaceConnector : Tasks / Calendar / Gmail の REST を google-auth AuthorizedSession で呼ぶ（読み取り専用スコープ。Gmail は部品Dとして最後に実装）
 ```
 
 - **sync-then-detect**: `run_sweep` の先頭で所有者に `connector.sync` を実行してから検知。`seed` は無操作。`SOURCE_CONNECTOR=seed|google_workspace`（既定 seed）。単独モード `GWS_SELF_EMPLOYEE_ID`: その所有者だけ同期し他は `skipped`
@@ -523,7 +523,7 @@ SourceConnector.sync(store, owner_employee_id, today) -> SyncSummary{tasks, sche
 - **フィールドの所有（C-39/C-41/C-44対応）**: コネクタが書く＝ `title / description / due_date / status / last_updated_at（Tasks の updated を写す。無更新・相対停滞シグナルの実体）/ source / last_seen_due`。秘書所有＝ `reschedule_count`（取得 due が `last_seen_due` と異なるときだけ +1。**初回同期は `last_seen_due` を設定するだけで加算しない**）／`created_at`（初回同期時刻）／`status_changed_at`（初回＝Tasks.updated、以後 status 変化を検出した同期時刻）。due は RFC3339→UTC日付に正規化、無しは None
 - **取得と reconciliation（C-37/Z-5/W-3対応）**: `tasks.list` を全タスクリスト・全ページ（`nextPageToken`）・`showCompleted=true&showHidden=true` で取得。`completed`→`done`。**完全性バリア**: 全リスト・全ページが成功したときだけ「取得結果に無い `source="gws"` タスク→done」の破壊的 reconciliation を行い、途中エラー時は upsert のみ（`complete=false`）。Calendar も同様に全ページ成功時のみ「窓外・取消の `source="gws"` schedule を削除」。dismissed カードの扱いは現行どおり（同一タスクでは再生成しない。「due変更で再判定」の記述は撤回）
 - **Calendar 写像**: 今日〜N日先（既定3）→ `meeting_prep`、昨日〜今日の終了済み→ `meeting_review`。`item_id = gws_cal_<eventId>_<kind>`。経費・週報・ジャーナルはカレンダーから作らない
-- **Gmail（stretch・未実装）**: 設計文のみ残す——既定OFF、所有者の `kd-secretary` ラベル opt-in、直近N日・上限M件、本文 text/plain を K 文字に切り詰め、処理後は本文を空にし未処理は14日で削除、件名・本文をログ・監査・エラーに出さない
+- **Gmail（部品D。v15でユーザー指示により実装対象）**: `GWS_GMAIL_ENABLED=false` が既定。有効時は**所有者が `kd-secretary` ラベルを付けたメールだけ**（opt-in。`users.messages.list` を `labelIds` で絞る）、直近N日（既定7）・上限M件（既定20）、本文は text/plain 優先で K 文字（既定2000）に切り詰め、`mail_id = gws_mail_<msgId>`、既存IDは再投入しない、processed=false。件名はカード表示用に80文字まで。**保持期限**: 差分提案の処理後（カード生成 or 明示null）に mail_seeds の本文を空にし、未処理でも14日で削除（sweep 内で実施）。Gemini に渡すのは切り詰め後の本文のみ。件名・本文をログ・監査 payload・エラーに出さない。取得は全ページ成功時のみ反映（完全性バリアは Tasks/Calendar と同じだが削除は行わない＝メールは消滅を同期しない）。作者アカウントでの実動確認は、作者が `kd-secretary` ラベルを付けたメール1〜2通で行う（記録は件数のみ）
 - **失敗時**: API 拒否・スコープ不足は `errors` に件数で積み検知は続行。資格情報・内容はエラー文に含めない
 - **作者ADCの現実（Z-6）**: 一次 `gcloud auth application-default login --scopes=cloud-platform,tasks.readonly,calendar.readonly`。gcloud の既定クライアントが非Cloudスコープを拒む場合の二次は OAuth クライアント（デスクトップ）＋ `google-auth-oauthlib`（依存追加はその時点でユーザー承認）。ゴール28は**シード無しの空 InMemory**で偽陽性を防ぐ
 
@@ -536,4 +536,4 @@ SourceConnector.sync(store, owner_employee_id, today) -> SyncSummary{tasks, sche
 ### 16.5 撤退線・未決
 
 - 部品ごとのゲート（§16.0）。8/27 朝までに通らない部品から降格し、spec FR／README／ゴールを同時に降格する
-- IAP 実機有効化（別サービス）・Gmail は任意／stretch
+- IAP 実機有効化（別サービス）は任意。Gmail は部品D（必須、ゲートあり）
