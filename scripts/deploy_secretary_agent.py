@@ -35,7 +35,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REQUIREMENTS_FILE = REPO_ROOT / "scripts" / "requirements-agent.txt"
-EXTRA_PACKAGE_DIR = "src/secretary_agent"
+# Agent Engine tars extra_packages with their given relative path (tar.add(path)),
+# so the package must be referenced as "secretary_agent" with cwd=src/; otherwise the
+# runtime gets /code/src/secretary_agent and `import secretary_agent` fails at start.
+EXTRA_PACKAGE_DIR = "secretary_agent"
+SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 
 DEFAULT_LOCATION = "asia-northeast1"
 DEFAULT_SECRET_NAME = "demo-api-key"
@@ -108,6 +112,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    os.chdir(SRC_DIR)  # see EXTRA_PACKAGE_DIR note
 
     # Imported lazily so `--help` works even without google-adk/vertexai
     # installed (this script's own imports must not break the existing
