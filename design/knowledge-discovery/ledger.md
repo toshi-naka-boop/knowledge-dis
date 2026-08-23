@@ -1,5 +1,16 @@
 # ledger: knowledge-discovery
 
+## B段実装・検証の記録 — 2026-08-23
+
+design v11 承認後の実装（secretary_agent パッケージ＝sonnet委譲、インフラ＝メインループ）。検証ゴール19〜22の結果:
+- **19（Scheduler→Runtime→Cloud Run）**: 正系OK（単独発火で1試行200・sweep 1件・再試行なし）。負系OK（Cloud Run 404 時に `:query` が400で "sweep returned HTTP 404" を伝播し、Schedulerが失敗として記録・再試行）。A段ジョブは並走のまま
+- **20（対話）**: `get_my_digest` のみ呼ばれ最終要約が返る（global推論先で実モデル呼び出し成功）。別user_idのセッションから他人のダイジェストは取れない。LLMツールに書き込み系なし
+- **21（Registry）**: 手動登録5件（4体＋A段秘書）＋Runtime秘書の手動登録（計6件、asia-northeast1、説明・能力情報つき）。Runtime秘書の**自動登録は観測されず**（SDKデプロイ直後も `agents list` に現れなかったため手動登録で補完。READMEに明記）
+- **22**: オフライン（skip 13）／`.venv-agent`（13件 skip 0）両方OK
+
+**発生した問題と対処（記録価値あり）**: (1) `extra_packages` が相対パスを保持するため `src/secretary_agent` のままでは import 失敗 → cwd=src で同梱。(2) 既定リソースではリクエストごとにワーカー再起動ループ→Vertex が 503/`400 Service Unavailable` を返し Scheduler が全試行失敗（バックエンドは完走）→ `run_daily_sweep` を async＋スレッド実行化し、`resource_limits cpu4/8Gi・min1/max2・container_concurrency 4` を明示して解消。(3) 並行呼び出しに弱い（テストは逐次で行う。本番は1日1回）。(4) Reasoning Engine サービスエージェントは初回デプロイ試行で生成されるため secret IAM は初回失敗後に付与。
+
+
 ## 批評round-10（design v10 B段追補）の帰結 — 2026-08-23
 
 原文: reviews/round-10.md（critic: claude design-critic = claude-opus-5[1m]）＋ reviews/round-10-codex-raw.txt（codex/gpt-5.6-sol xhigh）。指摘10件（重複3組・実質7論点）、**全件受理**し design v11 で解決。前提ルーティング1件（spec文言）は承認CPでユーザーに提示。
