@@ -1,5 +1,18 @@
 # ledger: knowledge-discovery
 
+## 批評round-10（design v10 B段追補）の帰結 — 2026-08-23
+
+原文: reviews/round-10.md（critic: claude design-critic = claude-opus-5[1m]）＋ reviews/round-10-codex-raw.txt（codex/gpt-5.6-sol xhigh）。指摘10件（重複3組・実質7論点）、**全件受理**し design v11 で解決。前提ルーティング1件（spec文言）は承認CPでユーザーに提示。
+
+- **C-31 / Y-1 / Y-4（high・両ベンダー一致）**: トリガーがLLMのツール呼び出し依存＋SSEは常時2xx＋A段pauseで、sweep不発が無音化 → 定期起動を**LLM非介入の決定的オペレーション `run_daily_sweep`（register_operations、`:query` 非ストリーム、Cloud Run非2xxを非2xxに伝播）**に変更。SchedulerはContent-Type: application/json・OAuth・retry設定を明記。**A段ジョブはpauseせず並走**（冪等なので無害。不発時の保険）
+- **Y-2（high）**: Runtime配置 asia-northeast1 と Gemini 3.7 Flash のエンドポイント（global/us/eu）の不整合 → モデルロケーションを `global` に明示、ゴール20に実モデル呼び出し成功を含める。通らなければ us-central1 配置にフォールバック
+- **Y-3 / C-32（high/mid）**: Registry「実採用」の根拠が自動登録の一点・フォールバック時に登録ゼロ・spec文言（MCPツール）との不整合 → 手動登録のスパイクを実装初日に行い、Cloud Run 4体の手動登録を**8/27ゲートより前に完了**（B段撤退と独立に実採用を維持）。ゴール21を「説明・能力情報つきで検索可能」に強化。spec「MCPツールを登録」は該当物がないため文言修正を**承認CPでユーザーに提案**（前提ルーティング）
+- **C-33（mid）**: `run_daily_sweep` が対話から呼べ収録中に状態変異 → 対話LLMのツールは `get_my_digest` のみ。`run_daily_sweep` はLLMツールにしない
+- **C-34（mid）**: Runtime経由で任意employee_idのダイジェスト本文が読めトレースに残る → `get_my_digest` は引数なし・セッションuser_id固定。tracingは無効のまま。Sessionsの内容は本人スコープであることをREADMEに明記
+- **C-35 / Y-5（mid）**: extra_packages・ベースURL・attempt-deadline欠落、ゴール22がB段未検証でもgreen → 独立パッケージ `src/secretary_agent/`＋`extra_packages`、`KD_API_BASE_URL`/`KD_API_KEY` env、ゴール22を(a)オフラインskip可 (b)B段専用環境でskip 0件 に分離
+- **用語（codex）**: 「読み取り専用」→「配送権限を持たない」に訂正
+
+
 ## 反証round-9（round-8修正のクローズ検証）の帰結 — 2026-08-19
 
 原文: reviews/round-9.md（critic: claude design-critic = claude-opus-5[1m]、fresh）。**round-8の10論点は10/10クローズ確認**（high 3件は原文の破綻シナリオ再実行で再現消滅を実測）。新規2件はメインループ（Claude Fable 5）が直接修正し、テスト84件全パス:

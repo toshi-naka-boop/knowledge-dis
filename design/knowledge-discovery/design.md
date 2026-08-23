@@ -1,8 +1,8 @@
-# knowledge-discovery 設計書 v9
+# knowledge-discovery 設計書 v11
 
 入力: `spec.md` v7（v1〜v15は v5 入力のまま変更なし。§14以降が v7 の FR16〜24 に対応）
-生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映
-状態: 改訂版（承認CP待ち）
+生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映 / v10: B段（Agent Runtime載せ替え）の詳細化（2026-08-23、ユーザー決定「B段を実施」を受けて§14.7を追補。A段は本番稼働済み・反証round-8/9クローズ済み） / v11: 批評round-10（claude C-31〜C-35 + codex Y-1〜Y-5）反映
+状態: 改訂版（承認CP待ち。v9承認済み部分は無変更、追補は§14.7 B段・§8対応表・§10ゴール19〜22・§15）
 
 **v9での変更点（批評round-7由来）**:
 - C-26/X-1: プレビュー専用の `embedding_public` を新設（1段目ランキングからもprivateの影響を排除）。プレビューと正式実行の候補差は仕様として明示しUI文言に反映
@@ -205,9 +205,9 @@ messages/{audit_id}
 | 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
 | 何を流せるか（統制） | スキーマレジストリ＋`supported_intents`検証（送信層） | Model Armor |
 | 何が流れたか（監査） | `messages` コレクション＋監査ダッシュボード | Agent Observability |
-| いつ動くか（トリガー、v8追加） | Cloud Scheduler（OIDC）→ Cloud Run 同居の秘書 | GEAP Agent Runtime 常駐の秘書＋Scheduler |
+| いつ動くか（トリガー、v8追加） | A段: Cloud Scheduler（APIキーヘッダ）→ Cloud Run 同居の秘書 ／ **B段（v10）: Cloud Scheduler（OAuth）→ GEAP Agent Runtime 上の秘書 → Cloud Run API** | 同左（B段で実構成化） |
 
-このうち「誰が居るか」は v8 で**実採用に昇格**する（GEAP Agent Registry への実登録。§14.7）。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+このうち「誰が居るか」は v8 で**実採用に昇格**し（GEAP Agent Registry への実登録。§14.7）、v10 のB段では Runtime秘書の**自動登録**として実現する。「いつ動くか」もB段で実構成になる。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
 
 ## 9. プロフィール生成・レビュー（最小化。C-20ユーザー判断）
 
@@ -237,7 +237,10 @@ messages/{audit_id}
 16. （M3）mail_seeds 投入→sweep→差分提案カード→「反映」で `profiles.items` に `reviewed=true` の項目が追加され embedding が再生成され、直後の質問で当該項目が `cited_item_keys` に現れ得ることを確認できる
 17. （M3）監査画面に `stagnation_detected` / `preview_search` / `profile_diff_proposed` の行が「内容非表示」のマスク表示で現れ、タスク名・質問下書き・候補名が表示されないことを確認できる（fail-closedの適用確認）
 18. （M3・A段）Cloud Scheduler ジョブが構成され、`gcloud scheduler jobs run` の手動発火で sweep が実行される（Cloud Run ログに sweep 実行行が出る）こと、および `X-API-Key` ヘッダなしの `POST /api/secretary/sweep` が 401/403 で拒否されることを確認できる
-19. （M3・B段のみ）Cloud Scheduler → Agent Runtime 経由で sweep が実行されることを確認できる（A段提出時は対象外）
+19. （M3・B段）Scheduler ジョブ `kd-secretary-sweep-runtime` を手動発火すると、Runtime の `run_daily_sweep` オペレーション（`:query`、LLM非介入）が Cloud Run の `/api/secretary/sweep` を呼び、Cloud Run ログに 200 が記録され Scheduler の試行が成功することを確認できる。さらに **Cloud Run を一時的に拒否させた状態（例: 無効なAPIキーで呼ぶ）で Runtime 応答が非2xxになり Scheduler が失敗として記録する**ことを確認できる（失敗の非無音化）。A段ジョブは有効のまま並走していることを確認できる
+20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_my_digest` が（引数なし・セッションの user_id で）呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返る＝**実モデル呼び出しが global エンドポイントで成功**することを確認できる。Runtime秘書のLLMツール一覧が `get_my_digest` のみであり、`run_daily_sweep` と書き込み系が**LLMツールとして存在しない**ことを確認できる。別の user_id のセッションから Jordan のダイジェストが読めないことを確認できる
+21. （M3・B段と独立）Agent Registry に、Cloud Run 上の4体エージェント（手動登録）と Runtime 秘書（自動登録）が**説明・能力情報つきで**一覧・検索できることを Console または API で確認できる。手動登録は 8/27 より前に完了している
+22. （M3・B段）(a) `secretary_agent` のツール関数・オペレーションの単体テストが HTTP フェイクでオフラインに通り、既存スイートが google-adk 未インストール環境でも壊れない（import失敗時 skipTest）こと、**および (b) ピン留め依存を入れた B段専用環境（`.venv-agent` 等）で同テストが skip 0件で通る**ことを確認できる（Y-5対応: 「ADKなしで壊れない」と「B段が動く」を別ゴールにする）
 
 ## 11. デモ動画の構成（3分・英語）
 
@@ -390,8 +393,25 @@ score = W_OVERDUE   × min(期日超過日数, CAP)
 
 - **A段（M3の完了条件）**: secretary モジュールを既存 Cloud Run サービスに同居させ、Cloud Scheduler → `POST /api/secretary/sweep` を **APIキーヘッダ方式**で叩く（C-27対応: 実デプロイは `--allow-unauthenticated`＋`DEMO_API_KEY` 保護であり、OIDC化はサービス全体のIAM認証を要求してUIのAPIキー方式と両立しない。SchedulerジョブのHTTPターゲットにヘッダ `X-API-Key: <DEMO_API_KEY>` を設定する）。デモ・開発では同エンドポイントを手動トリガーできる。**本番構成でのOIDC＋専用SA化はwrite-upの将来項目として明記**（デモの脅威モデルでは既存の単一APIキー保護の内側に収まる、というC-24と同じ整理）
 - **日付基準 `DEMO_TODAY`（C-28対応）**: sweep・digest の「今日」は env `DEMO_TODAY`（ISO日付）を基準にする（未設定なら実日付）。シード投入スクリプトは `--today` 引数から相対日付（「期日3日前」「5日間未更新」等）で絶対日付を計算して書き込む。これにより収録日がずれても「シード再投入 or `DEMO_TODAY` 設定」のどちらかで停滞スコア・リマインド表示が決定的に再現できる。検証ゴール12〜17は `DEMO_TODAY` 固定で実行する
-- **B段（A段の完了後にのみ着手）**: 秘書を ADK エージェントとして GEAP Agent Runtime（API名 ReasoningEngine）へデプロイし、Scheduler の呼び先を Runtime の query API に切り替える。Runtime 上の秘書は Cloud Run の `/api/secretary/*` を内部APIとして呼ぶ（APIキーは Secret Manager 経由）。**詰まったらA段のまま提出**（フォールバック。アーキ図はB段構成で描き、実デプロイ状態をREADMEに正直に記載）
-- **GEAP Agent Registry への実登録**: 4体＋秘書を Agent Registry に登録するデプロイ手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+- **B段（Agent Runtime 載せ替え。v10で詳細化・v11で批評round-10を反映。ユーザー決定 2026-08-23: 実施する）**
+
+  **目的（時間以外の価値。ユーザーと合意済み）**: 秘書を「Webサービス内の1モジュール」から「GEAPマネージド基盤上の一人前のエージェント」に昇格させ、(a) Sessions / Memory Bank（将来の苦手先回り＝本人専用メモリの正規の置き場）、(b) エージェント単位のアイデンティティ（round-8 S-10「本人性の突合なし」の正規解への道）、(c) Agent Registry への自動登録、(d) Cloud Observability の自動収集、(e) A2A / Gemini Enterprise への接続口、を得る。今回のデモ画面は1ピクセルも変わらない（価値は提出後とwrite-upに出る）ことを明記する
+
+  **責務分割（B段でも守る原則）**: 停滞検知・状態機械・プレビュー検索・差分抽出・confirm は**すべてCloud Run側に残す**（§14.3「検知はルールベース・LLM非介入」、§14.4「プレビュー無痕跡・confirm CAS」は Cloud Run の API 境界で既に担保）。Runtime側の秘書は**2つの入口を厳密に分ける（C-31/Y-1/C-33対応）**:
+  - **入口1: 定期起動 = 決定的オペレーション（LLMを通さない）**。`AdkApp` のサブクラス `SecretaryApp` に `run_daily_sweep()` を `register_operations` で公開する。中身は `POST /api/secretary/sweep` の呼び出しと結果JSONの返却のみで、**Cloud Run が非2xx／到達不能なら例外を送出して Runtime 応答も非2xxにする**（Scheduler が失敗を検知し再試行できる。SSEではなく `:query` を使う）。LLM は関与しないので「ツールを呼ばず完了文だけ返す」経路が存在しない
+  - **入口2: 対話 = LLMエージェント（読み取り専用）**。`LlmAgent`（Gemini 3.7 Flash）のツールは `get_my_digest()` の**1本のみ**。employee_id はツール引数に取らず、**セッションの user_id から取る**（ToolContext経由。C-34対応: 任意の他人のダイジェストを読めない）。**`run_daily_sweep` をLLMのツールにしない**（C-33対応: 収録中の対話でカードresolve・mail_seed消費が起きない）。書き込み系（confirm/dismiss/review）のツールも持たない——Runtime経由で「人を巻き込む」操作は構造的に不可能（FR20をエージェント境界でも成立）。instruction: 「ツール結果にない停滞を推測で語らない。AI発言として要約する」
+  - 用語訂正（codex指摘）: `run_daily_sweep` はカード・監査行を書くので「読み取り専用」ではない。正しくは「**配送権限を持たない**」
+  - **失敗を無音化しない（C-31対応）**: **A段ジョブ `kd-secretary-sweep` は pause しない**。B段ジョブ `kd-secretary-sweep-runtime`（07:55 JST）と A段ジョブ（08:00 JST）を**並走**させる。sweep は冪等（§14.2）なので二重実行は無害で、Runtime 側が不発でも A段が朝のカードを保証する。B段が安定したら pause するかはデモ後の判断（提出時は並走のまま、READMEに明記）
+  - 認証: Cloud Run への `X-API-Key` は Agent Runtime の `env_vars` の secret 参照（`KD_API_KEY = {"secret": "demo-api-key", "version": "latest"}`）、Cloud Run のベースURLは `KD_API_BASE_URL` env（C-35対応）。Reasoning Engine Service Agent（`service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com`）に `roles/secretmanager.secretAccessor`。身元は既定のサービスエージェント（カスタムSA化は将来項目）
+  - **モデル呼び出し先（Y-2対応）**: Runtime の配置は asia-northeast1（API利用可能を実機確認済み）だが、Gemini 3.7 Flash のモデルエンドポイントは global/us/eu のため、エージェントモジュール内で **モデルのロケーションを `global` に明示**する（Runtime が注入する `GOOGLE_CLOUD_LOCATION` に依存しない）。ゴール20に**実モデル呼び出しの成功**を含める。global指定がRuntime上で通らない場合のフォールバックは **us-central1 への配置**（Cloud Run 側は asia-northeast1 のままでよい。跨リージョン呼び出しは許容）
+  - **パッケージング（C-35対応）**: Runtime秘書は `src/secretary_agent/`（`knowledge_discovery` 本体に依存しない独立パッケージ。依存は `google-adk` / `google-cloud-aiplatform[agent_engines,adk]` / `requests` のみ）とし、`agent_engines.create(..., extra_packages=["src/secretary_agent"])` で同梱。requirements はピン留め。staging bucket `gs://knowledge-discovery-2026-agent-staging`。デプロイは `scripts/deploy_secretary_agent.py`。resource ID を README と state.json に記録
+  - **Scheduler（Y-4対応）**: 新SA `kd-scheduler-sa`（`roles/aiplatform.user`）。HTTP ジョブ `kd-secretary-sweep-runtime` → `POST https://asia-northeast1-aiplatform.googleapis.com/v1/projects/<P>/locations/asia-northeast1/reasoningEngines/<ID>:query`（**非ストリーム**）、`--headers Content-Type=application/json`、body `{"class_method":"run_daily_sweep","input":{}}`、`--oauth-service-account-email kd-scheduler-sa@…`、`--attempt-deadline 180s`、`--max-retry-attempts 3`。実行可能な完全コマンドを README に記載
+  - **Agent Registry（Y-3/C-32対応）**: 「実採用」の主張は **B段の成否と独立に成立させる**: (1) 実装初日に Registry の手動登録API（Agent/Serviceリソース）を**スパイクで確認**し、Cloud Run 上の4体（＋秘書A段）を手動登録する。これは 8/27 のB段ゲート**より前**に完了させる（B段撤退時も Registry 登録が残る）。(2) Runtime 秘書はSDKデプロイで自動登録される（追加の能力情報は手動登録で補う）。ゴール21は「存在」ではなく**説明・能力情報つきで検索できる**ことを検査する。(3) spec v7「GEAP採用」の「自作エージェントと**MCPツール**を登録」の文言について: 本プロダクトにMCPサーバは存在しないため、**spec側の文言を「自作エージェントを登録」に修正する提案**を承認CPで明示する（ユーザー判断）。手動登録APIがスパイクで通らなければ、その時点でユーザーへ報告（前提ルーティング）
+  - 冪等・無痕跡: Runtime秘書は sweep を呼ぶだけなので、多重発火の冪等性は既存の状態機械（§14.2）が担保し、FR19のプレビュー無痕跡も不変
+  - **失敗時・撤退条件**: Runtime 呼び出し失敗は Scheduler の再試行（非2xx伝播）＋A段並走で吸収。**8/27までにゴール19・20が通らなければ**Runtimeリソースを削除し、B段ジョブを削除、README/アーキ図に「B段は将来構成」と記載（Registry手動登録は残るので「実採用」は維持）
+  - **トレース・セッションの内容（C-34対応）**: AdkApp の tracing は**無効のまま**（既定）。Sessions には本人のダイジェスト要約が本人 user_id スコープで残る。これは「本人だけが読める本人の情報」であり §14.6 のマスク原則と両立するが、READMEのデモ割り切りに明記する
+  - コスト: Agent Compute は呼び出し時のみ課金。Sessions課金は 2026-09-01 開始（デモ期間は無料）。Memory Bank は使わない（将来項目）
+- **GEAP Agent Registry への実登録**: Runtime上の秘書はSDKデプロイで自動登録される（v10で確認）。Cloud Run上の4体は手動登録手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
 - §8 の GEAP 対応表に1行追記する: 「いつ動くか（トリガー） | Cloud Scheduler | GEAP Agent Runtime＋Scheduler」
 
 ### 14.8 UI（ダイジェストの見せ方）
@@ -410,4 +430,6 @@ score = W_OVERDUE   × min(期日超過日数, CAP)
 - （M3）停滞スコアの重み・`T1`/`T2`・`CAP`・`NEGLECT_WINDOW` の具体値（シード較正。デモ用シードは `T2` を確実に超える値で作り込む）
 - （M3）秘書のUI人格化の要否（spec未決に追随。§14.8の分離構造により後決めで実装影響なし）
 - （M3）プロフィール差分提案シーンをデモ3分尺に含めるか（§11の尺次第。含めない場合もREADME・write-upで提示）
-- （M3・B段）Agent Runtime 載せ替えの着手判断: A段完了・デモ収録可能状態を確認してから。8/27時点で未着手ならB段は将来構成の記載のみとする
+- （M3・B段）**着手決定（2026-08-23）**。8/27までにゴール19が通らなければA段で提出（§14.7の撤退条件）
+- （M3・B段）Cloud Run上4体の Agent Registry 手動登録: Registry API（Agent/Serviceリソース）の具体手順は実装時に確認。通らなければ将来項目として正直に記載
+- （M3・B段）Runtime秘書のカスタムSA化・Memory Bank利用は将来項目（write-up）

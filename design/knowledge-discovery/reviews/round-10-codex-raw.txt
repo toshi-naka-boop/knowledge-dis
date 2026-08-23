@@ -1,0 +1,1992 @@
+Reading additional input from stdin...
+2026-08-23T00:19:10.815165Z ERROR codex_models_manager::cache: failed to load models cache: missing field `base_instructions` at line 95 column 5
+OpenAI Codex v0.146.1
+--------
+workdir: /Users/toshixa/dev/Knowledge-discovery
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 01a02bfc-52bc-7cf1-9135-4cd76d784906
+--------
+user
+リポジトリ /Users/toshixa/dev/Knowledge-discovery の design/knowledge-discovery/design.md v10 の追補部分（§14.7「B段（Agent Runtime 載せ替え）」ブロック、§8対応表トリガー行、§10ゴール19〜22、§15 B段項目）を批評せよ。ledger.md の解決済み索引と却下済み前提（秘書の自律配送化・停滞検知のLLM判定化）は提起しない。spec.md v7 の「GEAP採用」制約と README.md のA段手順も読むこと。観点: (1) Runtime秘書がsweepを呼ぶだけの構成が『中身のない代理』に見えないか、(2) 読み取りツール2本のみという境界がFR19/FR20を守るか、(3) Secret Manager env_vars・Scheduler OAuth・Service Agent権限の正誤、(4) :streamQuery?alt=sse への session_id 省略POSTをSchedulerから叩く形の妥当性（:query代替、SSE/タイムアウト）、(5) デプロイ・フォールバック手順の穴、(6) ゴール19〜22の検証可能性、(7) 8/29凍結に対する過剰設計。欠陥を重大度順に最大5件、ID Y-1から連番、各件に種別(設計/実装/前提)・重大度(high/mid/low)・破綻シナリオ（具体的な入力/状態→誤った結果）を付けて日本語で。新規欠陥がなければ「反論なし」と宣言。
+codex
+指定された追補だけを、`spec.md v7`・README のA段手順・`ledger.md` の既解決／却下前提と突き合わせます。まず該当行を特定し、クラウド設定や Agent Engine のAPI仕様は変動し得るため公式資料でも検証します。
+  → 関連メモと対象ファイルの該当箇所を特定する
+  • design v10追補をspec v7・README・ledger制約と照合する
+  • Google Cloud／Agent Runtimeの技術前提を公式資料で検証する
+  • 重大度順に最大5件へ絞り、反証可能な破綻シナリオ付きで報告する
+exec
+/bin/zsh -lc "rg -n -i 'knowledge-discovery|GEAP|Agent Runtime|B段|8/29' /Users/toshixa/.codex/memories/MEMORY.md || true
+pwd
+rg --files -g 'design.md' -g 'ledger.md' -g 'spec.md' -g 'README.md' ." in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+/Users/toshixa/dev/Knowledge-discovery
+./README.md
+./design/knowledge-discovery/ledger.md
+./design/knowledge-discovery/design.md
+./design/knowledge-discovery/spec.md
+
+exec
+/bin/zsh -lc "rg -n '"'^#|''^##|''^###|14'"\\.7|ゴール(19|20|21|22)|Goal (19|20|21|22)|FR19|FR20|B段|Agent Runtime|秘書|停滞|GEAP|8/29|streamQuery|alt=sse|session_id|Secret Manager|env_vars|Scheduler|Service Agent|sweep' design/knowledge-discovery/design.md design/knowledge-discovery/ledger.md design/knowledge-discovery/spec.md README.md" in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+README.md:1:# Knowledge Discovery — Tacit-Knowledge Connection Engine
+README.md:16:## Architecture (governance three-in-one)
+README.md:18:| Concern | This implementation | Enterprise (GEAP) equivalent |
+README.md:20:| Who exists (agent discovery) | `agents` registry (Firestore) | GEAP Agent Registry |
+README.md:40:## Run locally
+README.md:46:# Google Cloud auth (Firestore + Vertex AI)
+README.md:50:# Seed 4 personas + 396 synthetic employees (embeddings via Vertex)
+README.md:54:# Serve
+README.md:67:## Tests
+README.md:76:## Deploy (Cloud Run)
+README.md:93:## Secretary sweep trigger (Cloud Scheduler, design v9 §14.7 A-stage)
+README.md:95:The proactive secretary (`POST /api/secretary/sweep`) is fired daily by a Cloud
+README.md:96:Scheduler HTTP job that carries the demo API key as a header (the service stays
+README.md:101:gcloud scheduler jobs create http kd-secretary-sweep \
+README.md:103:  --uri="https://<SERVICE_URL>/api/secretary/sweep" --http-method=POST \
+README.md:106:gcloud scheduler jobs run kd-secretary-sweep --location=asia-northeast1   # manual fire
+README.md:109:## Demo reset & recording-day procedure
+README.md:115:# 1. wipe everything (agents/profiles/messages/tasks/schedules/mail_seeds/cards) and reseed
+README.md:120:# 2. pin the same date on the service
+README.md:123:# 3. run one sweep (or wait for the Scheduler job) so the digest cards exist
+README.md:126:## Demo-mode simplifications (deliberate)
+design/knowledge-discovery/ledger.md:1:# ledger: knowledge-discovery
+design/knowledge-discovery/ledger.md:3:## 反証round-9（round-8修正のクローズ検証）の帰結 — 2026-08-19
+design/knowledge-discovery/ledger.md:8:- **R-2（実装/mid・受理）**: LLM失敗（例外・空応答）を「差分なし」と同一視しmailを無音消費 → `EXTRACTION_FAILED` sentinelで三値化（差分あり/明示null/失敗）。失敗時はprocessed=Falseのまま次回sweepで再試行。失敗時のヒューリスティック（メール本文コピー）も廃止（S-6残滓の完全閉塞。ヒューリスティックはllm_client未設定の環境のみ）。回帰テスト追加（失敗→未消費→復旧の一連）
+design/knowledge-discovery/ledger.md:10:M3（秘書プロアクティブ層・A段）の反証工程はこれで収束。ループ外残タスク: デプロイ＋シード再投入、Cloud Schedulerジョブ設置（ゴール18）、B段載せ替え判断（8/27期限）、デモ台本。
+design/knowledge-discovery/ledger.md:12:## 反証round-8（M3実装・3レンズ）のルーティング — 2026-08-19
+design/knowledge-discovery/ledger.md:19:- **V-9/E-6（mid・一致）**: 帯変化なし再sweepでプレビュー再実行・preview_search監査行重複・0件時降格 → §14.2どおりscore/evidence更新のみに
+design/knowledge-discovery/ledger.md:29:## スコープ追加の記録（2026-08-19 / spec v7 / M3）
+design/knowledge-discovery/ledger.md:31:ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+design/knowledge-discovery/ledger.md:33:## 批評round-7（design v8 M3追補）の帰結 — 2026-08-19
+design/knowledge-discovery/ledger.md:37:- **C-26 / X-1（high・両ベンダー一致）**: プレビュー1段目が全項目embeddingを再利用しprivateが選定に影響（FR19違反） → `profiles.embedding_public` 新設、プレビューは両段public限定。VECTOR_FLOORはプレビュー非適用（落選判定を主張しない）。プレビューと正式実行の候補差は仕様として明示しUI固定文言化
+design/knowledge-discovery/ledger.md:38:- **C-27 / X-5（high/mid）**: Scheduler OIDCが実デプロイの `--allow-unauthenticated`＋DEMO_API_KEYと両立しない／A段起動の検証ゴール欠落 → APIキーヘッダ方式（`X-API-Key`）に変更、本番OIDC化はwrite-up将来項目。ゴール18（ジョブ手動発火＋キーなし401）を追加
+design/knowledge-discovery/ledger.md:45:## 前提変更の記録（重要）
+design/knowledge-discovery/ledger.md:49:## 未解決の指摘
+design/knowledge-discovery/ledger.md:53:## 反証工程 round-6（実装検証・3レンズ並列）の帰結
+design/knowledge-discovery/ledger.md:72:## 新前提での解決済み（一行索引）
+design/knowledge-discovery/ledger.md:78:- **C-20**: 工数配分（デモに映らない機能への投資・agent discoveryの実体なし） → ユーザー判断: レビューUI最小化（デモ非登場）・添付はdocも含む3種・agent discoveryは自前Firestore`agents`レジストリに実体化（GEAP実採用はせず将来構成言及に留める）。v6 §3/§8/§9
+design/knowledge-discovery/ledger.md:83:- **C-25**: `supported_intents`がデッドフィールド → 送信層の`reject_unsupported_intent`拒否経路に接続して実機能化（レジストリが実際に流量を止める統制になる）。v7 §3。GEAP対応も「責務の1対1対応表」方式に強化（round-5総評）。v7 §8
+design/knowledge-discovery/ledger.md:85:## 旧ラウンドの指摘の帰結（一行索引）
+design/knowledge-discovery/spec.md:1:# knowledge-discovery 仕様書 v7
+design/knowledge-discovery/spec.md:3:生成元: `source-input.md`（初版）／ 補助文脈: `context-chat.md`／ v2改訂: design-loop承認CP後のユーザーとの対話（2026-08-18）／ v3改訂: 根本思想の明確化（2026-08-18）／ v4改訂: AI生成制限の撤廃・辞退時ドキュメント回答・private項目の意味の反転（2026-08-18）／ v5改訂: design.md v7への文言追随（批評round-5 C-22）／ v6改訂: デモ舞台の方向性確定（事業・部署を跨ぐ接続を中心に据える）とCRM差別化の明記。具体の舞台は候補検討中（未決）／ v7改訂: 秘書（プロアクティブ）層・モーニングダイジェスト・プロフィール継続更新の追加、GEAP採用範囲の確定（2026-08-19）
+design/knowledge-discovery/spec.md:6:## v7改訂の経緯
+design/knowledge-discovery/spec.md:8:M1/M2実装・反証round-6クローズ後のユーザーとの対話（2026-08-19）で、**秘書（プロアクティブ）層**が追加された。動機: 「質問を入力すると繋いでくれる」という受動的な入口だけでは、エージェントが普段から仕事を見てくれているという大元の説得性が弱い、というユーザーの指摘。ハッカソン募集文の "agents that run in the background... automate complex workflows asynchronously" への直接の応答にもなる。
+design/knowledge-discovery/spec.md:10:1. **秘書エージェントの追加（M3）**: タスクの停滞を検知し、プレビュー検索（配送なし）で候補まで用意した上で、本人の依頼確定があって初めて既存のつながりレーンに合流する。「気づく・調べる」までは自律、「人を巻き込む」は本人確定必須。停滞検知は説明可能性のためルールベース（重み付きスコア＋2段閾値）とし、LLM判定を用いない。検知事実は本人以外に通知しない（監視ツール化の防止。Starmind等への対抗軸「監視型の対極」を維持）。**秘書自体は審査上の主張点にしない**——大元機能の説得性を支える土台と位置づける。
+design/knowledge-discovery/spec.md:11:2. **モーニングダイジェスト（デフォルトリマインダー）**: 経費精算締切・週報/月報準備・会議の準備/振り返り・ジャーナルの期日リマインドをデフォルト搭載。接続提案だけの秘書は「普段黙っていて突然停滞を指摘する監視者」に見えるため、日常の地味な有用性で信頼の土台を作り、その延長に停滞検知カードを乗せる。なお v2 非スコープ（事務的単純事実への回答の廃止）は「回答経路を人的接続に一本化した」という判断であり、期日リマインドはこれと矛盾しない（**回答はしない、リマインドのみ**）。
+design/knowledge-discovery/spec.md:12:3. **プロフィール継続更新**: 初回レビュー一回きりだったプロフィールを、秘書が模擬メール等のシードから差分提案（「このプロフィールに追加します」→本人レビュー）する形でオンタイム更新に拡張する。
+design/knowledge-discovery/spec.md:13:4. **苦手分野の先回り検索（stretch）**: 停滞履歴のカテゴリ集計から「繰り返し停滞する分野」を導き、相談先候補を先回りで常備する構想。推定された苦手プロフィールは本人のエージェントのみが保持する（索引不掲載・監査には実行事実のみ）。実装はstretch、write-up・アーキ図には将来構成として必載。
+design/knowledge-discovery/spec.md:14:5. **GEAP採用範囲の確定**: Agent Registry を実採用し、秘書エージェントは2段構えで Agent Runtime へ載せる。Gemini Enterprise（SaaS）のスケジューラ利用と Gemini Spark の実接続は却下（検討済み・却下を参照）。
+design/knowledge-discovery/spec.md:16:## v4改訂の経緯
+design/knowledge-discovery/spec.md:24:## v3改訂の経緯
+design/knowledge-discovery/spec.md:36:## v2改訂の経緯（重要）
+design/knowledge-discovery/spec.md:47:## 目的
+design/knowledge-discovery/spec.md:60:**入口の拡張（v7）**: 質問の入口を「人が質問を思いつく」だけに置かない。秘書（プロアクティブ）層が仕事の停滞に気づき、候補を用意した状態で本人に差し出す（スコープ10〜12）。秘書は独立機能として審査に主張しない。エージェントが普段から仕事のそばにいる（毎朝のリマインド・プロフィールの手入れをしてくれる）からこそ、「聞けば社内の誰かに繋いでくれる」という中核機能が信頼される——その説得性の土台である。
+design/knowledge-discovery/spec.md:64:## スコープ
+design/knowledge-discovery/spec.md:76:8. デモ動画（3分・英語）: モーニングダイジェスト→停滞検知カード→本人の依頼確定を冒頭に置き、以降は候補提示→同意→MTG成立の幸福経路、および辞退→理由付きで依頼者に届く経路、の1シナリオ一本道（デモの質問は秘書の下書きを本人が確定したものとして始まる）
+design/knowledge-discovery/spec.md:78:10. **秘書エージェント（プロアクティブ層、M3）**: 各担当者のタスクデータを定期巡回し、重み付き停滞スコア（2段閾値）で停滞を検知。閾値超えで気づきカード／つながりリクエスト案（プレビュー検索＋質問文下書き）を本人にのみ提示し、本人の依頼確定で既存のつながりレーンに合流する。審査上の主張点にはしない
+design/knowledge-discovery/spec.md:80:12. **プロフィール継続更新**: 秘書が模擬メール等のシードから差分を検出し「このプロフィールに追加します」と提案→本人レビュー（反映・編集・公開範囲変更・見送り）で反映。初回レビュー（スコープ2）を一回きりにせず、オンタイムで回す仕組みにする
+design/knowledge-discovery/spec.md:82:## 非スコープ（明示的に作らない）
+design/knowledge-discovery/spec.md:95:## 機能要件
+design/knowledge-discovery/spec.md:110:14. デモ動画は3分・英語で、モーニングダイジェスト→停滞検知カード→本人の依頼確定を冒頭シーンとし、以降は候補提示→同意→MTG成立の幸福経路、および辞退→理由（＋任意の資料添付）付きで依頼者に届く経路を1シナリオ一本道として構成する（機能羅列をしない。非公開項目打診シーン・秘書シーン追加後の尺配分はdesign.md側の設計判断に委ねる）。
+design/knowledge-discovery/spec.md:111:15. アーキテクチャ図と英語write-upを提出物として作成する。write-upは既存カテゴリ（Starmind/Glean/Viva Topics）へのアンチテーゼとして位置づけ、Viva Topics撤退（2025/2）とCSCW研究の失敗要因（選定の社会的配慮）への設計回答であることを明記する。あわせて本番将来構成——個人側トリガーとしての Gemini Spark（MCP経由。社内前提のため実装外）、秘書の GEAP Agent Runtime 常駐、苦手分野の先回り検索——をアーキ図・write-upに明記する。「秘書は日常の地味な有用性で存在を許され、その信頼の上でだけ人を巻き込む提案をする」という設計理由を、CSCW失敗要因への回答の一部として記述する。
+design/knowledge-discovery/spec.md:112:16. 秘書エージェントは、各担当者のタスクデータ（模擬タスクストア: タイトル・説明・期日・最終更新・リスケジュール履歴・status遷移履歴）を定期起動（Cloud Scheduler想定。デモでは手動トリガー可）で巡回する。常駐プロセスとしない。
+design/knowledge-discovery/spec.md:113:17. 停滞検知はルールベースの重み付き停滞スコアで行い、LLM判定を用いない。シグナルは（a）期日超過日数、（b）無更新日数、（c）リスケジュール回数、（d）相対停滞（本人の他タスクは更新されているのに当該タスクのみ停止＝後回し検知）、（e）着手なし（作成以来status遷移なし）とする。カードには判定根拠を一行で明示する（例: 「期日を2回延ばし、他のタスクは動いているのにこれだけ5日止まっています」）。
+design/knowledge-discovery/spec.md:114:18. 停滞スコアは2段閾値を持つ。閾値1超えで「気づきカード」を本人にのみ提示する。閾値2超えでプレビュー検索を自動実行し、質問文下書き＋候補＋候補理由（AI発言として明示）まで揃えた「つながりリクエスト案」カードを本人にのみ提示する。
+design/knowledge-discovery/spec.md:116:20. 本人が「依頼する」を確定した場合のみ、下書き質問（本人編集可）が要件4以降の既存配送フローに乗る。秘書は本人の確定なしに配送する権限を持たない。停滞の検知事実は本人以外（上司・同僚を含む）に通知されない。
+design/knowledge-discovery/spec.md:117:21. 秘書の検知イベントおよびプレビュー検索は、配送を伴わない専用intentとして監査ダッシュボードに記録される。
+design/knowledge-discovery/spec.md:118:22. 秘書はモーニングダイジェストとして、期日もの（経費精算締切・週報/月報の準備・会議の準備/振り返り・ジャーナル記入）のリマインドカードをデフォルトで提示する。データはシードのスケジュールデータ＋日付ルールで生成し、手続き内容への回答は行わない（非スコープ）。停滞検知カード（要件17〜18）はこのダイジェストの中に、日常リマインドと地続きの1カードとして表示する。
+design/knowledge-discovery/spec.md:119:23. 秘書は模擬メール等のシード文書から本人のプロフィール差分候補を検出し、「このプロフィールに追加します」という差分提案カードを本人に提示する。本人はレビューで反映・編集・公開範囲変更・見送りを選べる。UIは反映を既定の導線とし、見送りは明確な秘匿性がある場合の選択肢として配置する。反映されるとプロフィール索引が更新される。差分提案文はAI発言として明示し、本人の発言として流通させない（v4原則の適用）。
+design/knowledge-discovery/spec.md:120:24. **（stretch）苦手分野の先回り検索**: 停滞履歴のカテゴリ集計から「繰り返し停滞する分野」を導き、平常巡回時に当該分野のプレビュー検索を先行実行して相談先候補を本人にのみ常備する。推定された苦手プロフィールは本人のエージェントのみが保持し、マッチング索引・他エージェント・監査画面のいずれにも掲載しない（監査には検索実行の事実のみ記録）。実装はstretchとし、アーキ図・write-upには将来構成として必ず記載する。
+design/knowledge-discovery/spec.md:122:## 制約・非機能
+design/knowledge-discovery/spec.md:125:- **締切**: 2026-08-31 17:00 PDT厳守。逆算で8/29までに機能凍結し、残りをデモ動画・アーキ図・英語write-upに充てる
+design/knowledge-discovery/spec.md:129:- **GEAP採用**: **確定（2026-08-19）** — Agent Registry を実採用（自作エージェントとMCPツールを登録）。秘書エージェントは2段構えで GEAP Agent Runtime（API名 ReasoningEngine）へ載せる: まずCloud Run同居で実装・動作確認し、その後Runtimeへ載せ替える。載せ替えに詰まった場合はCloud Run版のままとし（フォールバック）、Registry登録は維持する。Model Armor / Agent Observability（明示的計装）はアーキ図上の将来構成として言及に留める。秘書の定期起動は Cloud Scheduler を用いる
+design/knowledge-discovery/spec.md:137:## 構造図
+design/knowledge-discovery/spec.md:139:### 全体フロー（v2: 単一レーン構造）
+design/knowledge-discovery/spec.md:147:    Sched[Cloud Scheduler<br>定期起動] -.-> Sec[秘書エージェント<br>巡回・停滞スコア2段閾値]
+design/knowledge-discovery/spec.md:152:    Sec -->|閾値1: 気づき<br>閾値2: リクエスト案| Card[停滞カード 本人のみ<br>プレビュー検索=配送なし<br>候補者に痕跡なし]
+design/knowledge-discovery/spec.md:157:    Q[質問<br>本人入力 または<br>秘書下書きを本人が編集・確定] --> Disc[ディスカバリ層<br>プロフィール索引で上位k体を選定]
+design/knowledge-discovery/spec.md:171:## 検証可能な完了条件
+design/knowledge-discovery/spec.md:178:6. 3分・英語の完成デモ動画が、モーニングダイジェスト→停滞検知カード→依頼確定→候補提示→同意→MTG成立、および辞退→理由が届く、の1シナリオ一本道で存在することを確認できる。
+design/knowledge-discovery/spec.md:182:10. 停滞条件を満たすシードタスクに対し、判定根拠一行つきの停滞カードが本人にのみ表示され、プレビュー段階では候補者側に通知・痕跡が一切発生せず、「依頼する」確定によって条件1〜3の既存配送フローが動作することを確認できる。
+design/knowledge-discovery/spec.md:183:11. モーニングダイジェストに期日リマインド（経費締切・週報/月報・会議準備/振り返り・ジャーナル）が表示され、停滞カードが同ダイジェスト内に地続きで表示されることを確認できる。
+design/knowledge-discovery/spec.md:185:13. 秘書の検知イベント・プレビュー検索が、配送を伴わない専用intentとして監査ダッシュボードに記録されることを確認できる。
+design/knowledge-discovery/spec.md:187:## 未決事項
+design/knowledge-discovery/spec.md:192:- GEAPコンポーネントの採用範囲: **確定（2026-08-19）** — Agent Registry 実採用＋秘書の Agent Runtime 2段構え載せ替え（詳細は制約・非機能のGEAP採用の項）。Model Armor / Agent Observability は将来構成
+design/knowledge-discovery/spec.md:193:- 停滞スコアの重み・2段閾値の具体値（M3実装時にシードデータで較正する）
+design/knowledge-discovery/spec.md:196:- 秘書のUI表現: **確定（2026-08-23、ユーザー判断）— 人格化する**（名前・アバター・口調を与える。名前はプロダクト名と同時に決定。design §14.8の分離構造によりラベル・文体の差し替えで実装）。「AI発言の明示」原則は維持（秘書の発話は常にAIとして表示）
+design/knowledge-discovery/spec.md:203:## 検討済み・却下（参考）
+design/knowledge-discovery/spec.md:215:- **秘書層の外部OSS基盤（openclaw / openagent 等）の組み込み — 却下（2026-08-19）**。理由: 「タスクを見て停滞を検知しプロアクティブに動く」単機能のOSS部品は存在せず、いずれもスタンドアロンの大型アシスタント基盤。10日でCloud Run＋ADK構成へ統合するより薄い自前実装の方が確実に安い。規約上はライセンス遵守でOSS利用可だが、審査の得点は Gemini/ADK 自作部分にしか付かない
+design/knowledge-discovery/spec.md:216:- **Gemini Enterprise（SaaS）の Agent Designer スケジュール実行の利用 — 却下（2026-08-19）**。理由: per-seat ライセンスが別途必要でハッカソン文脈に合わず、ADK自作部分の評価も薄まる。秘書の定期起動は Cloud Scheduler＋自作ADKエージェントで実装する
+design/knowledge-discovery/spec.md:219:## v1からの主な変更点（サマリ）
+design/knowledge-discovery/design.md:1:# knowledge-discovery 設計書 v10
+design/knowledge-discovery/design.md:4:生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映 / v10: B段（Agent Runtime載せ替え）の詳細化（2026-08-23、ユーザー決定「B段を実施」を受けて§14.7を追補。A段は本番稼働済み・反証round-8/9クローズ済み）
+design/knowledge-discovery/design.md:5:状態: 追補版（批評待ち。v9承認済み部分は無変更、追補は§14.7 B段・§8対応表・§10ゴール19〜22・§15）
+design/knowledge-discovery/design.md:9:- C-27/X-5: Scheduler起動をOIDCからAPIキーヘッダ方式に変更（実デプロイの `--allow-unauthenticated`＋DEMO_API_KEY と両立）。本番構成のOIDCはwrite-up将来項目へ。A段の定期起動に検証ゴール18aを追加
+design/knowledge-discovery/design.md:16:**v8の設計方針（追補の背骨）**: 秘書は**新しい配送経路を持たない**。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）には一切手を入れず、その**入口の手前に「気づく・調べる・下書きする」段を足すだけ**とする。人を巻き込む操作は常に既存フローの起点（質問投入）を経由する。
+design/knowledge-discovery/design.md:20:## 0. スコープと原則
+design/knowledge-discovery/design.md:41:## 1. 全体フロー（単一レーン）
+design/knowledge-discovery/design.md:65:## 2. 探索的マッチング（2トラック×2段階）— 本設計の核心
+design/knowledge-discovery/design.md:67:### 2トラックの分離（C-16対応）
+design/knowledge-discovery/design.md:72:### 2段階の推論
+design/knowledge-discovery/design.md:85:### 探索的であることの帰結
+design/knowledge-discovery/design.md:90:## 3. データモデル（Firestore）
+design/knowledge-discovery/design.md:92:### `agents` コレクション（C-20対応、v6新規 — agent discoveryの実体）
+design/knowledge-discovery/design.md:108:### `profiles` コレクション
+design/knowledge-discovery/design.md:130:### `messages` コレクション（エンベロープ・監査ログ兼用）
+design/knowledge-discovery/design.md:153:### privateマスクの機械的適用（C-18/C-21対応、メッセージ横断の1ルール）
+design/knowledge-discovery/design.md:159:### スキーマレジストリ
+design/knowledge-discovery/design.md:163:### アクセス制御
+design/knowledge-discovery/design.md:168:## 4. 非公開項目打診
+design/knowledge-discovery/design.md:175:## 5. 辞退フロー
+design/knowledge-discovery/design.md:181:## 6. マッチ成立フローと依頼者側の状態モデル（C-19対応）
+design/knowledge-discovery/design.md:189:## 7. 監査ダッシュボード
+design/knowledge-discovery/design.md:197:## 8. 技術スタック
+design/knowledge-discovery/design.md:200:- Cloud RunサービスアカウントはFirestoreへの最小権限。Gemini APIキーはSecret Manager。doc添付はCloud Run静的配信のためGCS・署名権限は不要（C-24）
+design/knowledge-discovery/design.md:201:- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+design/knowledge-discovery/design.md:203:| 責務 | 本実装 | GEAP本番構成での置換先 |
+design/knowledge-discovery/design.md:205:| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+design/knowledge-discovery/design.md:208:| いつ動くか（トリガー、v8追加） | A段: Cloud Scheduler（APIキーヘッダ）→ Cloud Run 同居の秘書 ／ **B段（v10）: Cloud Scheduler（OAuth）→ GEAP Agent Runtime 上の秘書 → Cloud Run API** | 同左（B段で実構成化） |
+design/knowledge-discovery/design.md:210:このうち「誰が居るか」は v8 で**実採用に昇格**し（GEAP Agent Registry への実登録。§14.7）、v10 のB段では Runtime秘書の**自動登録**として実現する。「いつ動くか」もB段で実構成になる。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+design/knowledge-discovery/design.md:212:## 9. プロフィール生成・レビュー（最小化。C-20ユーザー判断）
+design/knowledge-discovery/design.md:219:## 10. 検証可能なゴール
+design/knowledge-discovery/design.md:233:12. （M3）`DEMO_TODAY` を固定し停滞条件を満たすシードタスクを投入して `POST /api/secretary/sweep` を実行すると、`score ≥ T2` の「つながりリクエスト案」カード（evidence_line・質問下書き・候補＋理由つき）が本人のダイジェストにのみ現れ、**この時点で `messages` に `connect_ask` / `connect_ask_private` が1件も増えていない**こと、およびプレビュー候補の `cited_item_keys` に private 項目が含まれないこと（embedding_public＋public限定コンテキストの確認）を確認できる（プレビュー無痕跡・public限定の最重要ゴール）
+design/knowledge-discovery/design.md:235:14. （M3）sweep を同日中に再実行しても open カードが重複生成されず（冪等性）、`notice` カードがスコア T2 超えで同一カードのまま `request_draft` に昇格し、タスクを done にした次の sweep で `resolved` に閉じることを確認できる（状態機械）
+design/knowledge-discovery/design.md:237:16. （M3）mail_seeds 投入→sweep→差分提案カード→「反映」で `profiles.items` に `reviewed=true` の項目が追加され embedding が再生成され、直後の質問で当該項目が `cited_item_keys` に現れ得ることを確認できる
+design/knowledge-discovery/design.md:239:18. （M3・A段）Cloud Scheduler ジョブが構成され、`gcloud scheduler jobs run` の手動発火で sweep が実行される（Cloud Run ログに sweep 実行行が出る）こと、および `X-API-Key` ヘッダなしの `POST /api/secretary/sweep` が 401/403 で拒否されることを確認できる
+design/knowledge-discovery/design.md:240:19. （M3・B段）Scheduler ジョブ `kd-secretary-sweep-runtime` を手動発火すると、Runtime 上の秘書が `run_daily_sweep` を呼び、Cloud Run ログに `/api/secretary/sweep` の 200 が記録され、Scheduler の試行が成功することを確認できる。このとき A段ジョブ `kd-secretary-sweep` が paused であることを確認できる
+design/knowledge-discovery/design.md:241:20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_digest` が呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返ることを確認できる。Runtime秘書のツール一覧に書き込み系（confirm/dismiss/review）が**存在しない**ことを確認できる
+design/knowledge-discovery/design.md:242:21. （M3・B段）Agent Registry に Runtime 秘書が登録されていることを Console または API 一覧で確認できる
+design/knowledge-discovery/design.md:243:22. （M3・B段）ツール関数（`run_daily_sweep` / `get_digest`）の単体テストがHTTPフェイクでオフラインに通り、既存スイートが google-adk 未インストール環境でも壊れないこと（import失敗時 skipTest）を確認できる
+design/knowledge-discovery/design.md:245:## 11. デモ動画の構成（3分・英語）
+design/knowledge-discovery/design.md:247:1. **秘書の朝（〜30秒、v8で追加・冒頭シーン）**: 本人がUIを開く → モーニングダイジェスト（経費締切・週報・会議準備のリマインド）の**地続きに**停滞カード「Riverside Clinic移転のタスク、期日を2回延ばし5日止まっています。手がかりを持っていそうな人を探してあります」→ 候補＋理由を確認 → 質問下書きを一部編集して「依頼する」。ナレーション「質問はタイプするものではなく、秘書が先に気づくものになる」
+design/knowledge-discovery/design.md:250:4. **統制の3点セット（〜20秒）**: アーキ図カットで `agents` レジストリ（誰が居るか）＋スキーマレジストリ（何を流せるか）＋監査ログ（何が流れたか）＋トリガー（いつ動くか: Scheduler→将来はAgent Runtime）を示す。尺が余れば未登録型の拒否（赤表示）を実演
+design/knowledge-discovery/design.md:252:秒数配分は目安（合計175秒＋タイトル・クロージング）。プレビュー無痕跡（候補者は確定まで何も知らない）は冒頭シーンのナレーションで一言添える（Fortified文脈での秘書の統制主張はこの1点に絞り、秘書機能自体を売りにしない——spec v7の位置づけ通り）。
+design/knowledge-discovery/design.md:254:## 12. spec.md v4との対応
+design/knowledge-discovery/design.md:268:| FR15（アーキ図・write-up） | 実装後タスク（§8のGEAP言及、§4-4の主張範囲、§14.6の同型パターン、将来構成（Spark/Agent Runtime/苦手先回り）を反映すること） |
+design/knowledge-discovery/design.md:269:| FR16（巡回） | §14.1, §14.7 |
+design/knowledge-discovery/design.md:270:| FR17〜18（停滞スコア・2段閾値） | §14.3 |
+design/knowledge-discovery/design.md:271:| FR19（プレビュー無痕跡・public限定） | §14.4 |
+design/knowledge-discovery/design.md:272:| FR20（本人確定・配送権限なし） | §14.4 |
+design/knowledge-discovery/design.md:278:## 14. 秘書プロアクティブ層（M3、spec v7 FR16〜24）
+design/knowledge-discovery/design.md:280:### 14.1 全体像
+design/knowledge-discovery/design.md:284:    Sched[Cloud Scheduler<br>定期起動 OIDC] -->|POST /api/secretary/sweep| Sweep[秘書sweep<br>4名分を巡回]
+design/knowledge-discovery/design.md:288:    Sweep -->|閾値超え| Cards[(cards<br>停滞カード/差分提案カード)]
+design/knowledge-discovery/design.md:298:- 秘書は独立した受信エージェントではなく、**各社員の個人エージェントの一責務**として実装する（共通の secretary モジュールが owner ごとに動く）。`agents` レジストリの `supported_intents` は変更しない（秘書は何も受信しない。送信＝監査記録のみ）
+design/knowledge-discovery/design.md:299:- **巡回は冪等**: カードの生成・更新・終了は §14.2 の状態機械に従う（同一 `(owner, task_id)` に open カードは常に高々1枚。Scheduler の多重発火・手動再実行で重複カードが出ない）
+design/knowledge-discovery/design.md:301:### 14.2 データモデル（Firestore、新規4コレクション）
+design/knowledge-discovery/design.md:333:**stagnationカードの状態機械（C-30/X-2対応。sweepごとに task×owner 単位で評価）**:
+design/knowledge-discovery/design.md:335:| 現在の状態 | sweep時の条件 | 遷移 |
+design/knowledge-discovery/design.md:342:| `dismissed` | （任意） | 同一タスクでは再生成しない（本人の意思を尊重。ただし due_date がリスケされたら別の停滞として再判定可） |
+design/knowledge-discovery/design.md:350:### 14.3 停滞スコア（ルールベース・2段閾値。FR17〜18）
+design/knowledge-discovery/design.md:356:      + W_NEGLECT   × 相対停滞(0/1)
+design/knowledge-discovery/design.md:360:- **相対停滞**: 本人の他タスクに `last_updated_at` が直近 `NEGLECT_WINDOW` 日以内のものが1件以上あり、かつ当該タスクの無更新日数 ≥ `NEGLECT_WINDOW` のとき 1（全タスクが止まっていれば休暇・繁忙として発火しない）
+design/knowledge-discovery/design.md:367:### 14.4 プレビュー検索と依頼確定（FR19〜20）
+design/knowledge-discovery/design.md:375:- **候補者側に痕跡を残さない**: プレビューでは `connect_ask` 系のメッセージ・通知・カードを一切生成しない。検証ゴール12で「sweep後に messages に connect_ask が0件」をassertする
+design/knowledge-discovery/design.md:376:- 停滞検知・カード・ダイジェストは本人UI以外に露出しない（上司・同僚向けの画面はそもそも存在しない。監査画面はマスク済み事実のみ→§14.6）
+design/knowledge-discovery/design.md:378:### 14.5 プロフィール差分提案（FR23）
+design/knowledge-discovery/design.md:380:1. sweep が `processed==false` の mail_seeds を読み、現在のプロフィールとの差分候補を Gemini で抽出（出力スキーマ: `{item_key, body_draft} | null`。差分なしなら null を許す）→ `profile_diff` カード生成、`processed=true`
+design/knowledge-discovery/design.md:385:### 14.6 監査との接続（FR21）
+design/knowledge-discovery/design.md:388:- **平文表示ホワイトリストに追加しない** → 既存のfail-closed規則（§3）がそのまま効き、監査画面では「秘書による停滞検知（内容非表示）」等の事実行のみ表示される。タスク名・質問下書き・候補名は監査画面に出ない
+design/knowledge-discovery/design.md:389:  - これは非公開打診と同じ整理:「**事実は記録され、内容は本人にしか見えない**」。FR20（検知事実を本人以外に通知しない）と FR21（監査に記録する）はこの機構で両立する。write-upでも同型のパターンとして語る
+design/knowledge-discovery/design.md:392:### 14.7 GEAP 2段構えと定期起動（spec 制約「GEAP採用」）
+design/knowledge-discovery/design.md:394:- **A段（M3の完了条件）**: secretary モジュールを既存 Cloud Run サービスに同居させ、Cloud Scheduler → `POST /api/secretary/sweep` を **APIキーヘッダ方式**で叩く（C-27対応: 実デプロイは `--allow-unauthenticated`＋`DEMO_API_KEY` 保護であり、OIDC化はサービス全体のIAM認証を要求してUIのAPIキー方式と両立しない。SchedulerジョブのHTTPターゲットにヘッダ `X-API-Key: <DEMO_API_KEY>` を設定する）。デモ・開発では同エンドポイントを手動トリガーできる。**本番構成でのOIDC＋専用SA化はwrite-upの将来項目として明記**（デモの脅威モデルでは既存の単一APIキー保護の内側に収まる、というC-24と同じ整理）
+design/knowledge-discovery/design.md:395:- **日付基準 `DEMO_TODAY`（C-28対応）**: sweep・digest の「今日」は env `DEMO_TODAY`（ISO日付）を基準にする（未設定なら実日付）。シード投入スクリプトは `--today` 引数から相対日付（「期日3日前」「5日間未更新」等）で絶対日付を計算して書き込む。これにより収録日がずれても「シード再投入 or `DEMO_TODAY` 設定」のどちらかで停滞スコア・リマインド表示が決定的に再現できる。検証ゴール12〜17は `DEMO_TODAY` 固定で実行する
+design/knowledge-discovery/design.md:396:- **B段（Agent Runtime 載せ替え。v10で詳細化。ユーザー決定 2026-08-23: 実施する）**
+design/knowledge-discovery/design.md:398:  **目的（時間以外の価値。ユーザーと合意済み）**: 秘書を「Webサービス内の1モジュール」から「GEAPマネージド基盤上の一人前のエージェント」に昇格させ、(a) Sessions / Memory Bank（将来の苦手先回り＝本人専用メモリの正規の置き場）、(b) エージェント単位のアイデンティティ（round-8 S-10「本人性の突合なし」の正規解への道）、(c) **Agent Registry への自動登録**（SDK経由でRuntimeにデプロイしたエージェントは追加設定なしに登録される＝spec制約「Registry実採用」の充足）、(d) Cloud Observability の自動収集、(e) A2A / Gemini Enterprise への接続口、を得る。今回のデモ画面は1ピクセルも変わらない（価値は提出後とwrite-upに出る）ことを明記する
+design/knowledge-discovery/design.md:400:  **責務分割（B段でも守る原則）**: 停滞検知・状態機械・プレビュー検索・差分抽出・confirm は**すべてCloud Run側に残す**。§14.3「検知はルールベース・LLM非介入」と §14.4「プレビュー無痕跡・confirm CAS」は Cloud Run の API 境界で既に担保されており、Runtime上のLLMエージェントにこれらを持たせない。Runtime秘書の責務は**オーケストレーションと対話**のみ:
+design/knowledge-discovery/design.md:401:  - ADKエージェント `secretary_agent`（`src/knowledge_discovery/secretary_agent/`、`LlmAgent`、Gemini 3.7 Flash）。tools は2本のみ: `run_daily_sweep()` → `POST /api/secretary/sweep`、`get_digest(employee_id)` → `GET /api/secretary/digest`。**書き込み系（confirm / dismiss / profile-diff review）のツールは持たせない**——Runtime経由で「人を巻き込む」操作は構造的に不可能にする（FR20「秘書は配送権限を持たない」をエージェント境界でも成立させる）
+design/knowledge-discovery/design.md:402:  - instruction: 「daily routine」要求には `run_daily_sweep` を1回だけ呼び、返却件数を短く報告する。社員からの「今日の私の状況は？」には `get_digest` を呼び、カードと期日をAI発言として要約する。**ツール結果にない停滞を推測で語らない**
+design/knowledge-discovery/design.md:403:  - 認証: Cloud Run への `X-API-Key` は Agent Runtime の `env_vars` の secret 参照（`{"secret": "demo-api-key", "version": "latest"}`）で注入する。Reasoning Engine Service Agent（`service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com`）に `roles/secretmanager.secretAccessor` を付与。身元は既定のサービスエージェント（カスタムSA化は将来項目）
+design/knowledge-discovery/design.md:405:  - 起動: 新SA `kd-scheduler-sa`（`roles/aiplatform.user`）を使う Cloud Scheduler HTTP ジョブ `kd-secretary-sweep-runtime` → `POST https://asia-northeast1-aiplatform.googleapis.com/v1/projects/<P>/locations/asia-northeast1/reasoningEngines/<ID>:streamQuery?alt=sse`、body `{"class_method":"async_stream_query","input":{"user_id":"scheduler","message":"Run the daily routine."}}`、`--oauth-service-account-email`（OAuthアクセストークン。A段のAPIキーヘッダ方式より1段強い）。**A段ジョブ `kd-secretary-sweep` は削除せず pause して残す**（フォールバック＝resumeするだけ）
+design/knowledge-discovery/design.md:406:  - Agent Registry: Runtime秘書は自動登録。Cloud Run上の4体は Registry API の手動登録（`Agent`/`Service` リソース）で行い手順をREADMEに記載する。手動登録が期限内に通らなければ Runtime秘書の自動登録のみで「実採用」とし、4体は将来項目として**正直に記載**する
+design/knowledge-discovery/design.md:407:  - 冪等・無痕跡: Runtime秘書は sweep を呼ぶだけなので、多重発火の冪等性は既存の状態機械（§14.2）が担保し、FR19のプレビュー無痕跡も不変（Runtimeは読み取りツールしか持たない）
+design/knowledge-discovery/design.md:408:  - 失敗時: Runtime呼び出し失敗は Scheduler の再試行に任せる。Cloud Run側 sweep の失敗は Runtime がそのまま報告する（握りつぶさない）。**8/27までにゴール19が通らなければA段で提出**（A段ジョブ resume、Runtimeリソース削除、README/アーキ図に「B段は将来構成」と記載）
+design/knowledge-discovery/design.md:410:- **GEAP Agent Registry への実登録**: Runtime上の秘書はSDKデプロイで自動登録される（v10で確認）。Cloud Run上の4体は手動登録手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+design/knowledge-discovery/design.md:411:- §8 の GEAP 対応表に1行追記する: 「いつ動くか（トリガー） | Cloud Scheduler | GEAP Agent Runtime＋Scheduler」
+design/knowledge-discovery/design.md:413:### 14.8 UI（ダイジェストの見せ方）
+design/knowledge-discovery/design.md:415:- 既存の本人UI（依頼者UI）の最上部に「モーニングダイジェスト」パネルを追加。並び順: 期日リマインド（超過→当日→翌日）→ 停滞カード → 差分提案カード。停滞カードは日常リマインドと**地続きの1カード**として同じ見た目の枠に置く（spec FR22。「監視者の警告」ではなく「秘書の朝の一言」に見せる位置づけの実装）
+design/knowledge-discovery/design.md:417:- 秘書の人格化（アバター・名前・口調）は**未決**（spec準拠）。既定は無人格のカード表示とし、人格化する場合もラベルと文体の差し替えのみで実装が変わらない構造にする（カード生成とUI表示を分離しておく）
+design/knowledge-discovery/design.md:419:## 15. 未決のまま残す事項
+design/knowledge-discovery/design.md:426:- （M3）停滞スコアの重み・`T1`/`T2`・`CAP`・`NEGLECT_WINDOW` の具体値（シード較正。デモ用シードは `T2` を確実に超える値で作り込む）
+design/knowledge-discovery/design.md:427:- （M3）秘書のUI人格化の要否（spec未決に追随。§14.8の分離構造により後決めで実装影響なし）
+design/knowledge-discovery/design.md:429:- （M3・B段）**着手決定（2026-08-23）**。8/27までにゴール19が通らなければA段で提出（§14.7の撤退条件）
+design/knowledge-discovery/design.md:430:- （M3・B段）Cloud Run上4体の Agent Registry 手動登録: Registry API（Agent/Serviceリソース）の具体手順は実装時に確認。通らなければ将来項目として正直に記載
+design/knowledge-discovery/design.md:431:- （M3・B段）Runtime秘書のカスタムSA化・Memory Bank利用は将来項目（write-up）
+
+exec
+/bin/zsh -lc "nl -ba design/knowledge-discovery/design.md | sed -n '1,280p'" in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+     1	# knowledge-discovery 設計書 v10
+     2	
+     3	入力: `spec.md` v7（v1〜v15は v5 入力のまま変更なし。§14以降が v7 の FR16〜24 に対応）
+     4	生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映 / v10: B段（Agent Runtime載せ替え）の詳細化（2026-08-23、ユーザー決定「B段を実施」を受けて§14.7を追補。A段は本番稼働済み・反証round-8/9クローズ済み）
+     5	状態: 追補版（批評待ち。v9承認済み部分は無変更、追補は§14.7 B段・§8対応表・§10ゴール19〜22・§15）
+     6	
+     7	**v9での変更点（批評round-7由来）**:
+     8	- C-26/X-1: プレビュー専用の `embedding_public` を新設（1段目ランキングからもprivateの影響を排除）。プレビューと正式実行の候補差は仕様として明示しUI文言に反映
+     9	- C-27/X-5: Scheduler起動をOIDCからAPIキーヘッダ方式に変更（実デプロイの `--allow-unauthenticated`＋DEMO_API_KEY と両立）。本番構成のOIDCはwrite-up将来項目へ。A段の定期起動に検証ゴール18aを追加
+    10	- C-28: 日付基準 `DEMO_TODAY` を導入（シードは相対日付から生成、収録日ずれに耐える）
+    11	- C-29: `deliver=False` フラグ案を廃止。プレビューは送信層に到達し得ない純粋関数の直接呼び出しとする（構造的無痕跡）
+    12	- C-30/X-2/X-3: cards の状態機械を明文化（tier昇格・自動終了・dismissed/confirmed後の再発火規則・confirmのCAS・プレビュー0件）
+    13	- X-4: `profiles.items.source` に `"mail_seed"` を追加
+    14	- 枠外指摘: mail_seed由来項目の visibility 既定は public（業務由来デフォルト公開の原則に従う）と明記
+    15	
+    16	**v8の設計方針（追補の背骨）**: 秘書は**新しい配送経路を持たない**。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）には一切手を入れず、その**入口の手前に「気づく・調べる・下書きする」段を足すだけ**とする。人を巻き込む操作は常に既存フローの起点（質問投入）を経由する。
+    17	
+    18	---
+    19	
+    20	## 0. スコープと原則
+    21	
+    22	`spec.md` v4「人と人の暗黙知を繋いでシナジーを生み出す」を実装に落とす。残る統制原則は2点のみ:
+    23	
+    24	1. **未レビューのAI生成文を、本人の発言として（本人名義で）流通させない。** AI生成文は常にAIの発言として明示する
+    25	2. **非公開項目の内容は、本人以外の誰にも開示されない。** 非公開項目は「本人のエージェントだけが知っている情報」としてマッチング打診に積極的に使われる
+    26	
+    27	**v6での変更点（批評round-4由来）**:
+    28	- C-16: 候補選定を「配送用ランキング」と「画面用ファネル」の2トラックに分離。「接点なし」の出力路と足切りを追加。デモで落選候補を1件見せる
+    29	- C-17: 2段目推論を候補エージェントごとの独立呼び出しに明記（データ境界＝プロセス境界）
+    30	- C-18: public/private打診の振り分けを `cited_item_keys` × `visibility` から機械的に決定（LLMの自己申告に依存しない）
+    31	- C-19: 依頼者側の状態モデル・match_proposalのpayload・監査画面の主張範囲を定義
+    32	- C-20: レビューUIを最小化（デモ非登場）、agent discoveryを自前Firestoreレジストリ（`agents` コレクション）に実体化。添付はdocを含む3種（ユーザー判断）
+    33	
+    34	**v7での変更点（批評round-5由来）**:
+    35	- C-21: マスク規則をintent別からメッセージ横断の1ルールに変更（`no_connection`経由のprivate漏出を閉塞）。監査表示をfail-closedに
+    36	- C-22: spec.md v5への文言追随（spec側で対応）
+    37	- C-23: 落選判定にベクトル類似度の決定的な下限を併用（LLM自己申告scoreへの単独依存を解消）。台本用に「確実に落ちる1体」をシード設計
+    38	- C-24: doc添付をGCS署名URLからCloud Run静的配信に変更（IAM署名権限の問題を回避）
+    39	- C-25: `supported_intents` を送信層の拒否経路（`reject_unsupported_intent`）に接続して実機能化
+    40	
+    41	## 1. 全体フロー（単一レーン）
+    42	
+    43	```mermaid
+    44	flowchart TD
+    45	    Q[質問入力<br>依頼者本人の文章] --> Disc[ディスカバリ層]
+    46	    Disc --> Funnel[画面用ファネル<br>400件全体の上位20件<br>スケール表示として明示]
+    47	    Disc --> Rank[配送用ランキング<br>agentsレジストリ登録済みに<br>事前フィルタしたベクトル検索]
+    48	    Rank --> Infer[2段目: 接点推論<br>候補エージェントごとに独立実行<br>接点なし=null許容+足切り]
+    49	    Infer -->|接点が言語化できた候補| AskPub[connect_ask<br>本人に質問+候補理由を提示]
+    50	    Infer -->|cited_item_keysにprivate含む| AskPriv[connect_ask_private<br>本人にのみ打診]
+    51	    Infer -->|接点なし| Dropped[落選<br>監査画面に理由付きで表示]
+    52	
+    53	    AskPub -->|同意| Match[マッチ成立<br>15分MTG提案<br>依頼者+同意者双方に通知]
+    54	    AskPub -->|辞退| Decline[理由+任意添付を<br>依頼者にそのまま返す]
+    55	    AskPriv -->|同意| Match
+    56	    AskPriv -->|辞退| Decline
+    57	
+    58	    Match --> Audit[監査ダッシュボード]
+    59	    Decline --> Audit
+    60	    Dropped --> Audit
+    61	
+    62	    BadType[未登録payload型] --> Registry[スキーマレジストリ<br>送信層で拒否] -->|赤表示| Audit
+    63	```
+    64	
+    65	## 2. 探索的マッチング（2トラック×2段階）— 本設計の核心
+    66	
+    67	### 2トラックの分離（C-16対応）
+    68	
+    69	- **配送用ランキング**: `agents` レジストリ（§3）に登録済みのエージェントに対応するプロフィールのみを対象にベクトル類似度検索し、上位候補を決める。Firestoreの複合ベクトルインデックス（等価フィルタ併用）が通るかを**設計確定直後・実装最初のタスクとして**確認する（通らない場合は全件検索後にコード側フィルタで代替。400件なら性能問題なし）
+    70	- **画面用ファネル**: 400件全体に対する上位20件を「もし全社員にエージェントが居ればここまで探索できる」という**スケール表示**として監査ダッシュボードに出す。配送に寄与しない演出であることを隠さず、デモのナレーションでも「今日は4人のエージェントが稼働しています。全社展開なら、この400人が探索対象です」と言い切る（誠実なスケール訴求に転換する）
+    71	
+    72	### 2段階の推論
+    73	
+    74	**1段目（絞り込み）**: 配送用ランキングで登録済みエージェントの候補を出す（4体全員が対象になる規模なので、実質は2段目への入力順序付け）。
+    75	
+    76	**2段目（接点推論、C-17対応）**: **候補エージェントごとに独立した推論呼び出し**を行う。
+    77	- ディスカバリ層が各候補エージェントに渡すのは**質問文のみ**。各エージェントは**自分のプロフィール全文（自分のprivate項目を含む）だけ**をコンテキストに持つ。他人のプロフィールは一切見えない（データ境界＝プロセス境界。アーキ図でFortifiedの技術的売りとして示す）
+    78	- 各エージェントの出力スキーマは `{connection: {reason_text, score} | null, no_connection_reason: string | null, cited_item_keys: string[]}` に統一する（**null時も `cited_item_keys` と `no_connection_reason` を必ず返す**。C-21対応: 落選メッセージの出所を確保し、privateを引用した落選理由もマスク検査の対象に乗せる）
+    79	  - `reason_text`: この人が背景知識を持っていそうな理由。直接一致だけでなく間接的な接点（例: 質問「製造業の商習慣の肌感」×「前職が生産管理システムのSE」）を重視するようプロンプトで指示
+    80	  - `connection: null` を明示的に許す（**「意味のある接点は見つからない」と判定してよい**とプロンプトで強調。無理に理由をひねり出さない）
+    81	- **落選判定は決定的な信号と併用する（C-23対応）**: (a) 配送用ランキングで計算済みのベクトル類似度に下限 `VECTOR_FLOOR`（暫定値はシード較正）を設け、下回れば2段目の結果に関わらず落選（決定的・再現可能な第1関門） (b) LLMの `connection: null` または `score < CONNECTION_THRESHOLD`（暫定0.5）で落選（第2関門）。ORで落とす。加えて**台本用に「確実に落ちる1体」（質問ドメインと語彙が一切重ならないプロフィール。例: 経理担当）をシード設計時に意図的に作り込む**（較正が収束しなくてもデモの落選シーンを守る保険）
+    82	- 4体分は並列実行（Gemini 3.7 Flash ×4呼び出し）
+    83	- 接点が言語化できた候補のみ（最大k=3）に配送。落選した候補は `intent=no_connection`（payload: `{reason_text: no_connection_reason, cited_item_keys, score}`）として監査ログに記録し、監査ダッシュボードに表示する（探索的マッチングが「常にYes」ではないことの反証可能な証拠。デモでも1件見せる。**デモで見せる落選候補は public 項目のみ引用のものを台本で選ぶ**）
+    84	
+    85	### 探索的であることの帰結
+    86	
+    87	- 誤マッチはゼロを目指さない。的外れなら候補が辞退し、辞退理由がフィードバックになる
+    88	- ただし「接点の有無を判別できない」ことは探索的の許容範囲ではなく機能不全（round-4総評）。`connection: null` の出力路がその区別を機械化する
+    89	
+    90	## 3. データモデル（Firestore）
+    91	
+    92	### `agents` コレクション（C-20対応、v6新規 — agent discoveryの実体）
+    93	
+    94	```
+    95	agents/{agent_id}
+    96	  ├─ employee_id: string          # 対応する社員
+    97	  ├─ display_name: string
+    98	  ├─ supported_intents: string[]  # このエージェントが受信できるintent（例: ["connect_ask", "connect_ask_private"]）
+    99	  ├─ endpoint: string             # ADK上の呼び出し先（デモでは論理名）
+   100	  ├─ registered_at: timestamp
+   101	  └─ active: boolean
+   102	```
+   103	
+   104	- 旧設計の `profiles.implemented: boolean` をレジストリレコードに昇格。ディスカバリ層は配送前にこのレジストリを引き、**登録済み・activeなエージェントにのみ配送する**
+   105	- **`supported_intents` は送信層の拒否経路に接続する（C-25対応）**: 宛先エージェントの `supported_intents` に含まれない intent のメッセージは `intent=reject_unsupported_intent`・`rejected=true` で送信拒否し、監査画面に赤表示する（既存の `reject_unregistered_type` と同じ機構を再利用。レジストリが実際に流量を止める統制機構になる）
+   106	- スキーマレジストリ（payload型の統制）と並べて「**誰が居るか（agent discovery）＋何を流せるか（統制）＋何が流れたか（監査）**」の3点セットとしてアーキ図・write-upで語る（Fortifiedトラック名への直接回答）
+   107	
+   108	### `profiles` コレクション
+   109	
+   110	```
+   111	profiles/{employee_id}
+   112	  ├─ name: string
+   113	  ├─ role: string
+   114	  ├─ items: [
+   115	  │    {
+   116	  │      key: "current_work" | "expertise" | "background" | <自由キー>,
+   117	  │      body: string,
+   118	  │      source: "job_doc" | "seed_synth" | "mail_seed",
+   119	  │      visibility: "public" | "private",
+   120	  │      reviewed: boolean
+   121	  │    }, ...
+   122	  │  ]
+   123	  ├─ embedding: vector            # 全項目（public+private）から生成
+   124	  └─ embedding_public: vector     # public項目のみから生成（v9新設。プレビュー検索§14.4専用。§9-3の再生成時に両方更新）
+   125	```
+   126	
+   127	- `current_work` はマッチングの主材料のため詳細に書く（シードデータ設計指針）。396体の合成プロフィールも同一schema
+   128	- `implemented` フィールドは廃止（`agents` レジストリの有無で判定）
+   129	
+   130	### `messages` コレクション（エンベロープ・監査ログ兼用）
+   131	
+   132	```
+   133	messages/{audit_id}
+   134	  ├─ from / to: string
+   135	  ├─ intent: "query" | "connect_ask" | "connect_ask_private" | "no_connection"
+   136	  │          | "consent_reply" | "match_proposal" | "decline_with_reason"
+   137	  │          | "reject_unregistered_type" | "reject_unsupported_intent"
+   138	  ├─ payload_type: string
+   139	  ├─ payload: map
+   140	  ├─ audit_payload: map | null    # 監査表示用（connect_ask_privateのみpayloadと異なる。C-18）
+   141	  ├─ consent_state: "n/a" | "pending" | "granted" | "declined"
+   142	  ├─ timestamp: timestamp
+   143	  └─ rejected: boolean
+   144	```
+   145	
+   146	主要payload:
+   147	- `connect_ask` / `connect_ask_private`: `{question_summary, reason_text, cited_item_keys, score}`
+   148	- `no_connection`: `{reason_text, cited_item_keys, score}`（なぜ接点なしと判定したか。出所は2段目出力の `no_connection_reason`。C-21対応）
+   149	- `decline_with_reason`: `{reason_text, attachment?: {type: "link"|"text"|"doc", content}}`
+   150	  - `doc` は**Cloud Run自身の静的配信**（`/attachments/<id>` を同一サービスから返す）とする（C-24対応: GCS署名URLはCloud RunデフォルトSAに秘密鍵がなく実行時に失敗する既知の罠があり、社内デモの脅威モデルでは署名URLの必然性もないため採用しない。既存の単一APIキー保護の内側に収まる）。アップロードUIは作らず、辞退画面では事前配置済みファイルの選択とする
+   151	- `match_proposal`: `{meeting_duration: 15, proposed_by: "system", participants: [依頼者id, 同意者id]}`。**`reason_text` を含めない**（依頼者に届くのは相手名・MTG提案・同意状態のみ。C-19対応、private内容の漏出経路も1本塞がる）
+   152	
+   153	### privateマスクの機械的適用（C-18/C-21対応、メッセージ横断の1ルール）
+   154	
+   155	- **ルール（intent別ではなくメッセージ横断）**: `cited_item_keys` に `visibility=="private"` の項目が1つでも含まれる**すべてのメッセージ**について、送信層が `audit_payload`（`{masked: true, note: "非公開項目に基づく<intent名>（内容非表示）", score, cited_count}`）を生成する。`connect_ask` → `connect_ask_private` へのintent確定はこのルールの副次規則とする（LLMが出力したintentは採用しない。判定主体をLLMから型システムに移す）。`no_connection` も同一ルールでマスクされる
+   156	- **監査表示はfail-closed（C-21対応）**: 監査ダッシュボードが `audit_payload == null` のときに `payload` を表示してよい `payload_type` は、スキーマレジストリ側のホワイトリストで明示する。ホワイトリスト外・`audit_payload` 生成漏れの場合は「表示不可（マスク既定）」にフォールバックする（intentを追加し忘れても平文表示に倒れない）
+   157	- write-up・アーキ図では「エージェントの自己申告に依存しない統制」として説明する。ただしこの主張の適用範囲はpublic/private振り分けとマスクであり、接点推論そのものはLLM出力である（誇張しない。§2の決定的信号との併用がその補完）
+   158	
+   159	### スキーマレジストリ
+   160	
+   161	`payload_type` ごとにJSON Schemaをコード内定数で定義。送信層で検証し、未登録型は `reject_unregistered_type`・`rejected=true` で拒否。宛先の `supported_intents` 検証（`reject_unsupported_intent`）も送信層で行う（§agentsレジストリ参照）。監査表示のfail-closedホワイトリストもここで管理する。
+   162	
+   163	### アクセス制御
+   164	
+   165	- `agents`・`profiles`・`messages` はFirestore Security Rulesでクライアント直接読み書き禁止。Cloud RunサーバーAPI経由のみ
+   166	- UIの保護はデモ用の簡易な全体保護（Cloud Run IAMまたは単一APIキー）のみ
+   167	
+   168	## 4. 非公開項目打診
+   169	
+   170	1. 2段目推論で候補本人のprivate項目が接点として検出された場合（`cited_item_keys` にprivate項目が含まれる場合）、§3の機械的振り分けにより `connect_ask_private` として本人にのみ打診: 「この質問は、あなたの非公開項目『◯◯』に関係しそうです。つながりますか？」
+   171	2. 同意した場合: 通常のマッチ成立フロー。`match_proposal` に `reason_text` は含まれないため、**依頼者向けUIには非公開項目がきっかけだったことは一切表示されない**。明かすかどうかは会った本人がその場で判断する
+   172	3. 辞退した場合: 通常の辞退として返す。依頼者向けUIには非公開項目の存在を示す情報を出さない
+   173	4. **監査画面での主張範囲（C-19対応で明確化）**: 監査ダッシュボードには「非公開項目に基づく打診が行われた**事実**」は表示される（`connect_ask_private` の行として。内容は `audit_payload` でマスク済み）。これは監査の要件として正当であり、「事実は記録され、内容は誰にも見えない」がFortified向けの正確な主張。「存在自体を伝えない」のは**依頼者向けUIに限る**（spec FR8の「開示されない」は内容についての規定であり、監査ログの存在記録とは両立する）
+   174	
+   175	## 5. 辞退フロー
+   176	
+   177	1. 候補本人は辞退時に、理由（自由記述）と、任意で添付（`link` / `text` / `doc`）を付けられる
+   178	2. `decline_with_reason` として依頼者にそのまま届く。表示例: 「◯◯さん: 今週は立て込んでいて難しいです。この資料が参考になるかも → [リンク]」
+   179	3. 隠蔽機構はない。監査ダッシュボードにもそのまま表示される
+   180	
+   181	## 6. マッチ成立フローと依頼者側の状態モデル（C-19対応）
+   182	
+   183	1. 同意（`consent_reply(granted)`）を受けたら `match_proposal` を依頼者と同意者の双方に発行
+   184	2. 複数候補が同意した場合: 全員とのMTG提案を発行してよい（つながりを増やすことが目的）
+   185	3. タイムアウト: 応答待ちに時限は設けない。**依頼者画面の状態語彙は「返答待ち」で固定し、未応答のまま終わってよい**とデモ台本に明記する（実運用での未応答の扱いはwrite-upの将来項目）
+   186	4. **依頼者画面の状態モデル**: 候補ごとに `返答待ち → つながりました（MTG提案あり）/ 今回は難しいそうです（理由+添付表示）` の3状態のみ。`connect_ask_private` 由来かどうかは依頼者画面の表示に一切反映しない（通常の候補と区別できない見た目にする）
+   187	5. **デモ台本の推奨**: k=3配送のうち、1体同意・1体辞退（資料添付付き）・1体は接点なしで落選（配送されない）という構成にすると、「返答待ち」が画面に残らず3状態が全て1画面で見える
+   188	
+   189	## 7. 監査ダッシュボード
+   190	
+   191	- Cloud RunサーバーAPI経由で `messages` を時系列表示（誰が・何を・同意状態）
+   192	- 画面用ファネル「400件→上位20件（スケール表示）→接点推論4件→配送n件（落選m件、理由付き）」を表示
+   193	- 辞退も理由・添付ごと表示。マスクは `audit_payload` ルール（`connect_ask_private` の内容非表示）のみ
+   194	- `rejected=true` の行は赤背景
+   195	- `no_connection`（落選）の行は理由付きで通常色表示（探索的マッチングの反証可能性の証拠）
+   196	
+   197	## 8. 技術スタック
+   198	
+   199	- ADK（Python）+ Gemini 3.7 Flash（全用途）+ Cloud Run + Firestore
+   200	- Cloud RunサービスアカウントはFirestoreへの最小権限。Gemini APIキーはSecret Manager。doc添付はCloud Run静的配信のためGCS・署名権限は不要（C-24）
+   201	- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+   202	
+   203	| 責務 | 本実装 | GEAP本番構成での置換先 |
+   204	|---|---|---|
+   205	| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+   206	| 何を流せるか（統制） | スキーマレジストリ＋`supported_intents`検証（送信層） | Model Armor |
+   207	| 何が流れたか（監査） | `messages` コレクション＋監査ダッシュボード | Agent Observability |
+   208	| いつ動くか（トリガー、v8追加） | A段: Cloud Scheduler（APIキーヘッダ）→ Cloud Run 同居の秘書 ／ **B段（v10）: Cloud Scheduler（OAuth）→ GEAP Agent Runtime 上の秘書 → Cloud Run API** | 同左（B段で実構成化） |
+   209	
+   210	このうち「誰が居るか」は v8 で**実採用に昇格**し（GEAP Agent Registry への実登録。§14.7）、v10 のB段では Runtime秘書の**自動登録**として実現する。「いつ動くか」もB段で実構成になる。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+   211	
+   212	## 9. プロフィール生成・レビュー（最小化。C-20ユーザー判断）
+   213	
+   214	1. 下書き生成はバッチスクリプト（模擬職務文書→Gemini 3.7 Flash→Firestore投入）。UIなし
+   215	2. レビュー画面は**visibilityトグルのみの最小1画面**。本文修正はFirestore直編集で代替。デモ動画には登場させない
+   216	3. レビュー確定で `reviewed=true` 一括更新＋embedding・embedding_public（v9新設）の再生成
+   217	4. spec FR2/FR3はこの最小実装で充足する（デモに映る必要はない）
+   218	
+   219	## 10. 検証可能なゴール
+   220	
+   221	1. サンプル質問→登録済みエージェント4体で接点推論が独立に4並列実行され、接点が言語化できた候補のみ（最大3体）に配送されることを確認できる
+   222	2. 質問と無関係な候補（例: 経理担当。台本用に語彙が重ならないよう意図設計した1体）に対し落選判定（ベクトル下限またはLLMのnull）が発火し、`no_connection` として監査画面に理由付きで表示されることを確認できる（**探索的マッチングが「常にYes」でないことの証拠。最重要ゴール**）
+   223	3. 「候補になった理由」に間接的な接点が言語化されたケースを、シード由来の質問3種のうち少なくとも1種で確認できる
+   224	4. `cited_item_keys` にprivate項目が含まれる場合、機械的に `connect_ask_private` になり、本人にのみ打診が届き、監査画面では内容がマスクされ、依頼者画面には通常候補と区別できない表示になることを確認できる。**private項目を引用した `no_connection`（落選）も同様にマスクされることを確認できる**（C-21対応）
+   225	4b. 宛先エージェントの `supported_intents` に含まれないintentのメッセージが `reject_unsupported_intent` として拒否され、監査画面に赤表示されることを確認できる（C-25対応）
+   226	5. 同意→`match_proposal`（reason_textを含まない）が依頼者・同意者双方に届くことを確認できる
+   227	6. 辞退（理由＋link添付・doc添付それぞれ）→依頼者に理由と添付がそのまま表示されることを確認できる
+   228	7. 未登録 `payload_type` の送信が拒否され、監査画面に赤表示されることを確認できる
+   229	8. `agents` レジストリに4件、`profiles` に400件が存在し、レジストリ未登録のプロフィールには配送されないことを確認できる
+   230	9. 異なる質問3種で画面用ファネルの上位20件が変化することを確認できる
+   231	10. 用語（レビュー/同意/公開範囲）が統一され「承認」が使われていないことを確認できる
+   232	11. クライアントSDKからの直接読み取りがSecurity Rulesで拒否されることを確認できる
+   233	12. （M3）`DEMO_TODAY` を固定し停滞条件を満たすシードタスクを投入して `POST /api/secretary/sweep` を実行すると、`score ≥ T2` の「つながりリクエスト案」カード（evidence_line・質問下書き・候補＋理由つき）が本人のダイジェストにのみ現れ、**この時点で `messages` に `connect_ask` / `connect_ask_private` が1件も増えていない**こと、およびプレビュー候補の `cited_item_keys` に private 項目が含まれないこと（embedding_public＋public限定コンテキストの確認）を確認できる（プレビュー無痕跡・public限定の最重要ゴール）
+   234	13. （M3）カードの「依頼する」確定で既存の質問経路が走り、ゴール1〜6の挙動（配送・同意・辞退・非公開打診）がそのまま成立することを確認できる。カードが `confirmed` になり `linked_query_audit_id` が記録される。confirm を二重POSTしても質問投入が1回しか起きないことを確認できる（CAS）
+   235	14. （M3）sweep を同日中に再実行しても open カードが重複生成されず（冪等性）、`notice` カードがスコア T2 超えで同一カードのまま `request_draft` に昇格し、タスクを done にした次の sweep で `resolved` に閉じることを確認できる（状態機械）
+   236	15. （M3）ダイジェストに schedules 由来の期日リマインド（経費締切・週報・会議準備・ジャーナル）が期日超過→当日→翌日の順で表示されることを確認できる
+   237	16. （M3）mail_seeds 投入→sweep→差分提案カード→「反映」で `profiles.items` に `reviewed=true` の項目が追加され embedding が再生成され、直後の質問で当該項目が `cited_item_keys` に現れ得ることを確認できる
+   238	17. （M3）監査画面に `stagnation_detected` / `preview_search` / `profile_diff_proposed` の行が「内容非表示」のマスク表示で現れ、タスク名・質問下書き・候補名が表示されないことを確認できる（fail-closedの適用確認）
+   239	18. （M3・A段）Cloud Scheduler ジョブが構成され、`gcloud scheduler jobs run` の手動発火で sweep が実行される（Cloud Run ログに sweep 実行行が出る）こと、および `X-API-Key` ヘッダなしの `POST /api/secretary/sweep` が 401/403 で拒否されることを確認できる
+   240	19. （M3・B段）Scheduler ジョブ `kd-secretary-sweep-runtime` を手動発火すると、Runtime 上の秘書が `run_daily_sweep` を呼び、Cloud Run ログに `/api/secretary/sweep` の 200 が記録され、Scheduler の試行が成功することを確認できる。このとき A段ジョブ `kd-secretary-sweep` が paused であることを確認できる
+   241	20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_digest` が呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返ることを確認できる。Runtime秘書のツール一覧に書き込み系（confirm/dismiss/review）が**存在しない**ことを確認できる
+   242	21. （M3・B段）Agent Registry に Runtime 秘書が登録されていることを Console または API 一覧で確認できる
+   243	22. （M3・B段）ツール関数（`run_daily_sweep` / `get_digest`）の単体テストがHTTPフェイクでオフラインに通り、既存スイートが google-adk 未インストール環境でも壊れないこと（import失敗時 skipTest）を確認できる
+   244	
+   245	## 11. デモ動画の構成（3分・英語）
+   246	
+   247	1. **秘書の朝（〜30秒、v8で追加・冒頭シーン）**: 本人がUIを開く → モーニングダイジェスト（経費締切・週報・会議準備のリマインド）の**地続きに**停滞カード「Riverside Clinic移転のタスク、期日を2回延ばし5日止まっています。手がかりを持っていそうな人を探してあります」→ 候補＋理由を確認 → 質問下書きを一部編集して「依頼する」。ナレーション「質問はタイプするものではなく、秘書が先に気づくものになる」
+   248	2. **幸福経路（〜85秒）**: （確定された質問から接続）監査画面でファネル「400件（スケール表示）→接点推論→配送3件・落選1件（理由付き）」 → 候補本人の画面に質問＋AI推定の候補理由 → 1体同意→MTG成立が双方に届く／1体辞退（資料添付）→依頼者に届く（§6-5の台本構成）
+   249	3. **非公開項目打診（〜40秒）**: private項目を持つ候補への打診が本人にだけ届く → 監査画面では「内容非表示」の行 → 依頼者画面では通常候補と見分けがつかない → ナレーション「開示するかどうかは、本人だけが決める」
+   250	4. **統制の3点セット（〜20秒）**: アーキ図カットで `agents` レジストリ（誰が居るか）＋スキーマレジストリ（何を流せるか）＋監査ログ（何が流れたか）＋トリガー（いつ動くか: Scheduler→将来はAgent Runtime）を示す。尺が余れば未登録型の拒否（赤表示）を実演
+   251	
+   252	秒数配分は目安（合計175秒＋タイトル・クロージング）。プレビュー無痕跡（候補者は確定まで何も知らない）は冒頭シーンのナレーションで一言添える（Fortified文脈での秘書の統制主張はこの1点に絞り、秘書機能自体を売りにしない——spec v7の位置づけ通り）。
+   253	
+   254	## 12. spec.md v4との対応
+   255	
+   256	| spec機能要件 | 対応箇所 |
+   257	|---|---|
+   258	| FR1-3（エージェント・プロフィール・レビュー） | §3, §9 |
+   259	| FR4（探索的な上位k選定） | §2 |
+   260	| FR5（質問＋候補理由の提示、AI発言明示） | §2 |
+   261	| FR6（同意→MTG提案） | §6 |
+   262	| FR7（辞退理由＋添付） | §5 |
+   263	| FR8（非公開項目の打診・非開示） | §3, §4 |
+   264	| FR9-11（エンベロープ・レジストリ・監査記録） | §3 |
+   265	| FR12（監査ダッシュボード） | §7 |
+   266	| FR13（400名分投入） | §3 |
+   267	| FR14（デモ構成） | §11 |
+   268	| FR15（アーキ図・write-up） | 実装後タスク（§8のGEAP言及、§4-4の主張範囲、§14.6の同型パターン、将来構成（Spark/Agent Runtime/苦手先回り）を反映すること） |
+   269	| FR16（巡回） | §14.1, §14.7 |
+   270	| FR17〜18（停滞スコア・2段閾値） | §14.3 |
+   271	| FR19（プレビュー無痕跡・public限定） | §14.4 |
+   272	| FR20（本人確定・配送権限なし） | §14.4 |
+   273	| FR21（監査への専用intent記録） | §14.6 |
+   274	| FR22（モーニングダイジェスト） | §14.2, §14.8 |
+   275	| FR23（プロフィール差分提案） | §14.5 |
+   276	| FR24（苦手先回り・stretch） | 実装なし。write-up・アーキ図将来構成（§14.6の監査パターンとガードレールを流用） |
+   277	
+   278	## 14. 秘書プロアクティブ層（M3、spec v7 FR16〜24）
+   279	
+   280	### 14.1 全体像
+
+exec
+/bin/zsh -lc "nl -ba design/knowledge-discovery/design.md | sed -n '278,440p'" in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+   278	## 14. 秘書プロアクティブ層（M3、spec v7 FR16〜24）
+   279	
+   280	### 14.1 全体像
+   281	
+   282	```mermaid
+   283	flowchart TD
+   284	    Sched[Cloud Scheduler<br>定期起動 OIDC] -->|POST /api/secretary/sweep| Sweep[秘書sweep<br>4名分を巡回]
+   285	    TasksC[(tasks)] --> Sweep
+   286	    SchedC[(schedules)] --> Sweep
+   287	    MailC[(mail_seeds)] --> Sweep
+   288	    Sweep -->|閾値超え| Cards[(cards<br>停滞カード/差分提案カード)]
+   289	    Sweep -.専用intentで記録<br>内容はfail-closedマスク.-> Msg[(messages)]
+   290	
+   291	    UI[本人UI] -->|GET /api/secretary/digest| Digest[モーニングダイジェスト<br>= 期日リマインド 動的生成<br>+ openなcards]
+   292	    Cards --> Digest
+   293	    Digest -->|依頼する 確定| Confirm[POST /api/secretary/confirm<br>編集済み質問文]
+   294	    Confirm -->|既存 /api/query と同一経路| Disc2[既存ディスカバリ層<br>§1〜§2 無変更]
+   295	    Digest -->|差分カードをレビュー| ProfUpd[profiles更新<br>+ embedding再生成]
+   296	```
+   297	
+   298	- 秘書は独立した受信エージェントではなく、**各社員の個人エージェントの一責務**として実装する（共通の secretary モジュールが owner ごとに動く）。`agents` レジストリの `supported_intents` は変更しない（秘書は何も受信しない。送信＝監査記録のみ）
+   299	- **巡回は冪等**: カードの生成・更新・終了は §14.2 の状態機械に従う（同一 `(owner, task_id)` に open カードは常に高々1枚。Scheduler の多重発火・手動再実行で重複カードが出ない）
+   300	
+   301	### 14.2 データモデル（Firestore、新規4コレクション）
+   302	
+   303	```
+   304	tasks/{task_id}
+   305	  ├─ owner_employee_id, title, description
+   306	  ├─ status: "todo" | "in_progress" | "done"
+   307	  ├─ due_date, created_at, last_updated_at
+   308	  ├─ reschedule_count: number          # シードで直接与える（履歴配列は持たない。導出計算を作らない）
+   309	  └─ status_changed_at: timestamp      # 着手なし判定用（created_at == status_changed_at かつ todo）
+   310	
+   311	schedules/{item_id}
+   312	  ├─ owner_employee_id
+   313	  ├─ kind: "expense_deadline" | "weekly_report" | "monthly_report"
+   314	  │        | "meeting_prep" | "meeting_review" | "journal"
+   315	  └─ title, due_date                   # 具体日付のインスタンスをシード投入（繰り返しルールエンジンは作らない）
+   316	
+   317	mail_seeds/{mail_id}
+   318	  ├─ owner_employee_id, subject, body, received_at
+   319	  └─ processed: boolean                # 差分提案生成済みフラグ
+   320	
+   321	cards/{card_id}
+   322	  ├─ owner_employee_id
+   323	  ├─ type: "stagnation" | "profile_diff"
+   324	  ├─ tier: "notice" | "request_draft" | null   # stagnationのみ（T1帯/T2帯。v9新設）
+   325	  ├─ payload: map                      # stagnation: {task_id, score, evidence_line, question_draft?, preview?: {candidates:[{employee_id, reason_text}]}}
+   326	  │                                    # profile_diff: {item_key, body_draft, source_mail_id}
+   327	  ├─ status: "open" | "confirmed" | "dismissed" | "applied" | "resolved"
+   328	  ├─ resolved_reason: string | null    # resolved時のみ（"task_done" | "score_below_t1"）
+   329	  ├─ linked_query_audit_id: string | null   # confirmed時に既存フローのquery audit_idを記録
+   330	  └─ created_at, updated_at
+   331	```
+   332	
+   333	**stagnationカードの状態機械（C-30/X-2対応。sweepごとに task×owner 単位で評価）**:
+   334	
+   335	| 現在の状態 | sweep時の条件 | 遷移 |
+   336	|---|---|---|
+   337	| カードなし | score ≥ T2 | `open/request_draft` を生成（プレビュー実行・質問下書きつき） |
+   338	| カードなし | T1 ≤ score < T2 | `open/notice` を生成 |
+   339	| `open/notice` | score ≥ T2 | **同一カードを `request_draft` に昇格**（プレビュー実行・質問下書き追加） |
+   340	| `open/*` | T1 ≤ score（帯変化なし） | score・evidence_line のみ更新 |
+   341	| `open/*` | score < T1 または task done | `resolved`（理由記録。古い警告を残さない） |
+   342	| `dismissed` | （任意） | 同一タスクでは再生成しない（本人の意思を尊重。ただし due_date がリスケされたら別の停滞として再判定可） |
+   343	| `confirmed` | （任意） | 同一タスクでは新規カードを作らない（依頼済み） |
+   344	
+   345	- `request_draft` から score が T1帯へ下がっても降格しない（作成済みの下書きは無害。resolvedの条件のみで閉じる）
+   346	- **プレビューが0件**（全候補が接点なし）の場合: `request_draft` にせず `notice` に留め、カードに「候補が見つかりませんでした」を明示する（隠さない）
+   347	
+   348	- モーニングダイジェストは**永続化しない**。`GET /api/secretary/digest?employee_id=` が「期日リマインド（schedules を日付ルールで評価: 期日超過・当日・翌日）＋ open な cards」を毎回動的に組み立てて返す。ダイジェスト自体の既読管理は作らない
+   349	
+   350	### 14.3 停滞スコア（ルールベース・2段閾値。FR17〜18）
+   351	
+   352	```
+   353	score = W_OVERDUE   × min(期日超過日数, CAP)
+   354	      + W_STALE     × min(無更新日数, CAP)
+   355	      + W_RESCHED   × reschedule_count
+   356	      + W_NEGLECT   × 相対停滞(0/1)
+   357	      + W_UNTOUCHED × 着手なし(0/1)
+   358	```
+   359	
+   360	- **相対停滞**: 本人の他タスクに `last_updated_at` が直近 `NEGLECT_WINDOW` 日以内のものが1件以上あり、かつ当該タスクの無更新日数 ≥ `NEGLECT_WINDOW` のとき 1（全タスクが止まっていれば休暇・繁忙として発火しない）
+   361	- **着手なし**: `status=="todo"` かつ `status_changed_at == created_at`（一度もstatus遷移していない）のとき 1
+   362	- 全シグナルが tasks コレクションの値だけから決定的に計算できる。**LLM は判定に一切使わない**（ledger記載の却下済み前提）
+   363	- 重み・`T1`（気づき）・`T2`（リクエスト案）・`CAP`・`NEGLECT_WINDOW` は env 定数とし、シードデータで較正（§13）。`T1 < T2` を起動時にassert
+   364	- **evidence_line（判定根拠一行）は発火したシグナルからテンプレート合成**する（例:「期日を2回延ばし、他のタスクは動いているのにこれだけ5日止まっています」）。LLM生成にしない（根拠が数値と1対1対応する説明可能性を守る）
+   365	- `T1 ≤ score < T2`: 気づきカード（`question_draft`/`preview` なし）。`score ≥ T2`: プレビュー検索（§14.4）を実行し、質問下書き＋候補＋理由まで揃えた「つながりリクエスト案」カード
+   366	
+   367	### 14.4 プレビュー検索と依頼確定（FR19〜20）
+   368	
+   369	- **プレビュー検索は既存マッチングの純粋関数部分だけを直接呼ぶ**（C-29対応: `deliver=False` のようなブールフラグは採用しない。既存の候補計算関数は送信を持たない純粋関数として既に分離されており、プレビュー経路は送信層のコードに到達し得ない——フラグの付け忘れで痕跡が漏れる余地を構造的に無くす）。書き込みは `messages` への監査記録1件のみ（§14.6）
+   370	- **public限定は両段に適用する（C-26/X-1対応）**: 1段目ランキングは `embedding_public`（§3）を対象にベクトル検索し、2段目推論は public 項目のみをコンテキストに渡す。これによりプレビューの選定・理由のどちらにも private が影響せず、`cited_item_keys` にも構造的に混入しない（渡していないものは引用できない）。`VECTOR_FLOOR`（0.62、全項目embeddingで較正済み）はプレビューには適用しない——プレビューは上位k件の「当たり」提示であり、落選判定を主張しない（落選判定は正式実行のみ）
+   371	- 質問下書き（`question_draft`）はタスクの title/description から Gemini が生成し、**AI発言として明示**（v4原則）。本人はカード上で編集できる
+   372	- **依頼確定（`POST /api/secretary/confirm`）は、編集済み質問文を既存の質問投入経路にそのまま渡す**。プレビュー結果は再利用しない（捨てる）。確定後は通常の質問と完全に同一の処理（正式な2段目推論は private 込み・全項目embeddingで走り直し、非公開打診 §4 もここで初めて発動し得る）
+   373	  - **プレビューと正式実行の候補は一致を保証しない**（embedding対象とマスク条件が異なるため。C-26の帰結）。これは仕様として明示する: カードUIに「実際の依頼時には、非公開情報も含めた再検索により候補が変わることがあります」の固定文言を置く。デモ台本ではシード較正により同一候補になるケースを選んで収録する
+   374	  - **confirmの並行実行はFirestoreトランザクションのCASで排他する（X-3対応）**: `open → confirmed` の遷移と `linked_query_audit_id` の記録を1トランザクションで行い、既に `confirmed` のカードへのconfirmは既存の `linked_query_audit_id` を返すだけで質問投入を行わない（ダブルクリック・二重POSTで配送が重複しない）。質問投入が失敗した場合はカードを `open` に戻してエラー表示（再試行可能）
+   375	- **候補者側に痕跡を残さない**: プレビューでは `connect_ask` 系のメッセージ・通知・カードを一切生成しない。検証ゴール12で「sweep後に messages に connect_ask が0件」をassertする
+   376	- 停滞検知・カード・ダイジェストは本人UI以外に露出しない（上司・同僚向けの画面はそもそも存在しない。監査画面はマスク済み事実のみ→§14.6）
+   377	
+   378	### 14.5 プロフィール差分提案（FR23）
+   379	
+   380	1. sweep が `processed==false` の mail_seeds を読み、現在のプロフィールとの差分候補を Gemini で抽出（出力スキーマ: `{item_key, body_draft} | null`。差分なしなら null を許す）→ `profile_diff` カード生成、`processed=true`
+   381	2. 本人のレビュー操作は4択: **反映**（既定の導線） / **編集して反映** / **公開範囲を非公開にして反映** / **見送り**。見送りはUI上、明確な秘匿性がある場合の選択肢として配置（文言で誘導）。**visibility の既定は public**（業務由来項目デフォルト公開の原則。spec FR2と同じ整理）
+   382	3. 反映時: `profiles.items` に `{key, body, source: "mail_seed", visibility, reviewed: true}` を追加し、**embedding と embedding_public の両方を再生成**（§9-3 の既存バッチ関数を単一プロフィール用に再利用）。カードは `applied`
+   383	4. 差分提案文はAI発言として明示。反映されるまで索引・マッチングには一切影響しない（未レビューのAI生成文を本人名義で流通させない、の適用）
+   384	
+   385	### 14.6 監査との接続（FR21）
+   386	
+   387	- 新intent 3種をスキーマレジストリに登録: `stagnation_detected` / `preview_search` / `profile_diff_proposed`。いずれも `from = <owner>のagent_id`、`to = "system"`、配送なし（監査記録のみ）
+   388	- **平文表示ホワイトリストに追加しない** → 既存のfail-closed規則（§3）がそのまま効き、監査画面では「秘書による停滞検知（内容非表示）」等の事実行のみ表示される。タスク名・質問下書き・候補名は監査画面に出ない
+   389	  - これは非公開打診と同じ整理:「**事実は記録され、内容は本人にしか見えない**」。FR20（検知事実を本人以外に通知しない）と FR21（監査に記録する）はこの機構で両立する。write-upでも同型のパターンとして語る
+   390	- `preview_search` の payload には候補 employee_id 一覧・スコアを記録する（監査の実体は保持。表示だけがマスク）
+   391	
+   392	### 14.7 GEAP 2段構えと定期起動（spec 制約「GEAP採用」）
+   393	
+   394	- **A段（M3の完了条件）**: secretary モジュールを既存 Cloud Run サービスに同居させ、Cloud Scheduler → `POST /api/secretary/sweep` を **APIキーヘッダ方式**で叩く（C-27対応: 実デプロイは `--allow-unauthenticated`＋`DEMO_API_KEY` 保護であり、OIDC化はサービス全体のIAM認証を要求してUIのAPIキー方式と両立しない。SchedulerジョブのHTTPターゲットにヘッダ `X-API-Key: <DEMO_API_KEY>` を設定する）。デモ・開発では同エンドポイントを手動トリガーできる。**本番構成でのOIDC＋専用SA化はwrite-upの将来項目として明記**（デモの脅威モデルでは既存の単一APIキー保護の内側に収まる、というC-24と同じ整理）
+   395	- **日付基準 `DEMO_TODAY`（C-28対応）**: sweep・digest の「今日」は env `DEMO_TODAY`（ISO日付）を基準にする（未設定なら実日付）。シード投入スクリプトは `--today` 引数から相対日付（「期日3日前」「5日間未更新」等）で絶対日付を計算して書き込む。これにより収録日がずれても「シード再投入 or `DEMO_TODAY` 設定」のどちらかで停滞スコア・リマインド表示が決定的に再現できる。検証ゴール12〜17は `DEMO_TODAY` 固定で実行する
+   396	- **B段（Agent Runtime 載せ替え。v10で詳細化。ユーザー決定 2026-08-23: 実施する）**
+   397	
+   398	  **目的（時間以外の価値。ユーザーと合意済み）**: 秘書を「Webサービス内の1モジュール」から「GEAPマネージド基盤上の一人前のエージェント」に昇格させ、(a) Sessions / Memory Bank（将来の苦手先回り＝本人専用メモリの正規の置き場）、(b) エージェント単位のアイデンティティ（round-8 S-10「本人性の突合なし」の正規解への道）、(c) **Agent Registry への自動登録**（SDK経由でRuntimeにデプロイしたエージェントは追加設定なしに登録される＝spec制約「Registry実採用」の充足）、(d) Cloud Observability の自動収集、(e) A2A / Gemini Enterprise への接続口、を得る。今回のデモ画面は1ピクセルも変わらない（価値は提出後とwrite-upに出る）ことを明記する
+   399	
+   400	  **責務分割（B段でも守る原則）**: 停滞検知・状態機械・プレビュー検索・差分抽出・confirm は**すべてCloud Run側に残す**。§14.3「検知はルールベース・LLM非介入」と §14.4「プレビュー無痕跡・confirm CAS」は Cloud Run の API 境界で既に担保されており、Runtime上のLLMエージェントにこれらを持たせない。Runtime秘書の責務は**オーケストレーションと対話**のみ:
+   401	  - ADKエージェント `secretary_agent`（`src/knowledge_discovery/secretary_agent/`、`LlmAgent`、Gemini 3.7 Flash）。tools は2本のみ: `run_daily_sweep()` → `POST /api/secretary/sweep`、`get_digest(employee_id)` → `GET /api/secretary/digest`。**書き込み系（confirm / dismiss / profile-diff review）のツールは持たせない**——Runtime経由で「人を巻き込む」操作は構造的に不可能にする（FR20「秘書は配送権限を持たない」をエージェント境界でも成立させる）
+   402	  - instruction: 「daily routine」要求には `run_daily_sweep` を1回だけ呼び、返却件数を短く報告する。社員からの「今日の私の状況は？」には `get_digest` を呼び、カードと期日をAI発言として要約する。**ツール結果にない停滞を推測で語らない**
+   403	  - 認証: Cloud Run への `X-API-Key` は Agent Runtime の `env_vars` の secret 参照（`{"secret": "demo-api-key", "version": "latest"}`）で注入する。Reasoning Engine Service Agent（`service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com`）に `roles/secretmanager.secretAccessor` を付与。身元は既定のサービスエージェント（カスタムSA化は将来項目）
+   404	  - 配置: **asia-northeast1**（reasoningEngines API の利用可能を実機確認済み）。staging bucket `gs://knowledge-discovery-2026-agent-staging`。デプロイは `scripts/deploy_secretary_agent.py`（`google-cloud-aiplatform[agent_engines,adk]` ピン留め、`agent_engines.create`）。resource ID を README と state.json に記録
+   405	  - 起動: 新SA `kd-scheduler-sa`（`roles/aiplatform.user`）を使う Cloud Scheduler HTTP ジョブ `kd-secretary-sweep-runtime` → `POST https://asia-northeast1-aiplatform.googleapis.com/v1/projects/<P>/locations/asia-northeast1/reasoningEngines/<ID>:streamQuery?alt=sse`、body `{"class_method":"async_stream_query","input":{"user_id":"scheduler","message":"Run the daily routine."}}`、`--oauth-service-account-email`（OAuthアクセストークン。A段のAPIキーヘッダ方式より1段強い）。**A段ジョブ `kd-secretary-sweep` は削除せず pause して残す**（フォールバック＝resumeするだけ）
+   406	  - Agent Registry: Runtime秘書は自動登録。Cloud Run上の4体は Registry API の手動登録（`Agent`/`Service` リソース）で行い手順をREADMEに記載する。手動登録が期限内に通らなければ Runtime秘書の自動登録のみで「実採用」とし、4体は将来項目として**正直に記載**する
+   407	  - 冪等・無痕跡: Runtime秘書は sweep を呼ぶだけなので、多重発火の冪等性は既存の状態機械（§14.2）が担保し、FR19のプレビュー無痕跡も不変（Runtimeは読み取りツールしか持たない）
+   408	  - 失敗時: Runtime呼び出し失敗は Scheduler の再試行に任せる。Cloud Run側 sweep の失敗は Runtime がそのまま報告する（握りつぶさない）。**8/27までにゴール19が通らなければA段で提出**（A段ジョブ resume、Runtimeリソース削除、README/アーキ図に「B段は将来構成」と記載）
+   409	  - コスト: Agent Compute は呼び出し時のみ課金。Sessions課金は 2026-09-01 開始（デモ期間は無料）。Memory Bank は使わない（将来項目）
+   410	- **GEAP Agent Registry への実登録**: Runtime上の秘書はSDKデプロイで自動登録される（v10で確認）。Cloud Run上の4体は手動登録手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+   411	- §8 の GEAP 対応表に1行追記する: 「いつ動くか（トリガー） | Cloud Scheduler | GEAP Agent Runtime＋Scheduler」
+   412	
+   413	### 14.8 UI（ダイジェストの見せ方）
+   414	
+   415	- 既存の本人UI（依頼者UI）の最上部に「モーニングダイジェスト」パネルを追加。並び順: 期日リマインド（超過→当日→翌日）→ 停滞カード → 差分提案カード。停滞カードは日常リマインドと**地続きの1カード**として同じ見た目の枠に置く（spec FR22。「監視者の警告」ではなく「秘書の朝の一言」に見せる位置づけの実装）
+   416	- リマインド行は表示のみ（クリック動作・既読管理なし）。回答機能は持たない（非スコープ）
+   417	- 秘書の人格化（アバター・名前・口調）は**未決**（spec準拠）。既定は無人格のカード表示とし、人格化する場合もラベルと文体の差し替えのみで実装が変わらない構造にする（カード生成とUI表示を分離しておく）
+   418	
+   419	## 15. 未決のまま残す事項
+   420	
+   421	- デモの舞台・模擬社員4名の人物設定（8/19までに決定。シードデータ設計のクリティカルパス。「確実に落ちる1体」の意図設計を含む）
+   422	- 辞退理由の入力形式（自由記述のみ / テンプレ併用）
+   423	- k=3・ファネル20件・`CONNECTION_THRESHOLD`（暫定0.5）・`VECTOR_FLOOR` は暫定値。シードデータで較正する。**較正が収束しない場合のフォールバック**: 台本用に意図設計した「確実に落ちる1体」はベクトル下限（決定的）だけで落ちるため、LLM score の較正が不安定でもデモの落選シーンは成立する（C-23）
+   424	- Firestore複合ベクトルインデックス（レジストリ登録済みフィルタ併用）の可否確認は**実装最初のタスク**（不可なら全件検索+コード側フィルタで代替、400件なら性能問題なし）
+   425	- 2段目推論4並列の1回あたりレイテンシ実測
+   426	- （M3）停滞スコアの重み・`T1`/`T2`・`CAP`・`NEGLECT_WINDOW` の具体値（シード較正。デモ用シードは `T2` を確実に超える値で作り込む）
+   427	- （M3）秘書のUI人格化の要否（spec未決に追随。§14.8の分離構造により後決めで実装影響なし）
+   428	- （M3）プロフィール差分提案シーンをデモ3分尺に含めるか（§11の尺次第。含めない場合もREADME・write-upで提示）
+   429	- （M3・B段）**着手決定（2026-08-23）**。8/27までにゴール19が通らなければA段で提出（§14.7の撤退条件）
+   430	- （M3・B段）Cloud Run上4体の Agent Registry 手動登録: Registry API（Agent/Serviceリソース）の具体手順は実装時に確認。通らなければ将来項目として正直に記載
+   431	- （M3・B段）Runtime秘書のカスタムSA化・Memory Bank利用は将来項目（write-up）
+
+exec
+/bin/zsh -lc "nl -ba design/knowledge-discovery/design.md | sed -n '190,278p'
+nl -ba design/knowledge-discovery/spec.md | sed -n '1,190p'" in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+   190	
+   191	- Cloud RunサーバーAPI経由で `messages` を時系列表示（誰が・何を・同意状態）
+   192	- 画面用ファネル「400件→上位20件（スケール表示）→接点推論4件→配送n件（落選m件、理由付き）」を表示
+   193	- 辞退も理由・添付ごと表示。マスクは `audit_payload` ルール（`connect_ask_private` の内容非表示）のみ
+   194	- `rejected=true` の行は赤背景
+   195	- `no_connection`（落選）の行は理由付きで通常色表示（探索的マッチングの反証可能性の証拠）
+   196	
+   197	## 8. 技術スタック
+   198	
+   199	- ADK（Python）+ Gemini 3.7 Flash（全用途）+ Cloud Run + Firestore
+   200	- Cloud RunサービスアカウントはFirestoreへの最小権限。Gemini APIキーはSecret Manager。doc添付はCloud Run静的配信のためGCS・署名権限は不要（C-24）
+   201	- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+   202	
+   203	| 責務 | 本実装 | GEAP本番構成での置換先 |
+   204	|---|---|---|
+   205	| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+   206	| 何を流せるか（統制） | スキーマレジストリ＋`supported_intents`検証（送信層） | Model Armor |
+   207	| 何が流れたか（監査） | `messages` コレクション＋監査ダッシュボード | Agent Observability |
+   208	| いつ動くか（トリガー、v8追加） | A段: Cloud Scheduler（APIキーヘッダ）→ Cloud Run 同居の秘書 ／ **B段（v10）: Cloud Scheduler（OAuth）→ GEAP Agent Runtime 上の秘書 → Cloud Run API** | 同左（B段で実構成化） |
+   209	
+   210	このうち「誰が居るか」は v8 で**実採用に昇格**し（GEAP Agent Registry への実登録。§14.7）、v10 のB段では Runtime秘書の**自動登録**として実現する。「いつ動くか」もB段で実構成になる。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+   211	
+   212	## 9. プロフィール生成・レビュー（最小化。C-20ユーザー判断）
+   213	
+   214	1. 下書き生成はバッチスクリプト（模擬職務文書→Gemini 3.7 Flash→Firestore投入）。UIなし
+   215	2. レビュー画面は**visibilityトグルのみの最小1画面**。本文修正はFirestore直編集で代替。デモ動画には登場させない
+   216	3. レビュー確定で `reviewed=true` 一括更新＋embedding・embedding_public（v9新設）の再生成
+   217	4. spec FR2/FR3はこの最小実装で充足する（デモに映る必要はない）
+   218	
+   219	## 10. 検証可能なゴール
+   220	
+   221	1. サンプル質問→登録済みエージェント4体で接点推論が独立に4並列実行され、接点が言語化できた候補のみ（最大3体）に配送されることを確認できる
+   222	2. 質問と無関係な候補（例: 経理担当。台本用に語彙が重ならないよう意図設計した1体）に対し落選判定（ベクトル下限またはLLMのnull）が発火し、`no_connection` として監査画面に理由付きで表示されることを確認できる（**探索的マッチングが「常にYes」でないことの証拠。最重要ゴール**）
+   223	3. 「候補になった理由」に間接的な接点が言語化されたケースを、シード由来の質問3種のうち少なくとも1種で確認できる
+   224	4. `cited_item_keys` にprivate項目が含まれる場合、機械的に `connect_ask_private` になり、本人にのみ打診が届き、監査画面では内容がマスクされ、依頼者画面には通常候補と区別できない表示になることを確認できる。**private項目を引用した `no_connection`（落選）も同様にマスクされることを確認できる**（C-21対応）
+   225	4b. 宛先エージェントの `supported_intents` に含まれないintentのメッセージが `reject_unsupported_intent` として拒否され、監査画面に赤表示されることを確認できる（C-25対応）
+   226	5. 同意→`match_proposal`（reason_textを含まない）が依頼者・同意者双方に届くことを確認できる
+   227	6. 辞退（理由＋link添付・doc添付それぞれ）→依頼者に理由と添付がそのまま表示されることを確認できる
+   228	7. 未登録 `payload_type` の送信が拒否され、監査画面に赤表示されることを確認できる
+   229	8. `agents` レジストリに4件、`profiles` に400件が存在し、レジストリ未登録のプロフィールには配送されないことを確認できる
+   230	9. 異なる質問3種で画面用ファネルの上位20件が変化することを確認できる
+   231	10. 用語（レビュー/同意/公開範囲）が統一され「承認」が使われていないことを確認できる
+   232	11. クライアントSDKからの直接読み取りがSecurity Rulesで拒否されることを確認できる
+   233	12. （M3）`DEMO_TODAY` を固定し停滞条件を満たすシードタスクを投入して `POST /api/secretary/sweep` を実行すると、`score ≥ T2` の「つながりリクエスト案」カード（evidence_line・質問下書き・候補＋理由つき）が本人のダイジェストにのみ現れ、**この時点で `messages` に `connect_ask` / `connect_ask_private` が1件も増えていない**こと、およびプレビュー候補の `cited_item_keys` に private 項目が含まれないこと（embedding_public＋public限定コンテキストの確認）を確認できる（プレビュー無痕跡・public限定の最重要ゴール）
+   234	13. （M3）カードの「依頼する」確定で既存の質問経路が走り、ゴール1〜6の挙動（配送・同意・辞退・非公開打診）がそのまま成立することを確認できる。カードが `confirmed` になり `linked_query_audit_id` が記録される。confirm を二重POSTしても質問投入が1回しか起きないことを確認できる（CAS）
+   235	14. （M3）sweep を同日中に再実行しても open カードが重複生成されず（冪等性）、`notice` カードがスコア T2 超えで同一カードのまま `request_draft` に昇格し、タスクを done にした次の sweep で `resolved` に閉じることを確認できる（状態機械）
+   236	15. （M3）ダイジェストに schedules 由来の期日リマインド（経費締切・週報・会議準備・ジャーナル）が期日超過→当日→翌日の順で表示されることを確認できる
+   237	16. （M3）mail_seeds 投入→sweep→差分提案カード→「反映」で `profiles.items` に `reviewed=true` の項目が追加され embedding が再生成され、直後の質問で当該項目が `cited_item_keys` に現れ得ることを確認できる
+   238	17. （M3）監査画面に `stagnation_detected` / `preview_search` / `profile_diff_proposed` の行が「内容非表示」のマスク表示で現れ、タスク名・質問下書き・候補名が表示されないことを確認できる（fail-closedの適用確認）
+   239	18. （M3・A段）Cloud Scheduler ジョブが構成され、`gcloud scheduler jobs run` の手動発火で sweep が実行される（Cloud Run ログに sweep 実行行が出る）こと、および `X-API-Key` ヘッダなしの `POST /api/secretary/sweep` が 401/403 で拒否されることを確認できる
+   240	19. （M3・B段）Scheduler ジョブ `kd-secretary-sweep-runtime` を手動発火すると、Runtime 上の秘書が `run_daily_sweep` を呼び、Cloud Run ログに `/api/secretary/sweep` の 200 が記録され、Scheduler の試行が成功することを確認できる。このとき A段ジョブ `kd-secretary-sweep` が paused であることを確認できる
+   241	20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_digest` が呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返ることを確認できる。Runtime秘書のツール一覧に書き込み系（confirm/dismiss/review）が**存在しない**ことを確認できる
+   242	21. （M3・B段）Agent Registry に Runtime 秘書が登録されていることを Console または API 一覧で確認できる
+   243	22. （M3・B段）ツール関数（`run_daily_sweep` / `get_digest`）の単体テストがHTTPフェイクでオフラインに通り、既存スイートが google-adk 未インストール環境でも壊れないこと（import失敗時 skipTest）を確認できる
+   244	
+   245	## 11. デモ動画の構成（3分・英語）
+   246	
+   247	1. **秘書の朝（〜30秒、v8で追加・冒頭シーン）**: 本人がUIを開く → モーニングダイジェスト（経費締切・週報・会議準備のリマインド）の**地続きに**停滞カード「Riverside Clinic移転のタスク、期日を2回延ばし5日止まっています。手がかりを持っていそうな人を探してあります」→ 候補＋理由を確認 → 質問下書きを一部編集して「依頼する」。ナレーション「質問はタイプするものではなく、秘書が先に気づくものになる」
+   248	2. **幸福経路（〜85秒）**: （確定された質問から接続）監査画面でファネル「400件（スケール表示）→接点推論→配送3件・落選1件（理由付き）」 → 候補本人の画面に質問＋AI推定の候補理由 → 1体同意→MTG成立が双方に届く／1体辞退（資料添付）→依頼者に届く（§6-5の台本構成）
+   249	3. **非公開項目打診（〜40秒）**: private項目を持つ候補への打診が本人にだけ届く → 監査画面では「内容非表示」の行 → 依頼者画面では通常候補と見分けがつかない → ナレーション「開示するかどうかは、本人だけが決める」
+   250	4. **統制の3点セット（〜20秒）**: アーキ図カットで `agents` レジストリ（誰が居るか）＋スキーマレジストリ（何を流せるか）＋監査ログ（何が流れたか）＋トリガー（いつ動くか: Scheduler→将来はAgent Runtime）を示す。尺が余れば未登録型の拒否（赤表示）を実演
+   251	
+   252	秒数配分は目安（合計175秒＋タイトル・クロージング）。プレビュー無痕跡（候補者は確定まで何も知らない）は冒頭シーンのナレーションで一言添える（Fortified文脈での秘書の統制主張はこの1点に絞り、秘書機能自体を売りにしない——spec v7の位置づけ通り）。
+   253	
+   254	## 12. spec.md v4との対応
+   255	
+   256	| spec機能要件 | 対応箇所 |
+   257	|---|---|
+   258	| FR1-3（エージェント・プロフィール・レビュー） | §3, §9 |
+   259	| FR4（探索的な上位k選定） | §2 |
+   260	| FR5（質問＋候補理由の提示、AI発言明示） | §2 |
+   261	| FR6（同意→MTG提案） | §6 |
+   262	| FR7（辞退理由＋添付） | §5 |
+   263	| FR8（非公開項目の打診・非開示） | §3, §4 |
+   264	| FR9-11（エンベロープ・レジストリ・監査記録） | §3 |
+   265	| FR12（監査ダッシュボード） | §7 |
+   266	| FR13（400名分投入） | §3 |
+   267	| FR14（デモ構成） | §11 |
+   268	| FR15（アーキ図・write-up） | 実装後タスク（§8のGEAP言及、§4-4の主張範囲、§14.6の同型パターン、将来構成（Spark/Agent Runtime/苦手先回り）を反映すること） |
+   269	| FR16（巡回） | §14.1, §14.7 |
+   270	| FR17〜18（停滞スコア・2段閾値） | §14.3 |
+   271	| FR19（プレビュー無痕跡・public限定） | §14.4 |
+   272	| FR20（本人確定・配送権限なし） | §14.4 |
+   273	| FR21（監査への専用intent記録） | §14.6 |
+   274	| FR22（モーニングダイジェスト） | §14.2, §14.8 |
+   275	| FR23（プロフィール差分提案） | §14.5 |
+   276	| FR24（苦手先回り・stretch） | 実装なし。write-up・アーキ図将来構成（§14.6の監査パターンとガードレールを流用） |
+   277	
+   278	## 14. 秘書プロアクティブ層（M3、spec v7 FR16〜24）
+     1	# knowledge-discovery 仕様書 v7
+     2	
+     3	生成元: `source-input.md`（初版）／ 補助文脈: `context-chat.md`／ v2改訂: design-loop承認CP後のユーザーとの対話（2026-08-18）／ v3改訂: 根本思想の明確化（2026-08-18）／ v4改訂: AI生成制限の撤廃・辞退時ドキュメント回答・private項目の意味の反転（2026-08-18）／ v5改訂: design.md v7への文言追随（批評round-5 C-22）／ v6改訂: デモ舞台の方向性確定（事業・部署を跨ぐ接続を中心に据える）とCRM差別化の明記。具体の舞台は候補検討中（未決）／ v7改訂: 秘書（プロアクティブ）層・モーニングダイジェスト・プロフィール継続更新の追加、GEAP採用範囲の確定（2026-08-19）
+     4	生成日: 2026-08-17（v1） / 改訂日: 2026-08-18（v2〜v6）／ 2026-08-19（v7）
+     5	
+     6	## v7改訂の経緯
+     7	
+     8	M1/M2実装・反証round-6クローズ後のユーザーとの対話（2026-08-19）で、**秘書（プロアクティブ）層**が追加された。動機: 「質問を入力すると繋いでくれる」という受動的な入口だけでは、エージェントが普段から仕事を見てくれているという大元の説得性が弱い、というユーザーの指摘。ハッカソン募集文の "agents that run in the background... automate complex workflows asynchronously" への直接の応答にもなる。
+     9	
+    10	1. **秘書エージェントの追加（M3）**: タスクの停滞を検知し、プレビュー検索（配送なし）で候補まで用意した上で、本人の依頼確定があって初めて既存のつながりレーンに合流する。「気づく・調べる」までは自律、「人を巻き込む」は本人確定必須。停滞検知は説明可能性のためルールベース（重み付きスコア＋2段閾値）とし、LLM判定を用いない。検知事実は本人以外に通知しない（監視ツール化の防止。Starmind等への対抗軸「監視型の対極」を維持）。**秘書自体は審査上の主張点にしない**——大元機能の説得性を支える土台と位置づける。
+    11	2. **モーニングダイジェスト（デフォルトリマインダー）**: 経費精算締切・週報/月報準備・会議の準備/振り返り・ジャーナルの期日リマインドをデフォルト搭載。接続提案だけの秘書は「普段黙っていて突然停滞を指摘する監視者」に見えるため、日常の地味な有用性で信頼の土台を作り、その延長に停滞検知カードを乗せる。なお v2 非スコープ（事務的単純事実への回答の廃止）は「回答経路を人的接続に一本化した」という判断であり、期日リマインドはこれと矛盾しない（**回答はしない、リマインドのみ**）。
+    12	3. **プロフィール継続更新**: 初回レビュー一回きりだったプロフィールを、秘書が模擬メール等のシードから差分提案（「このプロフィールに追加します」→本人レビュー）する形でオンタイム更新に拡張する。
+    13	4. **苦手分野の先回り検索（stretch）**: 停滞履歴のカテゴリ集計から「繰り返し停滞する分野」を導き、相談先候補を先回りで常備する構想。推定された苦手プロフィールは本人のエージェントのみが保持する（索引不掲載・監査には実行事実のみ）。実装はstretch、write-up・アーキ図には将来構成として必載。
+    14	5. **GEAP採用範囲の確定**: Agent Registry を実採用し、秘書エージェントは2段構えで Agent Runtime へ載せる。Gemini Enterprise（SaaS）のスケジューラ利用と Gemini Spark の実接続は却下（検討済み・却下を参照）。
+    15	
+    16	## v4改訂の経緯
+    17	
+    18	design.md 再起草前の構想レビューで、ユーザーから3点の変更指示があった:
+    19	
+    20	1. **「AIが要約・生成した文章を候補に見せない」制約を撤廃**。安全側に倒しすぎて設計全体を歪めていた。残る原則は「未レビューのAI生成文を本人の発言として（本人名義で）流通させない」の一点のみ。AIがAIとして要約・推論・紹介文を書くのは全て自由。
+    21	2. **辞退時にドキュメント回答を添付可能に**。辞退が「拒絶」ではなく「会うほどではないが、これで足りるなら」という中間の返し方になる。
+    22	3. **private項目の意味を反転**（旧: マッチングから完全除外される死んだデータ → 新: **本人のエージェントだけが知っている情報**）。NDAに限らず、本人が意図的に公開プロフィールから外したもの全般。関連する質問が来たとき、本人のエージェントが本人にだけ「この質問、あなたの非公開項目に関係しそうですが、つながりますか？」とお伺いを立てる。内容を明かすかどうかは、会った本人がその場で判断する。「本人だけが開示を判断できる」という情報主権の実体となる機能。
+    23	
+    24	## v3改訂の経緯
+    25	
+    26	v2確認の際、ユーザーから根本思想の明確化があった:
+    27	
+    28	1. **本プロダクトの定義**: 「人と人の暗黙知を繋いでシナジーを生み出すためのもの」。単一レーン構造（v2）の背骨にあった思想を、より明確な一文として立てる。
+    29	2. **マッチング精度の考え方**: 「この人ならこれを知ってる」という確定情報である必要はない。「もしかしたらこの人は背景情報から詳しいかも」という粒度のマッチングで構わない。むしろこの探索的・確率的な性質こそが、確定的な高精度マッチングを追求する既存サービス（Starmind等）との差別化になる。
+    30	3. **プロフィールへの追加**: 「その会社でしている仕事」を項目として追加し、割と詳しく書く。詳細な現在業務の記述が、探索的マッチング（暗黙知の匂いを嗅ぎ取る）の材料になる。
+    31	
+    32	v2の単一レーン構造・辞退の可視化・NDAスコープ等はそのまま維持し、上記3点を反映する。
+    33	
+    34	提出先: All Things Agentic Hackathon（Devpost / Google）／ トラック: The Fortified Enterprise Fleet／ 締切: 2026-08-31 17:00 PDT（= 9/1 09:00 JST）
+    35	
+    36	## v2改訂の経緯（重要）
+    37	
+    38	design.md v1〜v4（design-loop批評3ラウンド、指摘15件）はすべて「レーン1＝文書引用で完結する情報レーン」「レーン2＝解決不能な場合のみ人間に会う」という**旧2レーン構造**を前提に組み立てられていた。承認チェックポイントでユーザーから以下の指摘があり、前提そのものが誤りと判明した:
+    39	
+    40	1. **目的の取り違え**: 本プロダクトの目的は「情報を得ること」ではなく「人と人のつながりを生み出すこと」。純粋な情報取得だけならRAGで十分であり、そこを解こうとすると既存のRAG製品と変わらない陳腐なプロダクトになる。
+    41	2. **想定質問の誤り**: 本プロダクトが扱うべき問い合わせは、文書に落ちない背景・経緯・肌感・人間関係が絡むものであり、事務的な単純事実（経費精算の締め日等）はそもそも本プロダクトが解く問題ではない。
+    42	3. **辞退の扱いの誤り**: 「辞退を依頼者から隠す」というハブ保護の発想（旧決定5）を撤回。AIによる効率化が進むからこそ、人が10〜15分の時間を割いて向き合うことが組織を強くするという価値観に立ち、辞退は理由を添えて依頼者に正直に返す（誰とも会いたくない人はこのプロダクトの対象外）。
+    43	4. **プロフィールの想定内容の誤り**: design.mdの批評で使われた悪性クエリ例「田中さんの給与を教えて」は、プロフィールに給与等の個人情報が載る前提を誤って持ち込んだもの。プロフィールが扱うのは仕事内容・得意分野・簡易な職歴（バックグラウンド）であり、非公開設定はNDA対象の業務情報にのみ使う。
+    44	
+    45	これにより**旧2レーン構造を単一レーン構造（常に「つながりませんか？」を提案する）に置き換える**。design.md はこのv2を入力として design-loop を再起動する。
+    46	
+    47	## 目的
+    48	
+    49	**本プロダクトは、人と人の暗黙知を繋いでシナジーを生み出すためのものと定義する。** 社員一人一人に付く個人AIエージェント群が「これって社内の誰に聞けばいい？」を解決し、実際に人と人のつながりを生み出すマルチエージェントシステムを、2週間でデモ可能な状態まで作る。
+    50	
+    51	設計思想: **AIによる効率化が進むからこそ、組織を強くするのは人と人のつながりである。** 事務的な単純事実確認（既存のRAG/FAQツールで十分な範囲）は本プロダクトが解く問題ではない。本プロダクトが扱うのは、文書に落ちていない背景・経緯・肌感・人間関係が絡む問い合わせであり、それは人に会うことでしか得られない。ゆえに、候補者が見つかった時点で常に「つながりませんか？」を提案する。断ることは自然な社会的行為として扱い、理由を添えて依頼者に正直に返す（隠さない）。全エージェント間通信は本人同意ゲート付きで監査可能。
+    52	
+    53	**マッチングの精度についての考え方（v3で明確化）**: マッチングは「この人ならこれを知っている」という確定情報である必要はない。**「もしかしたらこの人は背景情報から詳しいかもしれない」という粒度で構わない。** 暗黙知は本人も言語化できていないことが多く、確定的な検索ではそもそも見つからない。この探索的・確率的なマッチングこそが、確定的な高精度マッチング（「詳しい人を正確に当てる」）を追求する既存サービス（Starmind等のexpertise location市場）との明確な差別化になる。既存勢が「検索の精度」を競う一方、本プロダクトは「意外な、しかし価値のある接続」を積極的に許容する。
+    54	
+    55	一言説明（Devpost登録済み文言。**単一レーン構造への転換に伴い改訂が必要。後で変更可のため未決事項に記載**）:
+    56	> （旧）A multi-agent knowledge-discovery system where every employee's personal agent answers "who should I ask about this?" — agents resolve information requests among themselves, and involve humans only when the connection itself is the value. All inter-agent disclosure is owner-approved, consent-gated, and auditable.
+    57	>
+    58	> （新・ドラフト）A multi-agent knowledge-discovery system where every employee's personal agent finds who in the company can help — not by delivering a document, but by proposing a real connection. Declines are handled with the same courtesy as a real workplace conversation: visible, with a reason, never hidden. All inter-agent activity is consent-gated and auditable.
+    59	
+    60	**入口の拡張（v7）**: 質問の入口を「人が質問を思いつく」だけに置かない。秘書（プロアクティブ）層が仕事の停滞に気づき、候補を用意した状態で本人に差し出す（スコープ10〜12）。秘書は独立機能として審査に主張しない。エージェントが普段から仕事のそばにいる（毎朝のリマインド・プロフィールの手入れをしてくれる）からこそ、「聞けば社内の誰かに繋いでくれる」という中核機能が信頼される——その説得性の土台である。
+    61	
+    62	既存カテゴリ（Starmind / Glean / Microsoft Viva Topics）は「会社がデータを吸って自動でプロフィールを構築し、質問をエキスパートに届ける」監視型・情報伝達型である。本システムはその対極に立つ。既存勢が「情報を届けて終わり」なのに対し、本システムは**情報の受け渡しそのものを目的にせず、常に人と人の接続を生み出す**ことを目的とする。また、CRM（Salesforce等）は事業部内の顧客・案件を記録するが、本システムが扱うのは**事業・部署を跨ぐ暗黙知の接続**——守秘・人間関係・案件の機微ゆえにCRMには構造的に載らない情報——であり、CRMの代替ではなくCRMが空ける穴への回答である。
+    63	
+    64	## スコープ
+    65	
+    66	1. 模擬社員4名ぶんの個人エージェント（ADKマルチエージェント構成、完全な対話実装）
+    67	2. プロフィール生成・レビューフロー: エージェントがシードデータ（模擬職務文書）から下書きを生成し、業務由来項目はデフォルト公開とする。本人は一度のレビューで下書きの修正・NDA/秘匿項目の非公開化のみを行う（全項目の逐一承認は行わない）。プロフィール項目は以下を想定し、個人のプライバシー情報（給与等）は扱わない:
+    68	   - **その会社でしている仕事（詳細）**: 現在担当しているプロジェクト・業務内容・関わっている案件を、探索的マッチングの材料になる程度に具体的に記述する（v3で追加。ここが暗黙知マッチングの主要な手がかりになる）
+    69	   - 得意分野・専門性
+    70	   - 簡易な職歴（バックグラウンド）
+    71	3. **単一レーン（つながりレーン）**: 質問→ディスカバリ層がプロフィール索引で上位k体を選定→各候補へ「つながりませんか？」を提案。候補本人には、質問（AIが要約してよい）と「あなたが候補になった理由」（AIが推論・生成する）を提示する。AI生成文はAIの発言として明示し、本人の発言として見せない
+    72	4. 候補が同意した場合のみマッチ成立→15分MTG提案
+    73	5. 候補が辞退した場合、**理由（本人が自由記述、またはテンプレから選択）を添えて依頼者に返す**。辞退の事実は隠さない。**任意で、代わりになりそうな資料・リンク・一言回答を添付できる**（「会うほどではないが、これで足りるなら」という中間の返し方を可能にする）
+    74	6. 公開範囲: プロフィール項目ごとに公開/非公開のトグル。**非公開項目は「本人のエージェントだけが知っている情報」**（NDA案件に限らず、本人が意図的に公開から外したもの全般）。関連する質問が来たとき、本人のエージェントが本人にだけ「この質問はあなたの非公開項目に関係しそうです。つながりますか？」とお伺いを立てる。非公開項目の内容が依頼者・他エージェントに開示されることはなく、明かすかどうかは会った本人がその場で判断する
+    75	7. 監査ダッシュボード（＝エージェントチャンネル可視化画面）: 全エージェント間メッセージのログを人間可読で表示（誰が・何を・同意状態つき）。辞退も含め表示に制限を設けない（隠す必要がなくなったため実装が簡素化する）。非公開項目に触れる不正なクエリの拒否は同画面に赤表示。非エンジニアが5秒で異常に気づける画面を目標
+    76	8. デモ動画（3分・英語）: モーニングダイジェスト→停滞検知カード→本人の依頼確定を冒頭に置き、以降は候補提示→同意→MTG成立の幸福経路、および辞退→理由付きで依頼者に届く経路、の1シナリオ一本道（デモの質問は秘書の下書きを本人が確定したものとして始まる）
+    77	9. アーキテクチャ図と英語write-up
+    78	10. **秘書エージェント（プロアクティブ層、M3）**: 各担当者のタスクデータを定期巡回し、重み付き停滞スコア（2段閾値）で停滞を検知。閾値超えで気づきカード／つながりリクエスト案（プレビュー検索＋質問文下書き）を本人にのみ提示し、本人の依頼確定で既存のつながりレーンに合流する。審査上の主張点にはしない
+    79	11. **モーニングダイジェスト（デフォルトリマインダー）**: 経費精算締切・週報/月報準備・会議の準備/振り返り・ジャーナルの期日リマインドカード。シードのスケジュールデータ＋日付ルールのみで実装
+    80	12. **プロフィール継続更新**: 秘書が模擬メール等のシードから差分を検出し「このプロフィールに追加します」と提案→本人レビュー（反映・編集・公開範囲変更・見送り）で反映。初回レビュー（スコープ2）を一回きりにせず、オンタイムで回す仕組みにする
+    81	
+    82	## 非スコープ（明示的に作らない）
+    83	
+    84	- **事務的・手続き的な単純事実への回答**（経費精算の締め日、休暇申請方法等）。これは既存のRAG/FAQツールの領域であり、本プロダクトが解く問題ではない（v2で追加。旧レーン1「情報レーンで文書引用のみ返す」経路そのものを廃止した）
+    85	- 実GWSデータ連携（カレンダー/Gmail/議事録の取り込み）— シードデータで代替
+    86	- 1on1支援機能全般（別プロダクト、Zenn vol.5側で提出）
+    87	- 被マッチクォータ、workload連動の応答提案
+    88	- 貢献の可視化（余裕があれば簡易カウンタのみ、stretch扱い）
+    89	- 組織集計・属人化リスクの経営向け検出
+    90	- 本番想定の認証・マルチテナント
+    91	- **リマインド対象の手続き内容への回答**（経費精算のやり方等）— リマインドは期日通知のみ。v2の「回答経路の廃止」判断を維持する
+    92	- リマインド設定のCRUD画面・実カレンダー/実メール連携（スケジュール・メールはすべてシードデータ固定）
+    93	- 苦手分野の先回り検索の実装 — stretch扱い（機能要件24。write-up・アーキ図への記載は必須）
+    94	
+    95	## 機能要件
+    96	
+    97	1. システムは模擬社員4名分の個人AIエージェントをADK（Python）マルチエージェント構成で実装する。
+    98	2. 各エージェントは、シードデータ（模擬職務文書）からプロフィール下書きを自動生成し、業務由来項目をデフォルト公開状態で提示する。プロフィール項目は「現在の仕事内容（詳細）」「得意分野・専門性」「簡易な職歴」に限定する。「現在の仕事内容」は探索的マッチングの主要な手がかりとなるため、他の2項目より詳しく記述する。
+    99	3. 本人は一度のレビュー画面で、下書き内容の修正、およびNDA/秘匿項目の公開範囲（公開/非公開）変更のみを行い、確定させる。
+   100	4. システムは、質問入力を受け取ると、ディスカバリ層がプロフィール索引から上位k体の候補エージェントへ配送する。この選定は「質問に確実に答えられる人」を特定するものではなく、「プロフィール内容（特に現在の仕事内容）から見て、背景知識を持っていそうな人」を確率的に探索するものとする。誤マッチ（結果的に的外れな接続）はゼロを目指さない。
+   101	5. 配送された各候補エージェントは、依頼者の質問（AIが要約してよい）と「あなたが候補になった理由」（AIが推論・生成）を本人へ提示し、「つながりませんか？」の同意確認を行う。AI生成文は常にAIの発言として明示し、いかなる人物の発言としても表示しない。
+   102	6. 本人が同意した場合のみマッチが成立し、15分ミーティングの提案が生成される。
+   103	7. 本人が辞退した場合、辞退理由（本人記入）を添えて依頼者側に表示・通知する。辞退の事実は隠さない。辞退時に、任意で資料・リンク・一言回答を添付でき、依頼者にそのまま届く。
+   104	8. プロフィールは項目ごとに公開/非公開のトグルを持つ。非公開項目は本人のエージェントだけが参照でき、関連する質問が来た場合は本人にのみ「非公開項目に関係しそうな質問が来ています。つながりますか？」と打診する。非公開項目の**内容**は依頼者・他エージェント・監査画面のいずれにも開示されない。監査画面には「非公開項目に基づく打診が行われた事実」のみが記録される（内容はマスク）。非公開項目の存在を一切示さないのは依頼者向けUIに限る。
+   105	9. 全エージェント間通信は単一のメッセージエンベロープ（`from` / `to` / `intent` / `payload_type` / `payload` / `consent` / `audit_id`）で送受信される。
+   106	10. 流通可能な `payload_type` はスキーマレジストリに中央定義され、未登録の型を含むメッセージは送信層で拒否される。
+   107	11. 拒否されたメッセージを含む全メッセージが監査ログへ記録される。
+   108	12. 監査ダッシュボード（エージェントチャンネル可視化画面）は、全エージェント間メッセージを「誰が・何を・同意状態」つきで人間可読に表示する。辞退も含め表示に制限を設けない（例外は非公開項目関連の内容マスクのみ）。送信層で拒否されたメッセージ（未登録payload型・宛先が受信できないintent）は同画面に赤色表示される。
+   109	13. プロフィール索引には、Gemini合成の模擬社員プロフィール約400名分をFirestoreに実データとして投入する（完全な対話実装を持つのは4体のみとし、モック画面による見せかけは行わない）。
+   110	14. デモ動画は3分・英語で、モーニングダイジェスト→停滞検知カード→本人の依頼確定を冒頭シーンとし、以降は候補提示→同意→MTG成立の幸福経路、および辞退→理由（＋任意の資料添付）付きで依頼者に届く経路を1シナリオ一本道として構成する（機能羅列をしない。非公開項目打診シーン・秘書シーン追加後の尺配分はdesign.md側の設計判断に委ねる）。
+   111	15. アーキテクチャ図と英語write-upを提出物として作成する。write-upは既存カテゴリ（Starmind/Glean/Viva Topics）へのアンチテーゼとして位置づけ、Viva Topics撤退（2025/2）とCSCW研究の失敗要因（選定の社会的配慮）への設計回答であることを明記する。あわせて本番将来構成——個人側トリガーとしての Gemini Spark（MCP経由。社内前提のため実装外）、秘書の GEAP Agent Runtime 常駐、苦手分野の先回り検索——をアーキ図・write-upに明記する。「秘書は日常の地味な有用性で存在を許され、その信頼の上でだけ人を巻き込む提案をする」という設計理由を、CSCW失敗要因への回答の一部として記述する。
+   112	16. 秘書エージェントは、各担当者のタスクデータ（模擬タスクストア: タイトル・説明・期日・最終更新・リスケジュール履歴・status遷移履歴）を定期起動（Cloud Scheduler想定。デモでは手動トリガー可）で巡回する。常駐プロセスとしない。
+   113	17. 停滞検知はルールベースの重み付き停滞スコアで行い、LLM判定を用いない。シグナルは（a）期日超過日数、（b）無更新日数、（c）リスケジュール回数、（d）相対停滞（本人の他タスクは更新されているのに当該タスクのみ停止＝後回し検知）、（e）着手なし（作成以来status遷移なし）とする。カードには判定根拠を一行で明示する（例: 「期日を2回延ばし、他のタスクは動いているのにこれだけ5日止まっています」）。
+   114	18. 停滞スコアは2段閾値を持つ。閾値1超えで「気づきカード」を本人にのみ提示する。閾値2超えでプレビュー検索を自動実行し、質問文下書き＋候補＋候補理由（AI発言として明示）まで揃えた「つながりリクエスト案」カードを本人にのみ提示する。
+   115	19. プレビュー検索は配送を伴わない読み取り検索であり、公開プロフィール索引のみを対象とし、候補者側への通知・痕跡を一切発生させない。非公開項目の照合はプレビューでは行わない（非公開打診は要件8の正式配送フロー内でのみ発動する）。
+   116	20. 本人が「依頼する」を確定した場合のみ、下書き質問（本人編集可）が要件4以降の既存配送フローに乗る。秘書は本人の確定なしに配送する権限を持たない。停滞の検知事実は本人以外（上司・同僚を含む）に通知されない。
+   117	21. 秘書の検知イベントおよびプレビュー検索は、配送を伴わない専用intentとして監査ダッシュボードに記録される。
+   118	22. 秘書はモーニングダイジェストとして、期日もの（経費精算締切・週報/月報の準備・会議の準備/振り返り・ジャーナル記入）のリマインドカードをデフォルトで提示する。データはシードのスケジュールデータ＋日付ルールで生成し、手続き内容への回答は行わない（非スコープ）。停滞検知カード（要件17〜18）はこのダイジェストの中に、日常リマインドと地続きの1カードとして表示する。
+   119	23. 秘書は模擬メール等のシード文書から本人のプロフィール差分候補を検出し、「このプロフィールに追加します」という差分提案カードを本人に提示する。本人はレビューで反映・編集・公開範囲変更・見送りを選べる。UIは反映を既定の導線とし、見送りは明確な秘匿性がある場合の選択肢として配置する。反映されるとプロフィール索引が更新される。差分提案文はAI発言として明示し、本人の発言として流通させない（v4原則の適用）。
+   120	24. **（stretch）苦手分野の先回り検索**: 停滞履歴のカテゴリ集計から「繰り返し停滞する分野」を導き、平常巡回時に当該分野のプレビュー検索を先行実行して相談先候補を本人にのみ常備する。推定された苦手プロフィールは本人のエージェントのみが保持し、マッチング索引・他エージェント・監査画面のいずれにも掲載しない（監査には検索実行の事実のみ記録）。実装はstretchとし、アーキ図・write-upには将来構成として必ず記載する。
+   121	
+   122	## 制約・非機能
+   123	
+   124	- **実装スタック**: ADK（Python）+ Gemini 3.7 Flash（現行最新、2026年8月13日リリース）+ Cloud Run + Firestore。「Gemini 3.5 or newer」は「バージョン番号が3.5以上」の意であり、現行最新のProモデル（Gemini 3.1 Pro）はバージョン番号（3.1）が3.5未満のため要件を満たさない可能性が高い。Pro系統は使用せずFlash系のみで完結させる
+   125	- **締切**: 2026-08-31 17:00 PDT厳守。逆算で8/29までに機能凍結し、残りをデモ動画・アーキ図・英語write-upに充てる
+   126	- **技術要件（審査条件、募集要項より）**: 「Gemini 3.5 or newer（Gemini API または Vertex AI経由）」「Google Agent Framework（ADK / GenAI SDK / Antigravity SDK / GenKit のいずれか1つ以上）」「Google Cloudインフラサービス（Cloud Run / Cloud SQL / Firestore / GKE / Pub/Sub 等のいずれか1つ以上）」。ボーナス統合（任意）: Gemma / Veo / Lyria 等のGoogle AIモデル統合
+   127	- **コスト**: Google Cloud $150クレジット内（申請済み・承認待ち。未承認のまま開発期限が来た場合は個人課金＋予算アラートで進行）
+   128	- **運用**: Cloud Run は min-instances=0。デモ収録後は即停止。公開URLはAPIキー等で保護
+   129	- **GEAP採用**: **確定（2026-08-19）** — Agent Registry を実採用（自作エージェントとMCPツールを登録）。秘書エージェントは2段構えで GEAP Agent Runtime（API名 ReasoningEngine）へ載せる: まずCloud Run同居で実装・動作確認し、その後Runtimeへ載せ替える。載せ替えに詰まった場合はCloud Run版のままとし（フォールバック）、Registry登録は維持する。Model Armor / Agent Observability（明示的計装）はアーキ図上の将来構成として言及に留める。秘書の定期起動は Cloud Scheduler を用いる
+   130	- **開発体制**: 開発者1名、フルタイム勤務の業務外時間のみ（平日夜＋土日2回分程度）
+   131	- **評価基準（募集要項より、合計100%）**:
+   132	  - Innovation & Operational Utility — 40%: 自律的・高価値な行動で実世界の摩擦をどれだけ除去するか
+   133	  - Architectural Discipline & Tech Stack — 30%: システムの疎結合性・状態管理・認証情報のセキュリティ・障害処理などエンジニアリング判断の健全性
+   134	  - Demo & Production Readiness — 30%: デモ動画とリポジトリが機能性をどれだけ説得力を持って証明しているか
+   135	- **用語統一**: 「承認（approval）」は使わない。プロフィールの本人確認は「レビュー（検品）」、つながりレーンの応諾は「同意（consent）」、公開/非公開設定は「公開範囲（visibility）」と呼び分ける。英語表記は owner-reviewed / consent-gated / visibility
+   136	
+   137	## 構造図
+   138	
+   139	### 全体フロー（v2: 単一レーン構造）
+   140	
+   141	```mermaid
+   142	flowchart TD
+   143	    Seed[シードデータ<br>模擬職務文書] --> Draft[エージェントが<br>プロフィール下書き生成<br>仕事内容・得意分野・職歴<br>業務由来項目=デフォルト公開]
+   144	    Draft --> Review[本人レビュー<br>修正 + NDA業務情報の非公開化]
+   145	    Review --> Profile[(確定プロフィール<br>公開範囲つき<br>Firestore)]
+   146	
+   147	    Sched[Cloud Scheduler<br>定期起動] -.-> Sec[秘書エージェント<br>巡回・停滞スコア2段閾値]
+   148	    Tasks[(模擬タスクストア<br>期日・更新・リスケ履歴)] --> Sec
+   149	    Cal[(シードスケジュール<br>経費締切・週報・会議・ジャーナル)] --> Sec
+   150	    Mail[(模擬メールシード)] --> Sec
+   151	    Sec -->|日次| Digest[モーニングダイジェスト<br>期日リマインド<br>回答はしない]
+   152	    Sec -->|閾値1: 気づき<br>閾値2: リクエスト案| Card[停滞カード 本人のみ<br>プレビュー検索=配送なし<br>候補者に痕跡なし]
+   153	    Card -->|本人が依頼を確定| Q
+   154	    Sec -->|差分提案<br>このプロフィールに追加します| Review
+   155	    Sec -.検知・プレビューを<br>専用intentで記録.-> Audit
+   156	
+   157	    Q[質問<br>本人入力 または<br>秘書下書きを本人が編集・確定] --> Disc[ディスカバリ層<br>プロフィール索引で上位k体を選定]
+   158	    Profile -.索引.-> Disc
+   159	    Disc --> Ask[候補エージェントk体へ<br>質問をそのまま転送し<br>つながりませんか？を提案]
+   160	
+   161	    Ask -->|同意| Match[マッチ成立<br>15分MTG提案]
+   162	    Ask -->|辞退| Decline[理由付きで依頼者に通知<br>隠さない]
+   163	
+   164	    Match --> Audit[監査ダッシュボード<br>全メッセージ + 同意状態を記録<br>辞退も含め表示制限なし]
+   165	    Decline --> Audit
+   166	
+   167	    Bad[未登録payload型 /<br>宛先が受信できないintent] --> Registry[スキーマレジストリ+<br>エージェントレジストリ<br>送信層で拒否]
+   168	    Registry -->|拒否・赤表示| Audit
+   169	```
+   170	
+   171	## 検証可能な完了条件
+   172	
+   173	1. サンプル質問を1件投げると、配送用ランキング（エージェント登録済みの候補）と画面用ファネル（400名分のスケール表示）の2トラックが動作し、接点が言語化できた候補に質問と「候補になった理由」（AI発言として明示）が提示されることを確認できる。
+   174	2. 候補が同意した場合、15分MTG提案が生成されることを確認できる。
+   175	3. 候補が辞退した場合、辞退理由を添えて依頼者側に表示されることを確認できる（旧v1の「辞退不可視」から反転）。辞退時に資料・リンク等を添付した場合、それが依頼者に届くことを確認できる。
+   176	4. 非公開項目に関係する質問が来た場合、本人にのみ打診が届き、非公開項目の内容が依頼者・他エージェントに表示されないことを確認できる。監査画面には打診の事実のみが記録され、内容はマスクされることを確認できる。
+   177	5. 監査ダッシュボードで、全メッセージ（辞退を含む）について「誰が・何を・同意状態」が一覧できることを確認できる。
+   178	6. 3分・英語の完成デモ動画が、モーニングダイジェスト→停滞検知カード→依頼確定→候補提示→同意→MTG成立、および辞退→理由が届く、の1シナリオ一本道で存在することを確認できる。
+   179	7. アーキテクチャ図、および既存カテゴリへのアンチテーゼとして位置づけた英語write-upが提出物として揃っていることを確認できる。
+   180	8. 用語（レビュー/同意/公開範囲）が実装・UI・write-up全体で統一され、「承認」という語が使われていないことを確認できる。
+   181	9. プロフィール項目が仕事内容・得意分野・簡易な職歴の範囲に収まっており、個人のプライバシー情報（給与等）を含まないことを確認できる。
+   182	10. 停滞条件を満たすシードタスクに対し、判定根拠一行つきの停滞カードが本人にのみ表示され、プレビュー段階では候補者側に通知・痕跡が一切発生せず、「依頼する」確定によって条件1〜3の既存配送フローが動作することを確認できる。
+   183	11. モーニングダイジェストに期日リマインド（経費締切・週報/月報・会議準備/振り返り・ジャーナル）が表示され、停滞カードが同ダイジェスト内に地続きで表示されることを確認できる。
+   184	12. 模擬メールのシードからプロフィール差分提案カードが提示され、本人レビューの反映によってプロフィール索引が更新されることを確認できる。
+   185	13. 秘書の検知イベント・プレビュー検索が、配送を伴わない専用intentとして監査ダッシュボードに記録されることを確認できる。
+   186	
+   187	## 未決事項
+   188	
+   189	- プロダクト名（未定。write-upまでに決める）
+   190	- Devpost登録済み一言説明の文言更新（単一レーン構造に合わせた新ドラフトを目的セクションに記載済み。確定は後で変更可のため急がない）
+
+exec
+/bin/zsh -lc "nl -ba design/knowledge-discovery/ledger.md | sed -n '1,180p'
+nl -ba README.md | sed -n '1,155p'" in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+     1	# ledger: knowledge-discovery
+     2	
+     3	## 反証round-9（round-8修正のクローズ検証）の帰結 — 2026-08-19
+     4	
+     5	原文: reviews/round-9.md（critic: claude design-critic = claude-opus-5[1m]、fresh）。**round-8の10論点は10/10クローズ確認**（high 3件は原文の破綻シナリオ再実行で再現消滅を実測）。新規2件はメインループ（Claude Fable 5）が直接修正し、テスト84件全パス:
+     6	
+     7	- **R-1（設計/high・受理）**: V-10修正の副作用で差分提案カードが不可視（digestがJordan固定、mail所有者はMarcus） → requester.htmlに**candidate.htmlと同一のデモ用1人切替ドロップダウン**を追加（round-6 S-3で意図的仕様として受理済みの機構の踏襲。design §14.8はUIの人物固定を規定しないため実装レベルで解決、design改訂・再承認なし）
+     8	- **R-2（実装/mid・受理）**: LLM失敗（例外・空応答）を「差分なし」と同一視しmailを無音消費 → `EXTRACTION_FAILED` sentinelで三値化（差分あり/明示null/失敗）。失敗時はprocessed=Falseのまま次回sweepで再試行。失敗時のヒューリスティック（メール本文コピー）も廃止（S-6残滓の完全閉塞。ヒューリスティックはllm_client未設定の環境のみ）。回帰テスト追加（失敗→未消費→復旧の一連）
+     9	
+    10	M3（秘書プロアクティブ層・A段）の反証工程はこれで収束。ループ外残タスク: デプロイ＋シード再投入、Cloud Schedulerジョブ設置（ゴール18）、B段載せ替え判断（8/27期限）、デモ台本。
+    11	
+    12	## 反証round-8（M3実装・3レンズ）のルーティング — 2026-08-19
+    13	
+    14	原文: reviews/round-8-correctness.md（V-6〜V-10）/ round-8-safety.md（S-6〜S-10）/ round-8-excess-codex-raw.txt（E-6〜E-10。critic: claude design-critic ×2 = claude-opus-5[1m]、過剰実装レンズ = codex/gpt-5.6-sol xhigh）。15件・重複統合で実質10論点、**全件「実装」種別として受理**（設計差し戻しなし）。修正はCC内sonnetサブエージェントへ委譲、修正後に再検証・再反証。
+    15	
+    16	- **V-6/S-8（high・一致）**: confirm CASが非トランザクション（並行二重POSTで二重配送を両criticが実測） → Storeに原子的遷移操作を追加（InMemory=Lock、Firestore=transaction）
+    17	- **V-7/S-7（high・一致）**: 差分反映が同一キー上書き＋visibility反転可（NDA項目のpublic化経路） → 厳密に「追加」のみへ。既存項目の変更を構造的に排除
+    18	- **V-8/E-7/S-6（high・3レンズ一致）**: llm_client未配線でヒューリスティック（メール全文コピー→public公開）が既定経路化 → serverで配線。LLM経路を既定、null（差分なし）対応
+    19	- **V-9/E-6（mid・一致）**: 帯変化なし再sweepでプレビュー再実行・preview_search監査行重複・0件時降格 → §14.2どおりscore/evidence更新のみに
+    20	- **V-10（mid）**: mail_seed所有者にprofile/agentが無くゴール16検証不能＋ダミープロフィール生成 → シード修正・実在前提化
+    21	- **E-8（mid）**: 汎用dismissが状態機械外の遷移を許す → type=stagnation & status=open に制限
+    22	- **E-9（low）**: DEMO_TODAYのAPI上書き・item_key付け替えの露出 → 削除（環境変数のみ）
+    23	- **E-10（low）**: 呼び出しゼロのCRUDヘルパー → 削除
+    24	- **S-9（low）**: `${tagText}` 未エスケープ（round-6 S-4の局所回帰） → esc()適用
+    25	- **S-10（low）**: /api/secretary/* の本人性突合なし → デモ割り切りとしてREADME明記（round-6 S-3と同じ整理）
+    26	
+    27	**反証の肯定的所見（記録価値あり）**: M3の中核主張——プレビュー無痕跡（ゴール12）・public限定・fail-closedマスク——は正しさ・安全性の両レンズが実測で成立を確認。破綻は中核の外側（差分反映の書き込み側・並行処理）に限定されていた。
+    28	
+    29	## スコープ追加の記録（2026-08-19 / spec v7 / M3）
+    30	
+    31	ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+    32	
+    33	## 批評round-7（design v8 M3追補）の帰結 — 2026-08-19
+    34	
+    35	原文: reviews/round-7.md（critic: claude design-critic = claude-opus-5[1m]）＋ reviews/round-7-codex-raw.txt（codex/gpt-5.6-sol xhigh、クロスベンダー）。指摘10件（重複3組、実質7論点）は全件「設計」種別のため design.md v9 改訂で全受理・解決。前提ルーティング（ユーザー質問）は発生なし。
+    36	
+    37	- **C-26 / X-1（high・両ベンダー一致）**: プレビュー1段目が全項目embeddingを再利用しprivateが選定に影響（FR19違反） → `profiles.embedding_public` 新設、プレビューは両段public限定。VECTOR_FLOORはプレビュー非適用（落選判定を主張しない）。プレビューと正式実行の候補差は仕様として明示しUI固定文言化
+    38	- **C-27 / X-5（high/mid）**: Scheduler OIDCが実デプロイの `--allow-unauthenticated`＋DEMO_API_KEYと両立しない／A段起動の検証ゴール欠落 → APIキーヘッダ方式（`X-API-Key`）に変更、本番OIDC化はwrite-up将来項目。ゴール18（ジョブ手動発火＋キーなし401）を追加
+    39	- **C-28（high）**: 「今日」の基準とシード日付が未定義で収録日ずれに脆い → env `DEMO_TODAY` 導入、シードは `--today` からの相対日付生成。ゴール12〜17は DEMO_TODAY 固定で実行
+    40	- **C-29（mid）**: `deliver=False` フラグがfail-open（既存 `run_matching` は送信を持たない純粋関数） → フラグ案廃止、プレビューは純粋関数の直接呼び出し（送信層コードに到達し得ない構造的無痕跡）
+    41	- **C-30 / X-2 / X-3（mid/high/high）**: cards状態遷移の未定義（T1→T2昇格・回復時終了・dismissed/confirmed後の再発火・プレビュー0件・confirm多重実行） → §14.2に状態機械表を明文化（tier新設・resolved自動終了・dismissedは同一タスク非再生成・confirmはFirestoreトランザクションのCAS＋失敗時open戻し）
+    42	- **X-4（mid）**: `source: "mail_seed"` がprofiles schemaの許容値外 → enumに追加
+    43	- **枠外（claude総評）**: mail_seed由来項目のvisibility既定未記載 → 「既定public（業務由来デフォルト公開の原則）」を§14.5に明記
+    44	
+    45	## 前提変更の記録（重要）
+    46	
+    47	2026-08-18、design.md v4 の承認CPでユーザーから前提の誤りが指摘され、spec.md が v2〜v4 へ全面改訂された（詳細は spec.md の改訂経緯セクション）。design.md v1〜v4 と批評ラウンド1〜3の指摘（C-1〜C-15）は**旧2レーン構造を前提としたもの**であり、多くは機構ごと廃止された。以下の索引は「解決済み」ではなく「前提変更により消滅 or 縮小継承」として読むこと。批評エージェントは、廃止済み機構（来歴検証・reject_visibility・定時応答・ロール別射影・セッションロール認証・辞退不可視）の復活を提案しないこと。
+    48	
+    49	## 未解決の指摘
+    50	
+    51	（なし。反証工程round-6の15件も全て解決/意図的却下済み）
+    52	
+    53	## 反証工程 round-6（実装検証・3レンズ並列）の帰結
+    54	
+    55	原文: reviews/round-6-correctness.md / round-6-safety.md / round-6-scope.md（critic: claude-opus-5[1m]×3。codexは未インストールのため省略）。修正コミット 76732e2。
+    56	
+    57	- **V-1/S-1（high・両レンズ一致）**: マスクがLLM自己申告のcited_item_keysに無検証依存＋捏造キーfallback → 送信層でキー実在検証＋reason_textへのprivate本文断片スキャン、fail-closed化。回帰テスト3件追加
+    58	- **V-2（high）**: 依頼者⇔打診リンクがプロセス内メモリのみ → payload永続化(requester_id/query_id/ask_audit_id)でステートレス化
+    59	- **V-3/S-2（high/mid）**: UIのAPIキー焼き込み・/docs無認証 → URLクエリ取得化・docs/openapi閉鎖
+    60	- **V-4（mid）**: 射影の質問混在・辞退誤突合 → 質問単位スコープ＋ask_audit_id突合
+    61	- **V-5（mid）**: match_proposalが双方に届いていない → 依頼者・同意者へ各1通実送信＋宛先assert
+    62	- **S-3（mid）**: 候補受信箱のagent_id切替 → デモ用1人4役ドロップダウンの意図的仕様としてREADMEに明記（採用せず）
+    63	- **S-4（mid）**: 未エスケープinnerHTML → esc()全面適用
+    64	- **S-5（low）**: funnel類似度の桁数オラクル → 社内デモ文脈で許容（採用せず）
+    65	- **E-1（high）**: VECTOR_FLOOR=0.20がGemini埋め込み空間で無意味 → 実測較正（無関係0.59/関連0.68-0.84）し本番env VECTOR_FLOOR=0.62
+    66	- **E-2（high）**: 拒否経路のライブ実演手段なし → /api/probe/unregistered-intent 追加
+    67	- **E-3（high）**: 合成データの重なり分岐が到達不能＋5クローン → 部門ローカル連番化＋役職/focus句織り込み、再シード済み
+    68	- **E-4（high）**: 監査ポーリング毎の全プロフィール取得(~10MB/3s) → 初回のみの静的カウントに
+    69	- **E-5（mid）**: README/rules不在 → README新設（再現手順・3責務対応表・rules方針・デモ割り切り）。firestore.rulesはclient SDK既定拒否をREADMEに文書化する方式
+    70	- E付録の削除候補(~200行)は凍結優先で見送り（陳腐化リスクよりも手戻りリスクを重視）。「実シード＋実デモ質問のゴールデンテスト」は台本確定後に追加検討
+    71	
+    72	## 新前提での解決済み（一行索引）
+    73	
+    74	- **C-16**: 候補選定の両端破綻（20件プールに4体が入る保証なし・接点なし出力路なし） → 配送用ランキング（レジストリ事前フィルタ）と画面用ファネル（スケール表示と明示）の2トラック分離＋`connection: null`と足切り＋デモで落選1件表示。design.md v6 §2
+    75	- **C-17**: 2段目推論の実行主体未定義（中央集約でStarmind同型化） → 候補エージェントごとの独立推論呼び出し（自分のプロフィールのみ参照、データ境界=プロセス境界）を明記。v6 §2
+    76	- **C-18**: public/private振り分けをLLM出力に依存 → `cited_item_keys`×`visibility`から送信層で機械的に確定。payloadとaudit_payloadを分離保存。v6 §3
+    77	- **C-19**: 依頼者側の状態・画面が未設計 → match_proposalのpayload定義（reason_text含めない）、状態語彙3種、監査画面の主張範囲（事実は記録・内容は非表示、存在秘匿は依頼者UIに限定）。v6 §3/§4/§6
+    78	- **C-20**: 工数配分（デモに映らない機能への投資・agent discoveryの実体なし） → ユーザー判断: レビューUI最小化（デモ非登場）・添付はdocも含む3種・agent discoveryは自前Firestore`agents`レジストリに実体化（GEAP実採用はせず将来構成言及に留める）。v6 §3/§8/§9
+    79	- **C-21**: `no_connection`経由のprivate漏出（C-16の直しがC-18の穴を裏口から復活） → マスク規則をメッセージ横断の1ルールに変更、2段目出力スキーマ統一（null時もcited_item_keys返却）、監査表示fail-closed（ホワイトリスト）。v7 §2/§3
+    80	- **C-22**: spec.md v4の3箇所未追随（FR12悪性クエリ赤表示・完了条件1の400件選定・完了条件4/FR8の監査画面文言） → spec.md v5で文言修正（方針変更なし）
+    81	- **C-23**: 落選判定がLLM自己申告scoreに単独依存 → ベクトル類似度下限`VECTOR_FLOOR`（決定的）とのOR判定＋台本用「確実に落ちる1体」のシード意図設計＋較正不収束時のフォールバック明記。v7 §2/§13
+    82	- **C-24**: doc添付のGCS署名URLがCloud RunデフォルトSAで失敗する罠 → Cloud Run自身の静的配信（/attachments/<id>）に変更し権限問題ごと回避。v7 §3/§8
+    83	- **C-25**: `supported_intents`がデッドフィールド → 送信層の`reject_unsupported_intent`拒否経路に接続して実機能化（レジストリが実際に流量を止める統制になる）。v7 §3。GEAP対応も「責務の1対1対応表」方式に強化（round-5総評）。v7 §8
+    84	
+    85	## 旧ラウンドの指摘の帰結（一行索引）
+    86	
+    87	- **D-0（レーン1回答方式の矛盾）**: 前提消滅。レーン1自体が廃止され、AI生成制限も「本人名義で流通させない」の一点に緩和された（spec v4）
+    88	- **D-0-note（辞退と無応答の区別）**: 前提消滅。辞退は理由付きで可視化される方針に反転（spec v2）
+    89	- **C-1（396体の扱い）**: **縮小継承**。「検索候補には含むが配送はimplemented=trueのみ」はv5 §2でも維持
+    90	- **C-2（private絞り込みの実施層）**: **部分継承**。privateを「他エージェント・依頼者に開示しない」原則は残るが、本人のエージェント自身はprivateを参照してよい（意味の反転、spec v4）。来歴検証は廃止
+    91	- **C-3（監査ログのアクセス制御）**: **縮小継承**。Firestore直接アクセス禁止＋サーバーAPI経由は維持。ロール別射影は廃止し、マスクは非公開項目打診の1ルールのみ（v5 §4）
+    92	- **C-4（タイミングチャネル・複数同意）**: 前提消滅。定時応答は廃止。複数同意は全員とマッチ成立してよい方針に反転（v5 §6）
+    93	- **C-5（禁止語「承認」）**: 継承。用語統一は維持
+    94	- **C-6（ロール判定・本人識別）**: 前提消滅。セッションロール認証体系は廃止し、デモ用の簡易な全体保護のみ（v5 §7）
+    95	- **C-7（T_lane1/T_lane2分離）**: 前提消滅。レーン1廃止によりタイムアウト機構自体が不要化（v5 §6: 応答待ちに時限を設けない）
+    96	- **C-8（embeddingのpublic限定）**: **意図的に反転**。embeddingは全項目から生成する。private由来のシグナルで候補に浮上することが非公開項目打診の入口になる（v5 §2）。旧C-8は過剰安全と判断
+    97	- **C-9（実装優先度分類）**: 考え方は継承（v5は機構が減ったため表は不要と判断）
+    98	- **C-10（来歴検証の強化）**: 前提消滅。来歴検証ごと廃止
+    99	- **C-11（悪性クエリの検知）**: 前提消滅。reject_visibilityは作らない。NDA情報を狙う質問には「会っても本人が断るだけ」という人間の判断に委ねる方針（ユーザー決定）
+   100	- **C-12（射影のフィールド漏れ）**: 前提消滅。隠すものがなくなった
+   101	- **C-13（監査者キーの配置矛盾）**: 前提消滅。ロール分離廃止
+   102	- **C-14（MIN_QUOTE_LENGTHの誤爆）**: 前提消滅。来歴検証ごと廃止
+   103	- **C-15（レーン2の実行主体等）**: 部分継承。match_proposalの宛先（双方）は v5 §6 に明記済み
+   104	
+   105	全文は archive/ledger-resolved.md（旧前提時の記録として保存。読み返す場合は前提変更を念頭に）
+     1	# Knowledge Discovery — Tacit-Knowledge Connection Engine
+     2	
+     3	A multi-agent system where every employee's personal AI agent helps answer
+     4	*"who in our company might know about this?"* — not by delivering a document,
+     5	but by proposing a real human connection. Built for the All Things Agentic
+     6	Hackathon (track: The Fortified Enterprise Fleet).
+     7	
+     8	**Core idea**: CRMs record accounts inside one business unit. The knowledge that
+     9	crosses business units — "who has actually seen a clinic relocate before a
+    10	sale?" — lives in people's heads and never lands in Salesforce, because it is
+    11	made of confidences, relationships and case nuance. This system does
+    12	*exploratory* matching over that tacit layer ("this person **might** know,
+    13	given their background") and always resolves to a human connection: a 15-minute
+    14	meeting proposal, or an honest decline with a reason and optional resources.
+    15	
+    16	## Architecture (governance three-in-one)
+    17	
+    18	| Concern | This implementation | Enterprise (GEAP) equivalent |
+    19	|---|---|---|
+    20	| Who exists (agent discovery) | `agents` registry (Firestore) | GEAP Agent Registry |
+    21	| What may flow (control) | Schema registry + `supported_intents` checks in the transmission layer | Model Armor |
+    22	| What did flow (audit) | `messages` collection + chat-style audit view | Agent Observability |
+    23	
+    24	Key properties:
+    25	
+    26	- **Candidate-isolated inference**: each candidate's agent sees ONLY the
+    27	  question and its own profile (data boundary = process boundary).
+    28	- **Private items**: things an owner deliberately keeps off the public profile.
+    29	  Only the owner's agent knows them; when a question relates, the owner alone
+    30	  gets a discreet ask. The audit log records that a private-based ask happened —
+    31	  never its content. Masking is decided by the type system (item visibility +
+    32	  content scan), not by the LLM's self-report.
+    33	- **Honest non-matches**: the engine is allowed to say "no meaningful
+    34	  connection" (deterministic vector floor OR LLM null), and dropped candidates
+    35	  appear in the audit view with their reasons.
+    36	
+    37	Stack: Python / FastAPI on Cloud Run · Firestore (native) · Gemini 3.7 Flash +
+    38	gemini-embedding-2 via **Vertex AI** · google-genai SDK.
+    39	
+    40	## Run locally
+    41	
+    42	```bash
+    43	python3 -m venv .venv
+    44	.venv/bin/pip install -r scripts/requirements.txt
+    45	
+    46	# Google Cloud auth (Firestore + Vertex AI)
+    47	gcloud auth application-default login
+    48	gcloud auth application-default set-quota-project <PROJECT_ID>
+    49	
+    50	# Seed 4 personas + 396 synthetic employees (embeddings via Vertex)
+    51	GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=<PROJECT_ID> PYTHONPATH=src \
+    52	  .venv/bin/python scripts/generate_seeds.py --use-firestore --project <PROJECT_ID> --embedder gemini
+    53	
+    54	# Serve
+    55	USE_FIRESTORE=1 GOOGLE_CLOUD_PROJECT=<PROJECT_ID> GOOGLE_GENAI_USE_VERTEXAI=true \
+    56	  DEMO_API_KEY=<your-demo-key> VECTOR_FLOOR=0.62 PYTHONPATH=src:. \
+    57	  .venv/bin/uvicorn 'knowledge_discovery.server:create_app_from_env' --factory --port 8080
+    58	```
+    59	
+    60	Open `http://localhost:8080/requester?api_key=<your-demo-key>` (also
+    61	`/candidate`, `/audit`). All API and UI access requires the `api_key`.
+    62	
+    63	`VECTOR_FLOOR=0.62` is calibrated for gemini-embedding-2 (unrelated profiles
+    64	score ~0.59 in that space; the default 0.20 suits only the offline test
+    65	embedder).
+    66	
+    67	## Tests
+    68	
+    69	```bash
+    70	.venv/bin/python -m unittest discover -s tests   # 64 tests, no network/credentials needed
+    71	```
+    72	
+    73	All external services (Firestore, Gemini) sit behind interfaces with in-memory
+    74	/ deterministic fakes; the suite runs fully offline.
+    75	
+    76	## Deploy (Cloud Run)
+    77	
+    78	```bash
+    79	gcloud run deploy knowledge-discovery --source . \
+    80	  --region=asia-northeast1 \
+    81	  --service-account=<runtime-sa> \
+    82	  --allow-unauthenticated --min-instances=0 --memory=512Mi \
+    83	  --set-env-vars="USE_FIRESTORE=1,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=<PROJECT_ID>,VECTOR_FLOOR=0.62" \
+    84	  --set-secrets="DEMO_API_KEY=demo-api-key:latest"
+    85	```
+    86	
+    87	The runtime service account needs only `roles/datastore.user` and
+    88	`roles/aiplatform.user` (plus `secretmanager.secretAccessor` on the demo-key
+    89	secret). Firestore is created in native mode via gcloud and has no client-SDK
+    90	rules deployed — client SDK access is denied by default; every read/write goes
+    91	through the server, which applies the requester/audit projections.
+    92	
+    93	## Secretary sweep trigger (Cloud Scheduler, design v9 §14.7 A-stage)
+    94	
+    95	The proactive secretary (`POST /api/secretary/sweep`) is fired daily by a Cloud
+    96	Scheduler HTTP job that carries the demo API key as a header (the service stays
+    97	`--allow-unauthenticated`; the endpoint itself returns 401 without the key).
+    98	Production would use OIDC + a dedicated invoker SA (write-up future item).
+    99	
+   100	```bash
+   101	gcloud scheduler jobs create http kd-secretary-sweep \
+   102	  --location=asia-northeast1 --schedule="0 8 * * *" --time-zone=Asia/Tokyo \
+   103	  --uri="https://<SERVICE_URL>/api/secretary/sweep" --http-method=POST \
+   104	  --headers="X-API-Key=<DEMO_API_KEY>" --attempt-deadline=180s
+   105	
+   106	gcloud scheduler jobs run kd-secretary-sweep --location=asia-northeast1   # manual fire
+   107	```
+   108	
+   109	## Demo reset & recording-day procedure
+   110	
+   111	Seed dates are relative to a base date; the server evaluates "today" from
+   112	`DEMO_TODAY` (ISO date, falls back to the real UTC date). To reset for a recording:
+   113	
+   114	```bash
+   115	# 1. wipe everything (agents/profiles/messages/tasks/schedules/mail_seeds/cards) and reseed
+   116	GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=<PROJECT_ID> GOOGLE_CLOUD_LOCATION=global PYTHONPATH=src \
+   117	  .venv/bin/python scripts/generate_seeds.py --use-firestore --project <PROJECT_ID> \
+   118	  --embedder gemini --clear --today YYYY-MM-DD
+   119	
+   120	# 2. pin the same date on the service
+   121	gcloud run services update knowledge-discovery --region=asia-northeast1 --update-env-vars DEMO_TODAY=YYYY-MM-DD
+   122	
+   123	# 3. run one sweep (or wait for the Scheduler job) so the digest cards exist
+   124	```
+   125	
+   126	## Demo-mode simplifications (deliberate)
+   127	
+   128	- Single shared demo API key; the candidate screen has a persona switcher so
+   129	  one operator can play all four roles. Per-user auth is out of scope by spec.
+   130	- `POST /api/probe/unregistered-intent` exists solely to demonstrate the
+   131	  transmission-layer rejection (red row in the audit view) live.
+   132	- `/api/secretary/*` (digest/confirm/dismiss/profile-diff review) does not
+   133	  verify that the caller is the owning employee_id — it trusts the single
+   134	  shared demo API key, same as `/api/query`'s existing `requester_id` param.
+   135	  Anyone with the demo URL can read another persona's digest by swapping
+   136	  `employee_id`. Out of scope by spec (M3, same posture as the persona
+   137	  switcher above).
+
+exec
+/bin/zsh -lc "nl -ba design/knowledge-discovery/ledger.md | sed -n '1,115p'" in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+     1	# ledger: knowledge-discovery
+     2	
+     3	## 反証round-9（round-8修正のクローズ検証）の帰結 — 2026-08-19
+     4	
+     5	原文: reviews/round-9.md（critic: claude design-critic = claude-opus-5[1m]、fresh）。**round-8の10論点は10/10クローズ確認**（high 3件は原文の破綻シナリオ再実行で再現消滅を実測）。新規2件はメインループ（Claude Fable 5）が直接修正し、テスト84件全パス:
+     6	
+     7	- **R-1（設計/high・受理）**: V-10修正の副作用で差分提案カードが不可視（digestがJordan固定、mail所有者はMarcus） → requester.htmlに**candidate.htmlと同一のデモ用1人切替ドロップダウン**を追加（round-6 S-3で意図的仕様として受理済みの機構の踏襲。design §14.8はUIの人物固定を規定しないため実装レベルで解決、design改訂・再承認なし）
+     8	- **R-2（実装/mid・受理）**: LLM失敗（例外・空応答）を「差分なし」と同一視しmailを無音消費 → `EXTRACTION_FAILED` sentinelで三値化（差分あり/明示null/失敗）。失敗時はprocessed=Falseのまま次回sweepで再試行。失敗時のヒューリスティック（メール本文コピー）も廃止（S-6残滓の完全閉塞。ヒューリスティックはllm_client未設定の環境のみ）。回帰テスト追加（失敗→未消費→復旧の一連）
+     9	
+    10	M3（秘書プロアクティブ層・A段）の反証工程はこれで収束。ループ外残タスク: デプロイ＋シード再投入、Cloud Schedulerジョブ設置（ゴール18）、B段載せ替え判断（8/27期限）、デモ台本。
+    11	
+    12	## 反証round-8（M3実装・3レンズ）のルーティング — 2026-08-19
+    13	
+    14	原文: reviews/round-8-correctness.md（V-6〜V-10）/ round-8-safety.md（S-6〜S-10）/ round-8-excess-codex-raw.txt（E-6〜E-10。critic: claude design-critic ×2 = claude-opus-5[1m]、過剰実装レンズ = codex/gpt-5.6-sol xhigh）。15件・重複統合で実質10論点、**全件「実装」種別として受理**（設計差し戻しなし）。修正はCC内sonnetサブエージェントへ委譲、修正後に再検証・再反証。
+    15	
+    16	- **V-6/S-8（high・一致）**: confirm CASが非トランザクション（並行二重POSTで二重配送を両criticが実測） → Storeに原子的遷移操作を追加（InMemory=Lock、Firestore=transaction）
+    17	- **V-7/S-7（high・一致）**: 差分反映が同一キー上書き＋visibility反転可（NDA項目のpublic化経路） → 厳密に「追加」のみへ。既存項目の変更を構造的に排除
+    18	- **V-8/E-7/S-6（high・3レンズ一致）**: llm_client未配線でヒューリスティック（メール全文コピー→public公開）が既定経路化 → serverで配線。LLM経路を既定、null（差分なし）対応
+    19	- **V-9/E-6（mid・一致）**: 帯変化なし再sweepでプレビュー再実行・preview_search監査行重複・0件時降格 → §14.2どおりscore/evidence更新のみに
+    20	- **V-10（mid）**: mail_seed所有者にprofile/agentが無くゴール16検証不能＋ダミープロフィール生成 → シード修正・実在前提化
+    21	- **E-8（mid）**: 汎用dismissが状態機械外の遷移を許す → type=stagnation & status=open に制限
+    22	- **E-9（low）**: DEMO_TODAYのAPI上書き・item_key付け替えの露出 → 削除（環境変数のみ）
+    23	- **E-10（low）**: 呼び出しゼロのCRUDヘルパー → 削除
+    24	- **S-9（low）**: `${tagText}` 未エスケープ（round-6 S-4の局所回帰） → esc()適用
+    25	- **S-10（low）**: /api/secretary/* の本人性突合なし → デモ割り切りとしてREADME明記（round-6 S-3と同じ整理）
+    26	
+    27	**反証の肯定的所見（記録価値あり）**: M3の中核主張——プレビュー無痕跡（ゴール12）・public限定・fail-closedマスク——は正しさ・安全性の両レンズが実測で成立を確認。破綻は中核の外側（差分反映の書き込み側・並行処理）に限定されていた。
+    28	
+    29	## スコープ追加の記録（2026-08-19 / spec v7 / M3）
+    30	
+    31	ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+    32	
+    33	## 批評round-7（design v8 M3追補）の帰結 — 2026-08-19
+    34	
+    35	原文: reviews/round-7.md（critic: claude design-critic = claude-opus-5[1m]）＋ reviews/round-7-codex-raw.txt（codex/gpt-5.6-sol xhigh、クロスベンダー）。指摘10件（重複3組、実質7論点）は全件「設計」種別のため design.md v9 改訂で全受理・解決。前提ルーティング（ユーザー質問）は発生なし。
+    36	
+    37	- **C-26 / X-1（high・両ベンダー一致）**: プレビュー1段目が全項目embeddingを再利用しprivateが選定に影響（FR19違反） → `profiles.embedding_public` 新設、プレビューは両段public限定。VECTOR_FLOORはプレビュー非適用（落選判定を主張しない）。プレビューと正式実行の候補差は仕様として明示しUI固定文言化
+    38	- **C-27 / X-5（high/mid）**: Scheduler OIDCが実デプロイの `--allow-unauthenticated`＋DEMO_API_KEYと両立しない／A段起動の検証ゴール欠落 → APIキーヘッダ方式（`X-API-Key`）に変更、本番OIDC化はwrite-up将来項目。ゴール18（ジョブ手動発火＋キーなし401）を追加
+    39	- **C-28（high）**: 「今日」の基準とシード日付が未定義で収録日ずれに脆い → env `DEMO_TODAY` 導入、シードは `--today` からの相対日付生成。ゴール12〜17は DEMO_TODAY 固定で実行
+    40	- **C-29（mid）**: `deliver=False` フラグがfail-open（既存 `run_matching` は送信を持たない純粋関数） → フラグ案廃止、プレビューは純粋関数の直接呼び出し（送信層コードに到達し得ない構造的無痕跡）
+    41	- **C-30 / X-2 / X-3（mid/high/high）**: cards状態遷移の未定義（T1→T2昇格・回復時終了・dismissed/confirmed後の再発火・プレビュー0件・confirm多重実行） → §14.2に状態機械表を明文化（tier新設・resolved自動終了・dismissedは同一タスク非再生成・confirmはFirestoreトランザクションのCAS＋失敗時open戻し）
+    42	- **X-4（mid）**: `source: "mail_seed"` がprofiles schemaの許容値外 → enumに追加
+    43	- **枠外（claude総評）**: mail_seed由来項目のvisibility既定未記載 → 「既定public（業務由来デフォルト公開の原則）」を§14.5に明記
+    44	
+    45	## 前提変更の記録（重要）
+    46	
+    47	2026-08-18、design.md v4 の承認CPでユーザーから前提の誤りが指摘され、spec.md が v2〜v4 へ全面改訂された（詳細は spec.md の改訂経緯セクション）。design.md v1〜v4 と批評ラウンド1〜3の指摘（C-1〜C-15）は**旧2レーン構造を前提としたもの**であり、多くは機構ごと廃止された。以下の索引は「解決済み」ではなく「前提変更により消滅 or 縮小継承」として読むこと。批評エージェントは、廃止済み機構（来歴検証・reject_visibility・定時応答・ロール別射影・セッションロール認証・辞退不可視）の復活を提案しないこと。
+    48	
+    49	## 未解決の指摘
+    50	
+    51	（なし。反証工程round-6の15件も全て解決/意図的却下済み）
+    52	
+    53	## 反証工程 round-6（実装検証・3レンズ並列）の帰結
+    54	
+    55	原文: reviews/round-6-correctness.md / round-6-safety.md / round-6-scope.md（critic: claude-opus-5[1m]×3。codexは未インストールのため省略）。修正コミット 76732e2。
+    56	
+    57	- **V-1/S-1（high・両レンズ一致）**: マスクがLLM自己申告のcited_item_keysに無検証依存＋捏造キーfallback → 送信層でキー実在検証＋reason_textへのprivate本文断片スキャン、fail-closed化。回帰テスト3件追加
+    58	- **V-2（high）**: 依頼者⇔打診リンクがプロセス内メモリのみ → payload永続化(requester_id/query_id/ask_audit_id)でステートレス化
+    59	- **V-3/S-2（high/mid）**: UIのAPIキー焼き込み・/docs無認証 → URLクエリ取得化・docs/openapi閉鎖
+    60	- **V-4（mid）**: 射影の質問混在・辞退誤突合 → 質問単位スコープ＋ask_audit_id突合
+    61	- **V-5（mid）**: match_proposalが双方に届いていない → 依頼者・同意者へ各1通実送信＋宛先assert
+    62	- **S-3（mid）**: 候補受信箱のagent_id切替 → デモ用1人4役ドロップダウンの意図的仕様としてREADMEに明記（採用せず）
+    63	- **S-4（mid）**: 未エスケープinnerHTML → esc()全面適用
+    64	- **S-5（low）**: funnel類似度の桁数オラクル → 社内デモ文脈で許容（採用せず）
+    65	- **E-1（high）**: VECTOR_FLOOR=0.20がGemini埋め込み空間で無意味 → 実測較正（無関係0.59/関連0.68-0.84）し本番env VECTOR_FLOOR=0.62
+    66	- **E-2（high）**: 拒否経路のライブ実演手段なし → /api/probe/unregistered-intent 追加
+    67	- **E-3（high）**: 合成データの重なり分岐が到達不能＋5クローン → 部門ローカル連番化＋役職/focus句織り込み、再シード済み
+    68	- **E-4（high）**: 監査ポーリング毎の全プロフィール取得(~10MB/3s) → 初回のみの静的カウントに
+    69	- **E-5（mid）**: README/rules不在 → README新設（再現手順・3責務対応表・rules方針・デモ割り切り）。firestore.rulesはclient SDK既定拒否をREADMEに文書化する方式
+    70	- E付録の削除候補(~200行)は凍結優先で見送り（陳腐化リスクよりも手戻りリスクを重視）。「実シード＋実デモ質問のゴールデンテスト」は台本確定後に追加検討
+    71	
+    72	## 新前提での解決済み（一行索引）
+    73	
+    74	- **C-16**: 候補選定の両端破綻（20件プールに4体が入る保証なし・接点なし出力路なし） → 配送用ランキング（レジストリ事前フィルタ）と画面用ファネル（スケール表示と明示）の2トラック分離＋`connection: null`と足切り＋デモで落選1件表示。design.md v6 §2
+    75	- **C-17**: 2段目推論の実行主体未定義（中央集約でStarmind同型化） → 候補エージェントごとの独立推論呼び出し（自分のプロフィールのみ参照、データ境界=プロセス境界）を明記。v6 §2
+    76	- **C-18**: public/private振り分けをLLM出力に依存 → `cited_item_keys`×`visibility`から送信層で機械的に確定。payloadとaudit_payloadを分離保存。v6 §3
+    77	- **C-19**: 依頼者側の状態・画面が未設計 → match_proposalのpayload定義（reason_text含めない）、状態語彙3種、監査画面の主張範囲（事実は記録・内容は非表示、存在秘匿は依頼者UIに限定）。v6 §3/§4/§6
+    78	- **C-20**: 工数配分（デモに映らない機能への投資・agent discoveryの実体なし） → ユーザー判断: レビューUI最小化（デモ非登場）・添付はdocも含む3種・agent discoveryは自前Firestore`agents`レジストリに実体化（GEAP実採用はせず将来構成言及に留める）。v6 §3/§8/§9
+    79	- **C-21**: `no_connection`経由のprivate漏出（C-16の直しがC-18の穴を裏口から復活） → マスク規則をメッセージ横断の1ルールに変更、2段目出力スキーマ統一（null時もcited_item_keys返却）、監査表示fail-closed（ホワイトリスト）。v7 §2/§3
+    80	- **C-22**: spec.md v4の3箇所未追随（FR12悪性クエリ赤表示・完了条件1の400件選定・完了条件4/FR8の監査画面文言） → spec.md v5で文言修正（方針変更なし）
+    81	- **C-23**: 落選判定がLLM自己申告scoreに単独依存 → ベクトル類似度下限`VECTOR_FLOOR`（決定的）とのOR判定＋台本用「確実に落ちる1体」のシード意図設計＋較正不収束時のフォールバック明記。v7 §2/§13
+    82	- **C-24**: doc添付のGCS署名URLがCloud RunデフォルトSAで失敗する罠 → Cloud Run自身の静的配信（/attachments/<id>）に変更し権限問題ごと回避。v7 §3/§8
+    83	- **C-25**: `supported_intents`がデッドフィールド → 送信層の`reject_unsupported_intent`拒否経路に接続して実機能化（レジストリが実際に流量を止める統制になる）。v7 §3。GEAP対応も「責務の1対1対応表」方式に強化（round-5総評）。v7 §8
+    84	
+    85	## 旧ラウンドの指摘の帰結（一行索引）
+    86	
+    87	- **D-0（レーン1回答方式の矛盾）**: 前提消滅。レーン1自体が廃止され、AI生成制限も「本人名義で流通させない」の一点に緩和された（spec v4）
+    88	- **D-0-note（辞退と無応答の区別）**: 前提消滅。辞退は理由付きで可視化される方針に反転（spec v2）
+    89	- **C-1（396体の扱い）**: **縮小継承**。「検索候補には含むが配送はimplemented=trueのみ」はv5 §2でも維持
+    90	- **C-2（private絞り込みの実施層）**: **部分継承**。privateを「他エージェント・依頼者に開示しない」原則は残るが、本人のエージェント自身はprivateを参照してよい（意味の反転、spec v4）。来歴検証は廃止
+    91	- **C-3（監査ログのアクセス制御）**: **縮小継承**。Firestore直接アクセス禁止＋サーバーAPI経由は維持。ロール別射影は廃止し、マスクは非公開項目打診の1ルールのみ（v5 §4）
+    92	- **C-4（タイミングチャネル・複数同意）**: 前提消滅。定時応答は廃止。複数同意は全員とマッチ成立してよい方針に反転（v5 §6）
+    93	- **C-5（禁止語「承認」）**: 継承。用語統一は維持
+    94	- **C-6（ロール判定・本人識別）**: 前提消滅。セッションロール認証体系は廃止し、デモ用の簡易な全体保護のみ（v5 §7）
+    95	- **C-7（T_lane1/T_lane2分離）**: 前提消滅。レーン1廃止によりタイムアウト機構自体が不要化（v5 §6: 応答待ちに時限を設けない）
+    96	- **C-8（embeddingのpublic限定）**: **意図的に反転**。embeddingは全項目から生成する。private由来のシグナルで候補に浮上することが非公開項目打診の入口になる（v5 §2）。旧C-8は過剰安全と判断
+    97	- **C-9（実装優先度分類）**: 考え方は継承（v5は機構が減ったため表は不要と判断）
+    98	- **C-10（来歴検証の強化）**: 前提消滅。来歴検証ごと廃止
+    99	- **C-11（悪性クエリの検知）**: 前提消滅。reject_visibilityは作らない。NDA情報を狙う質問には「会っても本人が断るだけ」という人間の判断に委ねる方針（ユーザー決定）
+   100	- **C-12（射影のフィールド漏れ）**: 前提消滅。隠すものがなくなった
+   101	- **C-13（監査者キーの配置矛盾）**: 前提消滅。ロール分離廃止
+   102	- **C-14（MIN_QUOTE_LENGTHの誤爆）**: 前提消滅。来歴検証ごと廃止
+   103	- **C-15（レーン2の実行主体等）**: 部分継承。match_proposalの宛先（双方）は v5 §6 に明記済み
+   104	
+   105	全文は archive/ledger-resolved.md（旧前提時の記録として保存。読み返す場合は前提変更を念頭に）
+
+codex
+対象範囲と既決事項は確認できました。ここまででは、A段の安全性を崩す提案ではなく、B段の「実在性・認証・起動契約・撤退可能性」が本当に成立するかが焦点です。次に、v10が参照する実リソース／手順の有無と公式API契約を突き合わせます。
+  ✓ 関連メモと対象ファイルの該当箇所を特定する
+  → design v10追補をspec v7・README・ledger制約と照合する
+  • Google Cloud／Agent Runtimeの技術前提を公式資料で検証する
+  • 重大度順に最大5件へ絞り、反証可能な破綻シナリオ付きで報告する
+exec
+/bin/zsh -lc "git status --short
+rg --files | sort | sed -n '1,220p'
+rg -n 'deploy_secretary_agent|secretary_agent|reasoningEngine|reasoning_engine|async_stream_query|streamQuery|agent_engines|kd-secretary-sweep-runtime|kd-scheduler-sa|Agent Registry|state\\.json' ." in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+git: error: couldn't create cache file '/tmp/xcrun_db-VF6YCO41' (errno=Operation not permitted)
+git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+git: error: couldn't create cache file '/tmp/xcrun_db-CBgZNcnf' (errno=Operation not permitted)
+ M design/knowledge-discovery/design.md
+ M design/knowledge-discovery/state.json
+?? design/knowledge-discovery/reviews/round-10-codex-raw.txt
+Dockerfile
+README.md
+design/knowledge-discovery/archive/ledger-resolved.md
+design/knowledge-discovery/context-chat.md
+design/knowledge-discovery/delegation/antigravity-settings-cleanup.json
+design/knowledge-discovery/delegation/antigravity-settings.json
+design/knowledge-discovery/delegation/handoff-m1.md
+design/knowledge-discovery/delegation/handoff-m2.md
+design/knowledge-discovery/delegation/handoff-m3.md
+design/knowledge-discovery/design.md
+design/knowledge-discovery/ledger.md
+design/knowledge-discovery/reviews/round-1-codex.md
+design/knowledge-discovery/reviews/round-1.md
+design/knowledge-discovery/reviews/round-10-codex-raw.txt
+design/knowledge-discovery/reviews/round-2.md
+design/knowledge-discovery/reviews/round-3.md
+design/knowledge-discovery/reviews/round-4.md
+design/knowledge-discovery/reviews/round-5.md
+design/knowledge-discovery/reviews/round-6-correctness.md
+design/knowledge-discovery/reviews/round-6-safety.md
+design/knowledge-discovery/reviews/round-6-scope.md
+design/knowledge-discovery/reviews/round-7-codex-raw.txt
+design/knowledge-discovery/reviews/round-7.md
+design/knowledge-discovery/reviews/round-8-correctness.md
+design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt
+design/knowledge-discovery/reviews/round-8-safety.md
+design/knowledge-discovery/reviews/round-9.md
+design/knowledge-discovery/seed-spec.md
+design/knowledge-discovery/source-input.md
+design/knowledge-discovery/spec.md
+design/knowledge-discovery/state.json
+scripts/generate_seeds.py
+scripts/requirements.txt
+spec-input-knowledge-discovery design-loop用.md
+spec-input-knowledge-discovery.md
+src/knowledge_discovery/__init__.py
+src/knowledge_discovery/firestore_store.py
+src/knowledge_discovery/gemini_adapters.py
+src/knowledge_discovery/matching.py
+src/knowledge_discovery/models.py
+src/knowledge_discovery/schemas.py
+src/knowledge_discovery/secretary.py
+src/knowledge_discovery/server.py
+src/knowledge_discovery/service.py
+src/knowledge_discovery/store.py
+src/knowledge_discovery/transmission.py
+src/knowledge_discovery/web/audit.html
+src/knowledge_discovery/web/candidate.html
+src/knowledge_discovery/web/requester.html
+tests/__init__.py
+tests/test_firestore_store.py
+tests/test_gemini_adapters.py
+tests/test_goals.py
+tests/test_matching.py
+tests/test_models.py
+tests/test_schema_registry.py
+tests/test_secretary.py
+tests/test_seed_generation.py
+tests/test_server.py
+tests/test_service.py
+tests/test_store.py
+tests/test_transmission.py
+./README.md:20:| Who exists (agent discovery) | `agents` registry (Firestore) | GEAP Agent Registry |
+./spec-input-knowledge-discovery design-loop用.md:83:- GEAPコンポーネントの採用範囲: Agent Registry / Model Armor / Agent Observabilityのうちどれを実採用し、どれをアーキ図上の将来構成として言及に留めるか（審査上はFortifiedトラック推奨技術のため、最低1つは実採用したいが工数と要相談）
+./design/knowledge-discovery/ledger.md:31:ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+./spec-input-knowledge-discovery.md:78:- GEAPコンポーネントの採用範囲: Agent Registry / Model Armor / Agent Observabilityのうちどれを実採用し、どれをアーキ図上の将来構成として言及に留めるか（審査上はFortifiedトラック推奨技術のため、最低1つは実採用したいが工数と要相談）
+./design/knowledge-discovery/design.md:201:- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+./design/knowledge-discovery/design.md:205:| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/design.md:210:このうち「誰が居るか」は v8 で**実採用に昇格**し（GEAP Agent Registry への実登録。§14.7）、v10 のB段では Runtime秘書の**自動登録**として実現する。「いつ動くか」もB段で実構成になる。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/design.md:240:19. （M3・B段）Scheduler ジョブ `kd-secretary-sweep-runtime` を手動発火すると、Runtime 上の秘書が `run_daily_sweep` を呼び、Cloud Run ログに `/api/secretary/sweep` の 200 が記録され、Scheduler の試行が成功することを確認できる。このとき A段ジョブ `kd-secretary-sweep` が paused であることを確認できる
+./design/knowledge-discovery/design.md:241:20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_digest` が呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返ることを確認できる。Runtime秘書のツール一覧に書き込み系（confirm/dismiss/review）が**存在しない**ことを確認できる
+./design/knowledge-discovery/design.md:242:21. （M3・B段）Agent Registry に Runtime 秘書が登録されていることを Console または API 一覧で確認できる
+./design/knowledge-discovery/design.md:398:  **目的（時間以外の価値。ユーザーと合意済み）**: 秘書を「Webサービス内の1モジュール」から「GEAPマネージド基盤上の一人前のエージェント」に昇格させ、(a) Sessions / Memory Bank（将来の苦手先回り＝本人専用メモリの正規の置き場）、(b) エージェント単位のアイデンティティ（round-8 S-10「本人性の突合なし」の正規解への道）、(c) **Agent Registry への自動登録**（SDK経由でRuntimeにデプロイしたエージェントは追加設定なしに登録される＝spec制約「Registry実採用」の充足）、(d) Cloud Observability の自動収集、(e) A2A / Gemini Enterprise への接続口、を得る。今回のデモ画面は1ピクセルも変わらない（価値は提出後とwrite-upに出る）ことを明記する
+./design/knowledge-discovery/design.md:401:  - ADKエージェント `secretary_agent`（`src/knowledge_discovery/secretary_agent/`、`LlmAgent`、Gemini 3.7 Flash）。tools は2本のみ: `run_daily_sweep()` → `POST /api/secretary/sweep`、`get_digest(employee_id)` → `GET /api/secretary/digest`。**書き込み系（confirm / dismiss / profile-diff review）のツールは持たせない**——Runtime経由で「人を巻き込む」操作は構造的に不可能にする（FR20「秘書は配送権限を持たない」をエージェント境界でも成立させる）
+./design/knowledge-discovery/design.md:404:  - 配置: **asia-northeast1**（reasoningEngines API の利用可能を実機確認済み）。staging bucket `gs://knowledge-discovery-2026-agent-staging`。デプロイは `scripts/deploy_secretary_agent.py`（`google-cloud-aiplatform[agent_engines,adk]` ピン留め、`agent_engines.create`）。resource ID を README と state.json に記録
+./design/knowledge-discovery/design.md:405:  - 起動: 新SA `kd-scheduler-sa`（`roles/aiplatform.user`）を使う Cloud Scheduler HTTP ジョブ `kd-secretary-sweep-runtime` → `POST https://asia-northeast1-aiplatform.googleapis.com/v1/projects/<P>/locations/asia-northeast1/reasoningEngines/<ID>:streamQuery?alt=sse`、body `{"class_method":"async_stream_query","input":{"user_id":"scheduler","message":"Run the daily routine."}}`、`--oauth-service-account-email`（OAuthアクセストークン。A段のAPIキーヘッダ方式より1段強い）。**A段ジョブ `kd-secretary-sweep` は削除せず pause して残す**（フォールバック＝resumeするだけ）
+./design/knowledge-discovery/design.md:406:  - Agent Registry: Runtime秘書は自動登録。Cloud Run上の4体は Registry API の手動登録（`Agent`/`Service` リソース）で行い手順をREADMEに記載する。手動登録が期限内に通らなければ Runtime秘書の自動登録のみで「実採用」とし、4体は将来項目として**正直に記載**する
+./design/knowledge-discovery/design.md:410:- **GEAP Agent Registry への実登録**: Runtime上の秘書はSDKデプロイで自動登録される（v10で確認）。Cloud Run上の4体は手動登録手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+./design/knowledge-discovery/design.md:430:- （M3・B段）Cloud Run上4体の Agent Registry 手動登録: Registry API（Agent/Serviceリソース）の具体手順は実装時に確認。通らなければ将来項目として正直に記載
+./design/knowledge-discovery/spec.md:14:5. **GEAP採用範囲の確定**: Agent Registry を実採用し、秘書エージェントは2段構えで Agent Runtime へ載せる。Gemini Enterprise（SaaS）のスケジューラ利用と Gemini Spark の実接続は却下（検討済み・却下を参照）。
+./design/knowledge-discovery/spec.md:129:- **GEAP採用**: **確定（2026-08-19）** — Agent Registry を実採用（自作エージェントとMCPツールを登録）。秘書エージェントは2段構えで GEAP Agent Runtime（API名 ReasoningEngine）へ載せる: まずCloud Run同居で実装・動作確認し、その後Runtimeへ載せ替える。載せ替えに詰まった場合はCloud Run版のままとし（フォールバック）、Registry登録は維持する。Model Armor / Agent Observability（明示的計装）はアーキ図上の将来構成として言及に留める。秘書の定期起動は Cloud Scheduler を用いる
+./design/knowledge-discovery/spec.md:192:- GEAPコンポーネントの採用範囲: **確定（2026-08-19）** — Agent Registry 実採用＋秘書の Agent Runtime 2段構え載せ替え（詳細は制約・非機能のGEAP採用の項）。Model Armor / Agent Observability は将来構成
+./design/knowledge-discovery/delegation/handoff-m2.md:25:1. `design/knowledge-discovery/state.json`
+./design/knowledge-discovery/delegation/handoff-m2.md:60:- `src/` `tests/` `scripts/` のみ。`design/` `ledger` `reviews/` `state.json` は読み取り専用
+./design/knowledge-discovery/source-input.md:83:- GEAPコンポーネントの採用範囲: Agent Registry / Model Armor / Agent Observabilityのうちどれを実採用し、どれをアーキ図上の将来構成として言及に留めるか（審査上はFortifiedトラック推奨技術のため、最低1つは実採用したいが工数と要相談）
+./design/knowledge-discovery/delegation/handoff-m1.md:28:1. `design/knowledge-discovery/state.json`（契約通り最初に読む）
+./design/knowledge-discovery/delegation/handoff-m1.md:52:- `design/` `ledger` `reviews/` `state.json` は**読み取り専用**。変更禁止
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:25:/bin/zsh -lc "rg --files design/knowledge-discovery | sort && sed -n '1,240p' design/knowledge-discovery/state.json" in /Users/toshixa/dev/Knowledge-discovery
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:48:design/knowledge-discovery/state.json
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:73:design-loop の読み込み規律により state.json を先に確認しました。現在は v8 の「批評」ノードで、過去レビュー本文や解決済み全文は独立性を損なうため開かず、指定された design.md・ledger.md・spec.md v7 のみを根拠にします。
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:146:     5	ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:222:    14	5. **GEAP採用範囲の確定**: Agent Registry を実採用し、秘書エージェントは2段構えで Agent Runtime へ載せる。Gemini Enterprise（SaaS）のスケジューラ利用と Gemini Spark の実接続は却下（検討済み・却下を参照）。
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:337:   129	- **GEAP採用**: **確定（2026-08-19）** — Agent Registry を実採用（自作エージェントとMCPツールを登録）。秘書エージェントは2段構えで GEAP Agent Runtime（API名 ReasoningEngine）へ載せる: まずCloud Run同居で実装・動作確認し、その後Runtimeへ載せ替える。載せ替えに詰まった場合はCloud Run版のままとし（フォールバック）、Registry登録は維持する。Model Armor / Agent Observability（明示的計装）はアーキ図上の将来構成として言及に留める。秘書の定期起動は Cloud Scheduler を用いる
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:400:   192	- GEAPコンポーネントの採用範囲: **確定（2026-08-19）** — Agent Registry 実採用＋秘書の Agent Runtime 2段構え載せ替え（詳細は制約・非機能のGEAP採用の項）。Model Armor / Agent Observability は将来構成
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:526:   129	- **GEAP採用**: **確定（2026-08-19）** — Agent Registry を実採用（自作エージェントとMCPツールを登録）。秘書エージェントは2段構えで GEAP Agent Runtime（API名 ReasoningEngine）へ載せる: まずCloud Run同居で実装・動作確認し、その後Runtimeへ載せ替える。載せ替えに詰まった場合はCloud Run版のままとし（フォールバック）、Registry登録は維持する。Model Armor / Agent Observability（明示的計装）はアーキ図上の将来構成として言及に留める。秘書の定期起動は Cloud Scheduler を用いる
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:724:   191	- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:728:   195	| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:733:   200	このうち「誰が居るか」は v8 で**実採用に昇格**する（GEAP Agent Registry への実登録。§14.7）。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:752:   191	- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:756:   195	| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:761:   200	このうち「誰が居るか」は v8 で**実採用に昇格**する（GEAP Agent Registry への実登録。§14.7）。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:925:   364	- **GEAP Agent Registry への実登録**: 4体＋秘書を Agent Registry に登録するデプロイ手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:959: M design/knowledge-discovery/state.json
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:993: | 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:998:+このうち「誰が居るか」は v8 で**実採用に昇格**する（GEAP Agent Registry への実登録。§14.7）。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/reviews/round-7-codex-raw.txt:1143:+- **GEAP Agent Registry への実登録**: 4体＋秘書を Agent Registry に登録するデプロイ手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+./design/knowledge-discovery/delegation/handoff-m3.md:25:1. `design/knowledge-discovery/state.json`
+./design/knowledge-discovery/delegation/handoff-m3.md:54:- `src/` `tests/` `scripts/` のみ。`design/` `ledger` `reviews/` `state.json` は読み取り専用
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:15:リポジトリ /Users/toshixa/dev/Knowledge-discovery の design/knowledge-discovery/design.md v10 の追補部分（§14.7「B段（Agent Runtime 載せ替え）」ブロック、§8対応表トリガー行、§10ゴール19〜22、§15 B段項目）を批評せよ。ledger.md の解決済み索引と却下済み前提（秘書の自律配送化・停滞検知のLLM判定化）は提起しない。spec.md v7 の「GEAP採用」制約と README.md のA段手順も読むこと。観点: (1) Runtime秘書がsweepを呼ぶだけの構成が『中身のない代理』に見えないか、(2) 読み取りツール2本のみという境界がFR19/FR20を守るか、(3) Secret Manager env_vars・Scheduler OAuth・Service Agent権限の正誤、(4) :streamQuery?alt=sse への session_id 省略POSTをSchedulerから叩く形の妥当性（:query代替、SSE/タイムアウト）、(5) デプロイ・フォールバック手順の穴、(6) ゴール19〜22の検証可能性、(7) 8/29凍結に対する過剰設計。欠陥を重大度順に最大5件、ID Y-1から連番、各件に種別(設計/実装/前提)・重大度(high/mid/low)・破綻シナリオ（具体的な入力/状態→誤った結果）を付けて日本語で。新規欠陥がなければ「反論なし」と宣言。
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:34:/bin/zsh -lc "rg -n '"'^#|''^##|''^###|14'"\\.7|ゴール(19|20|21|22)|Goal (19|20|21|22)|FR19|FR20|B段|Agent Runtime|秘書|停滞|GEAP|8/29|streamQuery|alt=sse|session_id|Secret Manager|env_vars|Scheduler|Service Agent|sweep' design/knowledge-discovery/design.md design/knowledge-discovery/ledger.md design/knowledge-discovery/spec.md README.md" in /Users/toshixa/dev/Knowledge-discovery
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:39:README.md:20:| Who exists (agent discovery) | `agents` registry (Firestore) | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:64:design/knowledge-discovery/ledger.md:31:ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:83:design/knowledge-discovery/spec.md:14:5. **GEAP採用範囲の確定**: Agent Registry を実採用し、秘書エージェントは2段構えで Agent Runtime へ載せる。Gemini Enterprise（SaaS）のスケジューラ利用と Gemini Spark の実接続は却下（検討済み・却下を参照）。
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:107:design/knowledge-discovery/spec.md:129:- **GEAP採用**: **確定（2026-08-19）** — Agent Registry を実採用（自作エージェントとMCPツールを登録）。秘書エージェントは2段構えで GEAP Agent Runtime（API名 ReasoningEngine）へ載せる: まずCloud Run同居で実装・動作確認し、その後Runtimeへ載せ替える。載せ替えに詰まった場合はCloud Run版のままとし（フォールバック）、Registry登録は維持する。Model Armor / Agent Observability（明示的計装）はアーキ図上の将来構成として言及に留める。秘書の定期起動は Cloud Scheduler を用いる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:119:design/knowledge-discovery/spec.md:192:- GEAPコンポーネントの採用範囲: **確定（2026-08-19）** — Agent Registry 実採用＋秘書の Agent Runtime 2段構え載せ替え（詳細は制約・非機能のGEAP採用の項）。Model Armor / Agent Observability は将来構成
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:150:design/knowledge-discovery/design.md:201:- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:152:design/knowledge-discovery/design.md:205:| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:154:design/knowledge-discovery/design.md:210:このうち「誰が居るか」は v8 で**実採用に昇格**し（GEAP Agent Registry への実登録。§14.7）、v10 のB段では Runtime秘書の**自動登録**として実現する。「いつ動くか」もB段で実構成になる。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:161:design/knowledge-discovery/design.md:240:19. （M3・B段）Scheduler ジョブ `kd-secretary-sweep-runtime` を手動発火すると、Runtime 上の秘書が `run_daily_sweep` を呼び、Cloud Run ログに `/api/secretary/sweep` の 200 が記録され、Scheduler の試行が成功することを確認できる。このとき A段ジョブ `kd-secretary-sweep` が paused であることを確認できる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:162:design/knowledge-discovery/design.md:241:20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_digest` が呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返ることを確認できる。Runtime秘書のツール一覧に書き込み系（confirm/dismiss/review）が**存在しない**ことを確認できる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:163:design/knowledge-discovery/design.md:242:21. （M3・B段）Agent Registry に Runtime 秘書が登録されていることを Console または API 一覧で確認できる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:200:design/knowledge-discovery/design.md:398:  **目的（時間以外の価値。ユーザーと合意済み）**: 秘書を「Webサービス内の1モジュール」から「GEAPマネージド基盤上の一人前のエージェント」に昇格させ、(a) Sessions / Memory Bank（将来の苦手先回り＝本人専用メモリの正規の置き場）、(b) エージェント単位のアイデンティティ（round-8 S-10「本人性の突合なし」の正規解への道）、(c) **Agent Registry への自動登録**（SDK経由でRuntimeにデプロイしたエージェントは追加設定なしに登録される＝spec制約「Registry実採用」の充足）、(d) Cloud Observability の自動収集、(e) A2A / Gemini Enterprise への接続口、を得る。今回のデモ画面は1ピクセルも変わらない（価値は提出後とwrite-upに出る）ことを明記する
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:202:design/knowledge-discovery/design.md:401:  - ADKエージェント `secretary_agent`（`src/knowledge_discovery/secretary_agent/`、`LlmAgent`、Gemini 3.7 Flash）。tools は2本のみ: `run_daily_sweep()` → `POST /api/secretary/sweep`、`get_digest(employee_id)` → `GET /api/secretary/digest`。**書き込み系（confirm / dismiss / profile-diff review）のツールは持たせない**——Runtime経由で「人を巻き込む」操作は構造的に不可能にする（FR20「秘書は配送権限を持たない」をエージェント境界でも成立させる）
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:205:design/knowledge-discovery/design.md:405:  - 起動: 新SA `kd-scheduler-sa`（`roles/aiplatform.user`）を使う Cloud Scheduler HTTP ジョブ `kd-secretary-sweep-runtime` → `POST https://asia-northeast1-aiplatform.googleapis.com/v1/projects/<P>/locations/asia-northeast1/reasoningEngines/<ID>:streamQuery?alt=sse`、body `{"class_method":"async_stream_query","input":{"user_id":"scheduler","message":"Run the daily routine."}}`、`--oauth-service-account-email`（OAuthアクセストークン。A段のAPIキーヘッダ方式より1段強い）。**A段ジョブ `kd-secretary-sweep` は削除せず pause して残す**（フォールバック＝resumeするだけ）
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:206:design/knowledge-discovery/design.md:406:  - Agent Registry: Runtime秘書は自動登録。Cloud Run上の4体は Registry API の手動登録（`Agent`/`Service` リソース）で行い手順をREADMEに記載する。手動登録が期限内に通らなければ Runtime秘書の自動登録のみで「実採用」とし、4体は将来項目として**正直に記載**する
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:209:design/knowledge-discovery/design.md:410:- **GEAP Agent Registry への実登録**: Runtime上の秘書はSDKデプロイで自動登録される（v10で確認）。Cloud Run上の4体は手動登録手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:218:design/knowledge-discovery/design.md:430:- （M3・B段）Cloud Run上4体の Agent Registry 手動登録: Registry API（Agent/Serviceリソース）の具体手順は実装時に確認。通らなければ将来項目として正直に記載
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:424:   201	- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:428:   205	| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:433:   210	このうち「誰が居るか」は v8 で**実採用に昇格**し（GEAP Agent Registry への実登録。§14.7）、v10 のB段では Runtime秘書の**自動登録**として実現する。「いつ動くか」もB段で実構成になる。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:463:   240	19. （M3・B段）Scheduler ジョブ `kd-secretary-sweep-runtime` を手動発火すると、Runtime 上の秘書が `run_daily_sweep` を呼び、Cloud Run ログに `/api/secretary/sweep` の 200 が記録され、Scheduler の試行が成功することを確認できる。このとき A段ジョブ `kd-secretary-sweep` が paused であることを確認できる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:464:   241	20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_digest` が呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返ることを確認できる。Runtime秘書のツール一覧に書き込み系（confirm/dismiss/review）が**存在しない**ことを確認できる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:465:   242	21. （M3・B段）Agent Registry に Runtime 秘書が登録されていることを Console または API 一覧で確認できる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:628:   398	  **目的（時間以外の価値。ユーザーと合意済み）**: 秘書を「Webサービス内の1モジュール」から「GEAPマネージド基盤上の一人前のエージェント」に昇格させ、(a) Sessions / Memory Bank（将来の苦手先回り＝本人専用メモリの正規の置き場）、(b) エージェント単位のアイデンティティ（round-8 S-10「本人性の突合なし」の正規解への道）、(c) **Agent Registry への自動登録**（SDK経由でRuntimeにデプロイしたエージェントは追加設定なしに登録される＝spec制約「Registry実採用」の充足）、(d) Cloud Observability の自動収集、(e) A2A / Gemini Enterprise への接続口、を得る。今回のデモ画面は1ピクセルも変わらない（価値は提出後とwrite-upに出る）ことを明記する
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:631:   401	  - ADKエージェント `secretary_agent`（`src/knowledge_discovery/secretary_agent/`、`LlmAgent`、Gemini 3.7 Flash）。tools は2本のみ: `run_daily_sweep()` → `POST /api/secretary/sweep`、`get_digest(employee_id)` → `GET /api/secretary/digest`。**書き込み系（confirm / dismiss / profile-diff review）のツールは持たせない**——Runtime経由で「人を巻き込む」操作は構造的に不可能にする（FR20「秘書は配送権限を持たない」をエージェント境界でも成立させる）
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:634:   404	  - 配置: **asia-northeast1**（reasoningEngines API の利用可能を実機確認済み）。staging bucket `gs://knowledge-discovery-2026-agent-staging`。デプロイは `scripts/deploy_secretary_agent.py`（`google-cloud-aiplatform[agent_engines,adk]` ピン留め、`agent_engines.create`）。resource ID を README と state.json に記録
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:635:   405	  - 起動: 新SA `kd-scheduler-sa`（`roles/aiplatform.user`）を使う Cloud Scheduler HTTP ジョブ `kd-secretary-sweep-runtime` → `POST https://asia-northeast1-aiplatform.googleapis.com/v1/projects/<P>/locations/asia-northeast1/reasoningEngines/<ID>:streamQuery?alt=sse`、body `{"class_method":"async_stream_query","input":{"user_id":"scheduler","message":"Run the daily routine."}}`、`--oauth-service-account-email`（OAuthアクセストークン。A段のAPIキーヘッダ方式より1段強い）。**A段ジョブ `kd-secretary-sweep` は削除せず pause して残す**（フォールバック＝resumeするだけ）
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:636:   406	  - Agent Registry: Runtime秘書は自動登録。Cloud Run上の4体は Registry API の手動登録（`Agent`/`Service` リソース）で行い手順をREADMEに記載する。手動登録が期限内に通らなければ Runtime秘書の自動登録のみで「実採用」とし、4体は将来項目として**正直に記載**する
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:640:   410	- **GEAP Agent Registry への実登録**: Runtime上の秘書はSDKデプロイで自動登録される（v10で確認）。Cloud Run上の4体は手動登録手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:660:   430	- （M3・B段）Cloud Run上4体の Agent Registry 手動登録: Registry API（Agent/Serviceリソース）の具体手順は実装時に確認。通らなければ将来項目として正直に記載
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:678:   201	- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:682:   205	| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:687:   210	このうち「誰が居るか」は v8 で**実採用に昇格**し（GEAP Agent Registry への実登録。§14.7）、v10 のB段では Runtime秘書の**自動登録**として実現する。「いつ動くか」もB段で実構成になる。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:717:   240	19. （M3・B段）Scheduler ジョブ `kd-secretary-sweep-runtime` を手動発火すると、Runtime 上の秘書が `run_daily_sweep` を呼び、Cloud Run ログに `/api/secretary/sweep` の 200 が記録され、Scheduler の試行が成功することを確認できる。このとき A段ジョブ `kd-secretary-sweep` が paused であることを確認できる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:718:   241	20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_digest` が呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返ることを確認できる。Runtime秘書のツール一覧に書き込み系（confirm/dismiss/review）が**存在しない**ことを確認できる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:719:   242	21. （M3・B段）Agent Registry に Runtime 秘書が登録されていることを Console または API 一覧で確認できる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:769:    14	5. **GEAP採用範囲の確定**: Agent Registry を実採用し、秘書エージェントは2段構えで Agent Runtime へ載せる。Gemini Enterprise（SaaS）のスケジューラ利用と Gemini Spark の実接続は却下（検討済み・却下を参照）。
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:884:   129	- **GEAP採用**: **確定（2026-08-19）** — Agent Registry を実採用（自作エージェントとMCPツールを登録）。秘書エージェントは2段構えで GEAP Agent Runtime（API名 ReasoningEngine）へ載せる: まずCloud Run同居で実装・動作確認し、その後Runtimeへ載せ替える。載せ替えに詰まった場合はCloud Run版のままとし（フォールバック）、Registry登録は維持する。Model Armor / Agent Observability（明示的計装）はアーキ図上の将来構成として言及に留める。秘書の定期起動は Cloud Scheduler を用いる
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:981:    31	ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:1075:    20	| Who exists (agent discovery) | `agents` registry (Firestore) | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-10-codex-raw.txt:1227:    31	ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+./design/knowledge-discovery/reviews/round-4.md:47:    - agent discovery を `implemented` boolean ではなく、**エージェント登録レコード（agent_id / 対応employee_id / 対応intent一覧 / エンドポイント）を持つレジストリ**に置き換える。実装は Firestore の1コレクション（あるいは GEAP Agent Registry の実採用）で済み、既にある `payload_type` スキーマレジストリと並べて「誰が居るか（discovery）＋何を流せるか（統制）＋何が流れたか（監査）」の3点セットとしてアーキ図で語れる。boolean 1個をレコードに昇格させるだけで、トラック適合の説明が構造的に成立する。
+./design/knowledge-discovery/reviews/round-5.md:50:**GEAP実採用ゼロのリスク（§8）の補い方の評価。** 「自前実装の設計意図をwrite-upで明記して補う」という方針は方向としては正しいが、現状の書き方では**不十分**と判断する。「使わなかった理由の説明」は審査軸に対して防御的な語りにしかならず、Architectural Discipline 30% を積極的に取りにいけない。補強するなら、説明ではなく**対応関係を構造で示す**こと: (1) `agents` レジストリのフィールド名を GEAP Agent Registry の agent card 相当（agent_id / capabilities / endpoint）に意図的に寄せ、「同一の責務を最小実装で満たしており、レジストリの実体を差し替えるだけで移行できる」とアーキ図に1対1対応表として載せる。(2) 送信層のスキーマレジストリ検証を Model Armor の、`messages` コレクションを Agent Observability の、それぞれ責務対応物として同じ表に並べる。これで「推奨技術を使っていない」ではなく「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という主張になる。C-25(b) を採ると、この表の「何を流せるか」の欄が実装で裏付けられ、表全体の説得力が変わる。write-up 執筆（8/29以降）ではなく、アーキ図の構成を決める時点で決めておくべき事項。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:36:├── state.json
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:49:- `state.json`: 再開位置と次工程の最小入力
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:56:`state.json`には最低限、次を保持する。未知の既存フィールドは削除しない。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:87:1. 新規セッションまたは再開時は、最初に`state.json`だけを読む。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:91:5. 各ノード終了時に`state.json`を更新し、次ノードの`requiredReads`を最小集合へ戻す。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:92:6. `state.json`がない旧形式は、`design.md`と`ledger.md`を一度だけ読み、既存ファイルを削除せず新形式を作る。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:104:- 新しいタスクは親会話を複製せず`state.json`から再開する。開始メッセージのfingerprintと承認version/hashの一致を確認してから、古い`sessionBoundary`を`continue`へ更新する。履歴を保持する`/fork`は使わない。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:161:6. **実装handoff**: 承認後に`state.json`を実装向けへ更新し、新しいCodexタスクで再開する。Builder委譲を使う場合も、handoffの承認確認はここで完了させる。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:164:9. **完了**: 実装、検証結果、解決済み指摘、残課題、次の人間判断を短く報告し、`state.json`を完了へ更新する。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:171:`design-loop` の状態読込規律に従い、最初に `state.json` だけを確認します。メモ側にはこのリポジトリ／M3に該当する記録がなかったため、現リポジトリを唯一の根拠に進めます。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:173:/bin/zsh -lc "sed -n '1,240p' design/knowledge-discovery/state.json" in /Users/toshixa/dev/Knowledge-discovery
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:404:- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:408:| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:413:このうち「誰が居るか」は v8 で**実採用に昇格**する（GEAP Agent Registry への実登録。§14.7）。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:468:ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:753:   201	- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:757:   205	| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:762:   210	このうち「誰が居るか」は v8 で**実採用に昇格**する（GEAP Agent Registry への実登録。§14.7）。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:946:   394	- **GEAP Agent Registry への実登録**: 4体＋秘書を Agent Registry に登録するデプロイ手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:970:     5	ユーザーとの対話で**秘書（プロアクティブ）層**が追加され、spec.md が v7 へ改訂された（詳細は spec.md「v7改訂の経緯」）。要点: ①タスク停滞のルールベース検知（重み付きスコア＋2段閾値）→プレビュー検索（配送なし・候補者に痕跡なし）→本人の依頼確定で既存つながりレーンに合流、②モーニングダイジェスト（期日リマインドのみ、回答はしない）、③プロフィール継続更新（模擬メールシードからの差分提案→本人レビュー）、④苦手先回りはstretch、⑤GEAP採用範囲確定（Agent Registry実採用＋秘書のAgent Runtime 2段構え載せ替え、起動はCloud Scheduler）。既存の配送・同意・監査フロー（M1/M2実装済み・反証round-6クローズ済み）は変更しない——秘書は新しい配送経路を持たず、既存フローの入口に段を足すのみ。次工程: design.md 追補（M3設計）→批評1巡→実装。批評エージェントへ: 「秘書が自律配送する」方向の提案、および停滞検知のLLM判定化は、v7で明示的に却下された前提に反するため提案しないこと。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:1073:   201	- **GEAP対応は「使わなかった理由の説明」ではなく「責務の1対1対応表」で示す（round-5総評反映）**: アーキ図に以下の対応表を載せ、「推奨技術が担う3責務を全て最小実装で実現し、置換点を明示した」という積極的な主張にする。`agents` レジストリのフィールド名はGEAP Agent Registryのagent card相当（agent_id / capabilities≒supported_intents / endpoint）に意図的に寄せる
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:1077:   205	| 誰が居るか（agent discovery） | `agents` レジストリ（Firestore） | GEAP Agent Registry |
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:1082:   210	このうち「誰が居るか」は v8 で**実採用に昇格**する（GEAP Agent Registry への実登録。§14.7）。対応表の他の行は引き続き最小実装＋置換点明示のパターン。
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:1266:   394	- **GEAP Agent Registry への実登録**: 4体＋秘書を Agent Registry に登録するデプロイ手順を README に含める（`agents` コレクションは§8の対応表どおり Registry のミラーとして維持。二重管理はシード投入スクリプトが一括で行う）
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:1305: design/knowledge-discovery/state.json              |  10 +-
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:1322:M	design/knowledge-discovery/state.json
+./design/knowledge-discovery/reviews/round-8-excess-codex-raw.txt:6467:/bin/zsh -lc "rg -n \"ReasoningEngine|Agent Runtime|Agent Registry|GEAP|Scheduler|scheduler|oidc|Secret Manager|secretmanager|cloudscheduler\" src scripts tests README.md pyproject.toml requirements*.txt 2>/dev/null || true
+
+codex
+この依頼は既存の設計ループの「独立批評」工程に該当するため、ここから `design-loop` skill の批評規律を適用します。既に対象文書は読み始めていますが、状態ファイル更新や実装は行わず、今回指定の追補だけに境界を固定します。
+exec
+/bin/zsh -lc "wc -l /Users/toshixa/.codex/skills/design-loop/SKILL.md
+sed -n '1,260p' /Users/toshixa/.codex/skills/design-loop/SKILL.md" in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+     148 /Users/toshixa/.codex/skills/design-loop/SKILL.md
+---
+name: design-loop
+description: 設計→独立批評→改訂→人間承認→実装→反証を、ファイル状態と工程別コンテキストで回す開発プロトコル。「/design-loop タスク」「設計ループで進めて」で使用。高リスク・高曖昧性の設計に使い、批評役には別ベンダーのfresh Claudeを使う。
+---
+
+# design-loop — コンテキスト分離型の設計・実装ループ（Codex版）
+
+精度を決める判断はファイルに残し、過去会話・生ログ・古い批評は次工程へ持ち込まない。`design.md`を設計の唯一の正本とし、実装前にそのversionの人間承認を得る。批評には別ベンダーのfresh Claudeを読み取り専用で使う。
+
+## 状態ファイル
+
+プロジェクト直下の`design/<タスク名>/`はClaude Code版からも参照できる。ただし相手側スキルの安全保証を仮定せず、Codexへ戻った時点で設計の承認hashと状態を再検証する。
+
+```text
+design/<タスク名>/
+├── state.json
+├── context-chat.md
+├── design.md
+├── ledger.md
+├── reviews/
+│   ├── round-N.md
+│   ├── round-N-<lens>.md
+│   ├── codex-design-N.md
+│   └── codex-verify-N.md
+└── archive/
+    └── ledger-resolved.md
+```
+
+- `state.json`: 再開位置と次工程の最小入力
+- `context-chat.md`: 外部検討ログ。任意・読み取り専用
+- `design.md`: 承認対象となる設計の唯一の正本
+- `ledger.md`: 未解決指摘の全文と、解決済み指摘の一行索引
+- `reviews/`: 批評原文。通常の再開時には読まない
+- `archive/ledger-resolved.md`: 解決済み指摘の全文。通常は読まない
+
+`state.json`には最低限、次を保持する。未知の既存フィールドは削除しない。
+
+```json
+{
+  "currentNode": "取り込み|起草|批評|改訂|承認CP|実装|反証|完了",
+  "status": "in_progress|awaiting_user|done",
+  "designVersion": "v3",
+  "approvedDesignVersion": "v3 or null",
+  "approvedDesignSha256": "sha256 or null",
+  "approvedAt": "ISO-8601 timestamp or null",
+  "approvalEvidence": "exact user reply containing the approval fingerprint or null",
+  "requiredApprovalFingerprint": "v3:sha256-prefix",
+  "baseline": "branch or commit",
+  "criticRound": 1,
+  "openIssueIds": ["C-3"],
+  "requiredReads": ["design.md", "ledger.md"],
+  "nextAction": "承認済み設計を実装する",
+  "sessionBoundary": "continue|new_task",
+  "handoffSummary": "次タスク向けの1000文字以内の要約",
+  "lastVerification": "直近検証の短い結果",
+  "verifiedEvidenceSha256": "critic evidence sha256 or null",
+  "reviewHashes": {"codex-design-1.md": "sha256"},
+  "delegation": {"実装": "codex", "批評": "claude/opus"},
+  "lastUpdated": "YYYY-MM-DD"
+}
+```
+
+`delegation`は任意。工程を外部へ委譲した場合だけ、実際の委譲先とCLI等で確認したモデル完全IDを記録する。AIの自己申告だけからモデル名を記録しない。
+
+## 読み込み規律
+
+1. 新規セッションまたは再開時は、最初に`state.json`だけを読む。
+2. 次に`requiredReads`へ列挙されたファイルだけを読む。相対パスはタスクのdesignディレクトリ基準とする。
+3. 前提確認に`context-chat.md`が必要なら、直前ノードがそれを次の`requiredReads`へ追加する。列挙なしに例外として読まない。
+4. `archive/`、過去の`reviews/`、解決済み指摘の全文、過去チャットは、明示的な再調査理由がある場合だけ読む。
+5. 各ノード終了時に`state.json`を更新し、次ノードの`requiredReads`を最小集合へ戻す。
+6. `state.json`がない旧形式は、`design.md`と`ledger.md`を一度だけ読み、既存ファイルを削除せず新形式を作る。
+7. 他ランナーの更新でCodex補助フィールドが欠落していたら、`baseline`、`sessionBoundary`、`handoffSummary`、`lastVerification`だけを根拠から再構成してよい。承認フィールド、`approvalEvidence`、`reviewHashes`は推測で補わない。
+8. `approvedDesignVersion`、`approvedDesignSha256`、`approvalEvidence`のいずれかが欠落するか、現在のversion/hashと不一致、または承認fingerprintを正確に含まない場合は、`currentNode`にかかわらず実装せず承認CPへ戻す。新しい実装タスクの開始メッセージにも`requiredApprovalFingerprint`がなければstateだけを信用せず、ユーザーへfingerprintの再提示を求める。
+9. Codex生成レビューは`reviewHashes`と照合する。不一致は監査証跡の変更として停止し、レビューを確認する。Claude版の既存`round-N*.md`は参考資料として扱い、Codexの承認根拠には自動採用しない。
+
+## セッション境界
+
+細かなノードではなく、1つの意味的工程を1つのCodexタスクとして扱う。
+
+- 設計の起草・批評反映・承認待ちは同じタスクでよい。
+- 承認CPでは`designVersion:sha256先頭12桁`を`requiredApprovalFingerprint`として提示する。ユーザーがfingerprintと明示的な承認語を含む500文字以内の返信をした場合だけ、その返信原文を`approvalEvidence`へ記録する。長い返信は切り詰めず、短い承認返信を改めて求める。handoffでは、新しい実装タスクの開始メッセージにも同じfingerprintを含めるよう案内する。
+- 新しいタスクを自動作成する明示的権限がなければ、実装を始めず、新しいCodexタスクで再開するよう案内して停止する。
+- 新しいタスクは親会話を複製せず`state.json`から再開する。開始メッセージのfingerprintと承認version/hashの一致を確認してから、古い`sessionBoundary`を`continue`へ更新する。履歴を保持する`/fork`は使わない。
+- 同じタスクを継続せざるを得ない場合だけ`/compact`を案内する。工程境界の代替にはしない。
+- 実装後も会話が長大なら、反証・修正用の新しいタスクへ同じ方法で渡す。
+
+## コンテキスト規律
+
+- コマンドはquiet/short形式を優先し、成功時は終了コードと要約だけを返す。失敗時だけ対象を絞って詳細を読む。
+- 生ログ、巨大diff、スタックトレース、批評原文をメインチャットへ貼らない。必要なら安全な一時ファイルへ保存し、秘密情報を残さない。
+- diffは最初にstatと変更ファイルを確認し、必要なhunkだけを読む。批評役には対象パスまたはGitの比較基準を渡す。
+- 解決済み指摘は全文を`archive/ledger-resolved.md`へ移し、`ledger.md`にはID・題名・結論の一行索引を残す。
+- サブエージェントは総トークン削減策として乱用しない。独立批評、重いログ解析、境界が明確な読み取り調査に限定し、要約だけをメインへ返す。
+- モデルやreasoning effortの低下を既定の節約策にしない。まず入力コンテキストを分離し、設計・批評・安全判断の精度を維持する。
+
+## 独立批評
+
+同梱スクリプトでfresh Claudeを読み取り専用起動する。Claudeの全文は新規レビューへ排他的に保存し、メインチャットには`ID・種別・重大度・一行題名`だけを返す。
+
+批評モデルは`--model opus --effort high`へ固定する。`opus`はClaude Codeが提供する最新Opus（現在はOpus 5）へ解決させ、ユーザー設定や開いているClaude Codeセッションのモデルに依存させない。
+
+```bash
+python3 <skill-dir>/scripts/run_critic.py \
+  --cwd <repository-root> \
+  --mode design \
+  --report <repository-root>/design/<task>/reviews/codex-design-N.md \
+  --input <repository-root>/design/<task>/design.md \
+  --input <repository-root>/design/<task>/ledger.md
+```
+
+反証では`--mode verify`、実在する`--baseline <git-ref>`、設計・台帳と全非ignore未追跡実装ファイルを`--input`で指定する。未追跡実装ファイルが明示入力されていなければ失敗する。tracked変更ファイルはdiffに加えて変更後全文も自動で渡す。`design/`は状態ファイルなので実装diffから除外し、必要な`design.md`と`ledger.md`だけを明示入力する。
+
+binary入力は内容を外部送信せず、未承認ならhashを示して停止する。人間がそのbinaryの用途とhashを確認した場合だけ`--allow-binary-sha256 <hash>`を付け、サイズ・SHA-256メタデータとして批評へ渡す。Git ignore対象はGit成果物の検証範囲外とし、実行時動作に必要なignoreファイルがある場合だけ明示入力する。
+
+スクリプトはGit管理下なら`--cwd`がtop-levelと一致することを確認し、入力と出力をrepository root配下へ制限する。既存タスクの`reviews/`にだけ新規保存し、Claudeにはツールを一切与えずrepository外の一時cwdで起動する。artifactをJSON data envelopeとしてstdinから渡し、応答には毎回ランダムなnonceを要求して固定文による結果偽装を拒否する。総text入力は1 MBで停止し、超える場合は対象を分割する。高確度の秘密情報候補を検出した場合は外部送信せず失敗する。
+
+CLI不在、タイムアウト、非ゼロ終了、形式不正、レポート欠落を批評成功として扱わない。成功時のレポート`SHA256`を`reviewHashes`へ、`EVIDENCE_SHA256`を`verifiedEvidenceSha256`へ記録する。Claude CLIが使えない場合は同ベンダー代用へ自動フォールバックせず、独立批評未実施として停止しユーザーへ報告する。
+
+批評成功後に実装ファイルを変更しない。完了直前に同じ引数から`--report`を除いて`--evidence-only`を付け、得られた`EVIDENCE_SHA256`が記録値と一致することを確認する。不一致なら批評を無効として再実行する。
+
+Codex生成レビューは相互上書きを防ぐため、設計批評を`codex-design-N.md`、反証を`codex-verify-N.md`とする。`N`は各フェーズの既存Codexレビューから次番号を求め、台帳からは完全なファイル名を参照する。共有`criticRound`は表示上の現在試行として更新するが、採番や上限判定の唯一の根拠にしない。
+
+設計批評と実装diff批評は原則1回ずつとする。新規または未解決のBlocker/Critical/Majorがある場合だけ追加し、各フェーズ最大3回で停止する。Minor/Noteだけを理由に全批評を繰り返さない。
+
+## 実装委譲の共通規律
+
+- 委譲できるのは、人間承認済み設計に基づく実装と反証後の修正だけ。設計判断、承認、台帳更新、完了判定は呼び出し側が保持する。
+- 委譲先の完了報告は主張であって証拠ではない。実ファイル、差分、テスト、型検査、ビルドを呼び出し側が独立検証する。
+- 同一repositoryを複数agentが同時編集しない。決定不足なら既定を補わず、前提指摘としてユーザーへ戻す。
+- 委譲先固有の権限・実行手順・安全境界は専用スキルに置き、本スキルへ複製しない。
+- Antigravityへ委譲する場合は専用の`design-loop-antigravity`を併用する。
+
+## 工程
+
+1. **取り込み**: 必要な外部検討だけを`context-chat.md`へ保存し、事実と未決定事項を分ける。
+2. **起草**: 検証可能なゴール、制約、非目標、受入条件を`design.md`へ記録する。
+3. **批評**: fresh Claudeへ最小ファイルだけを渡し、原文を`reviews/`、open findingを`ledger.md`へ保存する。
+4. **ルーティング**: 設計指摘は`design.md`改訂、実装指摘は実装修正、前提指摘はユーザー質問へ送る。勝手に前提を補完しない。
+5. **承認CP**: Blocker/Critical/Majorが解消した設計と承認fingerprintを提示する。提示の際は先に**平易な承認ブリーフ**を出す — 専門用語を使わない3段落で、①これは何をするものか（誰の何がどう変わるか）②何をあえてやらないと決めたか（捨てたもの・妥協と理由）③一番危ない箇所はどこで、誰（どの工程・機構・検証）がそれを守るのか。ユーザーはコードではなくこのブリーフで判断する。ブリーフに書けない箇所があれば、設計を理解できていないサインなので承認を求めず起草・批評へ戻る。ユーザー返信がfingerprintと明示的な承認語を含むことを確認し、その原文を記録しない限り実装へ進まない。
+6. **実装handoff**: 承認後に`state.json`を実装向けへ更新し、新しいCodexタスクで再開する。Builder委譲を使う場合も、handoffの承認確認はここで完了させる。
+7. **実装**: `design.md`とopen findingだけを基準に変更し、受入条件を検証する。外部へ委譲した場合も、受入条件の検証と完了判定はCodex側が実行する。
+8. **反証**: fresh Claudeへdiffの比較基準と必要ファイルだけを渡す。重大指摘を修正し、必要な範囲だけ再批評する。
+9. **完了**: 実装、検証結果、解決済み指摘、残課題、次の人間判断を短く報告し、`state.json`を完了へ更新する。
+
+## 適用条件
+
+アーキテクチャ、セキュリティ、データ設計、重大な移行、要件が曖昧な変更に使う。数十行以下の自明な変更には使用しない。ユーザーが既に明示承認した個別判断は再質問せず記録する。ただし、`design.md`が変更された場合は承認version/hash/evidenceをnullへ戻し、改訂版を承認CPで提示する。
+
+codex
+`design-loop` は本来 fresh Claude の批評原文を `reviews/` に保存しますが、今回はワークスペースが read-only のためその保存工程は実行できません。したがってファイル更新なしの独立レビューとして続行し、最終回答ではこの制約と、確認した根拠を明示します。
+web search: 
+web search: site:cloud.google.com/vertex-ai/generative-ai/docs/agent-engine environment variables Secret Manager env_vars Agent Engine service agent secretAccessor ...
+web search: 
+web search: site:cloud.google.com/vertex-ai/docs/reference/rest/v1/projects.locations.reasoningEngines streamQuery query ReasoningEngine ...
+web search: 
+web search: site:cloud.google.com/vertex-ai/generative-ai/docs/agent-engine "gcp-sa-aiplatform-re" service agent ...
+web search: 
+web search: site:cloud.google.com/vertex-ai/generative-ai/docs/models/gemini "Gemini 3.7 Flash" ...
+web search: 
+web search: site:docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime ADK model global location Agent Runtime asia-northeast1 gemini-3.7-flash ...
+web search: 
+web search: 
+2026-08-23T00:21:51.553984Z ERROR codex_models_manager::manager: failed to renew cache TTL: missing field `base_instructions` at line 95 column 5
+web search: 
+web search: site:docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime "env_vars" "SecretRef" ...
+2026-08-23T00:21:58.430073Z ERROR codex_models_manager::manager: failed to renew cache TTL: missing field `base_instructions` at line 95 column 5
+exec
+/bin/zsh -lc "nl -ba design/knowledge-discovery/state.json | sed -n '1,240p'" in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+     1	{
+     2	  "currentNode": "批評",
+     3	  "status": "in_progress",
+     4	  "designVersion": "v10",
+     5	  "approvedDesignVersion": null,
+     6	  "approvedDesignSha256": null,
+     7	  "approvedAt": null,
+     8	  "approvalEvidence": null,
+     9	  "requiredApprovalFingerprint": "v10:b6983911d1cc",
+    10	  "baseline": "360f2617999b9c9bb52147f44b4d436a63c36b15",
+    11	  "criticRound": 10,
+    12	  "openIssueIds": [],
+    13	  "requiredReads": [
+    14	    "design.md",
+    15	    "ledger.md"
+    16	  ],
+    17	  "nextAction": "批評round-10（design v10 B段追補）→改訂→承認CP→B段実装",
+    18	  "delegation": {
+    19	    "批評": "claude-opus-5[1m] design-critic + codex/gpt-5.6-sol xhigh（round-7クロスベンダー）",
+    20	    "実装": "antigravity/gemini-3.7-flash-high（M1/M2/M3 build）＋claude/sonnet（M3テスト補完）",
+    21	    "反証": "claude-opus-5[1m] design-critic ×3（round-8 正しさ/安全性、round-9）+ codex/gpt-5.6-sol xhigh（round-8 過剰実装）"
+    22	  },
+    23	  "lastUpdated": "2026-08-23"
+    24	}
+2026-08-23T00:22:02.453915Z ERROR codex_models_manager::manager: failed to renew cache TTL: missing field `base_instructions` at line 95 column 5
+exec
+/bin/zsh -lc "nl -ba design/knowledge-discovery/spec.md | sed -n '95,136p'
+nl -ba design/knowledge-discovery/spec.md | sed -n '171,198p'
+nl -ba README.md | sed -n '76,138p'" in /Users/toshixa/dev/Knowledge-discovery
+ succeeded in 0ms:
+    95	## 機能要件
+    96	
+    97	1. システムは模擬社員4名分の個人AIエージェントをADK（Python）マルチエージェント構成で実装する。
+    98	2. 各エージェントは、シードデータ（模擬職務文書）からプロフィール下書きを自動生成し、業務由来項目をデフォルト公開状態で提示する。プロフィール項目は「現在の仕事内容（詳細）」「得意分野・専門性」「簡易な職歴」に限定する。「現在の仕事内容」は探索的マッチングの主要な手がかりとなるため、他の2項目より詳しく記述する。
+    99	3. 本人は一度のレビュー画面で、下書き内容の修正、およびNDA/秘匿項目の公開範囲（公開/非公開）変更のみを行い、確定させる。
+   100	4. システムは、質問入力を受け取ると、ディスカバリ層がプロフィール索引から上位k体の候補エージェントへ配送する。この選定は「質問に確実に答えられる人」を特定するものではなく、「プロフィール内容（特に現在の仕事内容）から見て、背景知識を持っていそうな人」を確率的に探索するものとする。誤マッチ（結果的に的外れな接続）はゼロを目指さない。
+   101	5. 配送された各候補エージェントは、依頼者の質問（AIが要約してよい）と「あなたが候補になった理由」（AIが推論・生成）を本人へ提示し、「つながりませんか？」の同意確認を行う。AI生成文は常にAIの発言として明示し、いかなる人物の発言としても表示しない。
+   102	6. 本人が同意した場合のみマッチが成立し、15分ミーティングの提案が生成される。
+   103	7. 本人が辞退した場合、辞退理由（本人記入）を添えて依頼者側に表示・通知する。辞退の事実は隠さない。辞退時に、任意で資料・リンク・一言回答を添付でき、依頼者にそのまま届く。
+   104	8. プロフィールは項目ごとに公開/非公開のトグルを持つ。非公開項目は本人のエージェントだけが参照でき、関連する質問が来た場合は本人にのみ「非公開項目に関係しそうな質問が来ています。つながりますか？」と打診する。非公開項目の**内容**は依頼者・他エージェント・監査画面のいずれにも開示されない。監査画面には「非公開項目に基づく打診が行われた事実」のみが記録される（内容はマスク）。非公開項目の存在を一切示さないのは依頼者向けUIに限る。
+   105	9. 全エージェント間通信は単一のメッセージエンベロープ（`from` / `to` / `intent` / `payload_type` / `payload` / `consent` / `audit_id`）で送受信される。
+   106	10. 流通可能な `payload_type` はスキーマレジストリに中央定義され、未登録の型を含むメッセージは送信層で拒否される。
+   107	11. 拒否されたメッセージを含む全メッセージが監査ログへ記録される。
+   108	12. 監査ダッシュボード（エージェントチャンネル可視化画面）は、全エージェント間メッセージを「誰が・何を・同意状態」つきで人間可読に表示する。辞退も含め表示に制限を設けない（例外は非公開項目関連の内容マスクのみ）。送信層で拒否されたメッセージ（未登録payload型・宛先が受信できないintent）は同画面に赤色表示される。
+   109	13. プロフィール索引には、Gemini合成の模擬社員プロフィール約400名分をFirestoreに実データとして投入する（完全な対話実装を持つのは4体のみとし、モック画面による見せかけは行わない）。
+   110	14. デモ動画は3分・英語で、モーニングダイジェスト→停滞検知カード→本人の依頼確定を冒頭シーンとし、以降は候補提示→同意→MTG成立の幸福経路、および辞退→理由（＋任意の資料添付）付きで依頼者に届く経路を1シナリオ一本道として構成する（機能羅列をしない。非公開項目打診シーン・秘書シーン追加後の尺配分はdesign.md側の設計判断に委ねる）。
+   111	15. アーキテクチャ図と英語write-upを提出物として作成する。write-upは既存カテゴリ（Starmind/Glean/Viva Topics）へのアンチテーゼとして位置づけ、Viva Topics撤退（2025/2）とCSCW研究の失敗要因（選定の社会的配慮）への設計回答であることを明記する。あわせて本番将来構成——個人側トリガーとしての Gemini Spark（MCP経由。社内前提のため実装外）、秘書の GEAP Agent Runtime 常駐、苦手分野の先回り検索——をアーキ図・write-upに明記する。「秘書は日常の地味な有用性で存在を許され、その信頼の上でだけ人を巻き込む提案をする」という設計理由を、CSCW失敗要因への回答の一部として記述する。
+   112	16. 秘書エージェントは、各担当者のタスクデータ（模擬タスクストア: タイトル・説明・期日・最終更新・リスケジュール履歴・status遷移履歴）を定期起動（Cloud Scheduler想定。デモでは手動トリガー可）で巡回する。常駐プロセスとしない。
+   113	17. 停滞検知はルールベースの重み付き停滞スコアで行い、LLM判定を用いない。シグナルは（a）期日超過日数、（b）無更新日数、（c）リスケジュール回数、（d）相対停滞（本人の他タスクは更新されているのに当該タスクのみ停止＝後回し検知）、（e）着手なし（作成以来status遷移なし）とする。カードには判定根拠を一行で明示する（例: 「期日を2回延ばし、他のタスクは動いているのにこれだけ5日止まっています」）。
+   114	18. 停滞スコアは2段閾値を持つ。閾値1超えで「気づきカード」を本人にのみ提示する。閾値2超えでプレビュー検索を自動実行し、質問文下書き＋候補＋候補理由（AI発言として明示）まで揃えた「つながりリクエスト案」カードを本人にのみ提示する。
+   115	19. プレビュー検索は配送を伴わない読み取り検索であり、公開プロフィール索引のみを対象とし、候補者側への通知・痕跡を一切発生させない。非公開項目の照合はプレビューでは行わない（非公開打診は要件8の正式配送フロー内でのみ発動する）。
+   116	20. 本人が「依頼する」を確定した場合のみ、下書き質問（本人編集可）が要件4以降の既存配送フローに乗る。秘書は本人の確定なしに配送する権限を持たない。停滞の検知事実は本人以外（上司・同僚を含む）に通知されない。
+   117	21. 秘書の検知イベントおよびプレビュー検索は、配送を伴わない専用intentとして監査ダッシュボードに記録される。
+   118	22. 秘書はモーニングダイジェストとして、期日もの（経費精算締切・週報/月報の準備・会議の準備/振り返り・ジャーナル記入）のリマインドカードをデフォルトで提示する。データはシードのスケジュールデータ＋日付ルールで生成し、手続き内容への回答は行わない（非スコープ）。停滞検知カード（要件17〜18）はこのダイジェストの中に、日常リマインドと地続きの1カードとして表示する。
+   119	23. 秘書は模擬メール等のシード文書から本人のプロフィール差分候補を検出し、「このプロフィールに追加します」という差分提案カードを本人に提示する。本人はレビューで反映・編集・公開範囲変更・見送りを選べる。UIは反映を既定の導線とし、見送りは明確な秘匿性がある場合の選択肢として配置する。反映されるとプロフィール索引が更新される。差分提案文はAI発言として明示し、本人の発言として流通させない（v4原則の適用）。
+   120	24. **（stretch）苦手分野の先回り検索**: 停滞履歴のカテゴリ集計から「繰り返し停滞する分野」を導き、平常巡回時に当該分野のプレビュー検索を先行実行して相談先候補を本人にのみ常備する。推定された苦手プロフィールは本人のエージェントのみが保持し、マッチング索引・他エージェント・監査画面のいずれにも掲載しない（監査には検索実行の事実のみ記録）。実装はstretchとし、アーキ図・write-upには将来構成として必ず記載する。
+   121	
+   122	## 制約・非機能
+   123	
+   124	- **実装スタック**: ADK（Python）+ Gemini 3.7 Flash（現行最新、2026年8月13日リリース）+ Cloud Run + Firestore。「Gemini 3.5 or newer」は「バージョン番号が3.5以上」の意であり、現行最新のProモデル（Gemini 3.1 Pro）はバージョン番号（3.1）が3.5未満のため要件を満たさない可能性が高い。Pro系統は使用せずFlash系のみで完結させる
+   125	- **締切**: 2026-08-31 17:00 PDT厳守。逆算で8/29までに機能凍結し、残りをデモ動画・アーキ図・英語write-upに充てる
+   126	- **技術要件（審査条件、募集要項より）**: 「Gemini 3.5 or newer（Gemini API または Vertex AI経由）」「Google Agent Framework（ADK / GenAI SDK / Antigravity SDK / GenKit のいずれか1つ以上）」「Google Cloudインフラサービス（Cloud Run / Cloud SQL / Firestore / GKE / Pub/Sub 等のいずれか1つ以上）」。ボーナス統合（任意）: Gemma / Veo / Lyria 等のGoogle AIモデル統合
+   127	- **コスト**: Google Cloud $150クレジット内（申請済み・承認待ち。未承認のまま開発期限が来た場合は個人課金＋予算アラートで進行）
+   128	- **運用**: Cloud Run は min-instances=0。デモ収録後は即停止。公開URLはAPIキー等で保護
+   129	- **GEAP採用**: **確定（2026-08-19）** — Agent Registry を実採用（自作エージェントとMCPツールを登録）。秘書エージェントは2段構えで GEAP Agent Runtime（API名 ReasoningEngine）へ載せる: まずCloud Run同居で実装・動作確認し、その後Runtimeへ載せ替える。載せ替えに詰まった場合はCloud Run版のままとし（フォールバック）、Registry登録は維持する。Model Armor / Agent Observability（明示的計装）はアーキ図上の将来構成として言及に留める。秘書の定期起動は Cloud Scheduler を用いる
+   130	- **開発体制**: 開発者1名、フルタイム勤務の業務外時間のみ（平日夜＋土日2回分程度）
+   131	- **評価基準（募集要項より、合計100%）**:
+   132	  - Innovation & Operational Utility — 40%: 自律的・高価値な行動で実世界の摩擦をどれだけ除去するか
+   133	  - Architectural Discipline & Tech Stack — 30%: システムの疎結合性・状態管理・認証情報のセキュリティ・障害処理などエンジニアリング判断の健全性
+   134	  - Demo & Production Readiness — 30%: デモ動画とリポジトリが機能性をどれだけ説得力を持って証明しているか
+   135	- **用語統一**: 「承認（approval）」は使わない。プロフィールの本人確認は「レビュー（検品）」、つながりレーンの応諾は「同意（consent）」、公開/非公開設定は「公開範囲（visibility）」と呼び分ける。英語表記は owner-reviewed / consent-gated / visibility
+   136	
+   171	## 検証可能な完了条件
+   172	
+   173	1. サンプル質問を1件投げると、配送用ランキング（エージェント登録済みの候補）と画面用ファネル（400名分のスケール表示）の2トラックが動作し、接点が言語化できた候補に質問と「候補になった理由」（AI発言として明示）が提示されることを確認できる。
+   174	2. 候補が同意した場合、15分MTG提案が生成されることを確認できる。
+   175	3. 候補が辞退した場合、辞退理由を添えて依頼者側に表示されることを確認できる（旧v1の「辞退不可視」から反転）。辞退時に資料・リンク等を添付した場合、それが依頼者に届くことを確認できる。
+   176	4. 非公開項目に関係する質問が来た場合、本人にのみ打診が届き、非公開項目の内容が依頼者・他エージェントに表示されないことを確認できる。監査画面には打診の事実のみが記録され、内容はマスクされることを確認できる。
+   177	5. 監査ダッシュボードで、全メッセージ（辞退を含む）について「誰が・何を・同意状態」が一覧できることを確認できる。
+   178	6. 3分・英語の完成デモ動画が、モーニングダイジェスト→停滞検知カード→依頼確定→候補提示→同意→MTG成立、および辞退→理由が届く、の1シナリオ一本道で存在することを確認できる。
+   179	7. アーキテクチャ図、および既存カテゴリへのアンチテーゼとして位置づけた英語write-upが提出物として揃っていることを確認できる。
+   180	8. 用語（レビュー/同意/公開範囲）が実装・UI・write-up全体で統一され、「承認」という語が使われていないことを確認できる。
+   181	9. プロフィール項目が仕事内容・得意分野・簡易な職歴の範囲に収まっており、個人のプライバシー情報（給与等）を含まないことを確認できる。
+   182	10. 停滞条件を満たすシードタスクに対し、判定根拠一行つきの停滞カードが本人にのみ表示され、プレビュー段階では候補者側に通知・痕跡が一切発生せず、「依頼する」確定によって条件1〜3の既存配送フローが動作することを確認できる。
+   183	11. モーニングダイジェストに期日リマインド（経費締切・週報/月報・会議準備/振り返り・ジャーナル）が表示され、停滞カードが同ダイジェスト内に地続きで表示されることを確認できる。
+   184	12. 模擬メールのシードからプロフィール差分提案カードが提示され、本人レビューの反映によってプロフィール索引が更新されることを確認できる。
+   185	13. 秘書の検知イベント・プレビュー検索が、配送を伴わない専用intentとして監査ダッシュボードに記録されることを確認できる。
+   186	
+   187	## 未決事項
+   188	
+   189	- プロダクト名（未定。write-upまでに決める）
+   190	- Devpost登録済み一言説明の文言更新（単一レーン構造に合わせた新ドラフトを目的セクションに記載済み。確定は後で変更可のため急がない）
+   191	- **デモ動画への非公開項目打診シーンの組み込み方**: v4で追加された「非公開項目に関係する質問→本人にのみ打診」は情報主権の実体機能であり、Fortifiedトラックの訴求点としてデモに含める価値が高い。3分尺の中で幸福経路・辞退経路とどうバランスさせるかはdesign.md側で設計する。旧v1〜v4の「reject_visibility」「来歴検証」等の防御機構は旧2レーン構造前提のため廃止
+   192	- GEAPコンポーネントの採用範囲: **確定（2026-08-19）** — Agent Registry 実採用＋秘書の Agent Runtime 2段構え載せ替え（詳細は制約・非機能のGEAP採用の項）。Model Armor / Agent Observability は将来構成
+   193	- 停滞スコアの重み・2段閾値の具体値（M3実装時にシードデータで較正する）
+   194	- プロフィール差分提案シーンをデモ3分尺に含めるか: **確定（2026-08-23、ユーザー判断）— 含める**（尺配分はdesign §11の再調整で対応）
+   195	- 本人レビューUIの形態: 最小Webアプリか、Slack風の模擬チャットUIか
+   196	- 秘書のUI表現: **確定（2026-08-23、ユーザー判断）— 人格化する**（名前・アバター・口調を与える。名前はプロダクト名と同時に決定。design §14.8の分離構造によりラベル・文体の差し替えで実装）。「AI発言の明示」原則は維持（秘書の発話は常にAIとして表示）
+   197	- 監査ダッシュボードの実装方式: 専用画面か、Cloud Loggingベースの簡易ビューか
+   198	- デモ動画のナレーション: **確定（2026-08-23、ユーザー判断）— TTS（英語、作者自身のクローン音声を使用）**。narration-ttsパイプラインの利用を想定
+    76	## Deploy (Cloud Run)
+    77	
+    78	```bash
+    79	gcloud run deploy knowledge-discovery --source . \
+    80	  --region=asia-northeast1 \
+    81	  --service-account=<runtime-sa> \
+    82	  --allow-unauthenticated --min-instances=0 --memory=512Mi \
+    83	  --set-env-vars="USE_FIRESTORE=1,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=<PROJECT_ID>,VECTOR_FLOOR=0.62" \
+    84	  --set-secrets="DEMO_API_KEY=demo-api-key:latest"
+    85	```
+    86	
+    87	The runtime service account needs only `roles/datastore.user` and
+    88	`roles/aiplatform.user` (plus `secretmanager.secretAccessor` on the demo-key
+    89	secret). Firestore is created in native mode via gcloud and has no client-SDK
+    90	rules deployed — client SDK access is denied by default; every read/write goes
+    91	through the server, which applies the requester/audit projections.
+    92	
+    93	## Secretary sweep trigger (Cloud Scheduler, design v9 §14.7 A-stage)
+    94	
+    95	The proactive secretary (`POST /api/secretary/sweep`) is fired daily by a Cloud
+    96	Scheduler HTTP job that carries the demo API key as a header (the service stays
+    97	`--allow-unauthenticated`; the endpoint itself returns 401 without the key).
+    98	Production would use OIDC + a dedicated invoker SA (write-up future item).
+    99	
+   100	```bash
+   101	gcloud scheduler jobs create http kd-secretary-sweep \
+   102	  --location=asia-northeast1 --schedule="0 8 * * *" --time-zone=Asia/Tokyo \
+   103	  --uri="https://<SERVICE_URL>/api/secretary/sweep" --http-method=POST \
+   104	  --headers="X-API-Key=<DEMO_API_KEY>" --attempt-deadline=180s
+   105	
+   106	gcloud scheduler jobs run kd-secretary-sweep --location=asia-northeast1   # manual fire
+   107	```
+   108	
+   109	## Demo reset & recording-day procedure
+   110	
+   111	Seed dates are relative to a base date; the server evaluates "today" from
+   112	`DEMO_TODAY` (ISO date, falls back to the real UTC date). To reset for a recording:
+   113	
+   114	```bash
+   115	# 1. wipe everything (agents/profiles/messages/tasks/schedules/mail_seeds/cards) and reseed
+   116	GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=<PROJECT_ID> GOOGLE_CLOUD_LOCATION=global PYTHONPATH=src \
+   117	  .venv/bin/python scripts/generate_seeds.py --use-firestore --project <PROJECT_ID> \
+   118	  --embedder gemini --clear --today YYYY-MM-DD
+   119	
+   120	# 2. pin the same date on the service
+   121	gcloud run services update knowledge-discovery --region=asia-northeast1 --update-env-vars DEMO_TODAY=YYYY-MM-DD
+   122	
+   123	# 3. run one sweep (or wait for the Scheduler job) so the digest cards exist
+   124	```
+   125	
+   126	## Demo-mode simplifications (deliberate)
+   127	
+   128	- Single shared demo API key; the candidate screen has a persona switcher so
+   129	  one operator can play all four roles. Per-user auth is out of scope by spec.
+   130	- `POST /api/probe/unregistered-intent` exists solely to demonstrate the
+   131	  transmission-layer rejection (red row in the audit view) live.
+   132	- `/api/secretary/*` (digest/confirm/dismiss/profile-diff review) does not
+   133	  verify that the caller is the owning employee_id — it trusts the single
+   134	  shared demo API key, same as `/api/query`'s existing `requester_id` param.
+   135	  Anyone with the demo URL can read another persona's digest by swapping
+   136	  `employee_id`. Out of scope by spec (M3, same posture as the persona
+   137	  switcher above).
+
+2026-08-23T00:22:07.160412Z ERROR codex_models_manager::manager: failed to renew cache TTL: missing field `base_instructions` at line 95 column 5
+web search: 
+web search: site:docs.cloud.google.com/scheduler/docs attempt deadline HTTP target SSE streaming response 30 minutes ...
+web search: 
+web search: site:cloud.google.com/sdk/gcloud/reference/scheduler/jobs/create/http --message-body Content-Type application/octet-stream ...
+web search: 
+web search: site:docs.cloud.google.com/agent-registry MCP tools register Service Agent Registry ...
+web search: 
+web search: 'aiplatform.reasoningEngines.delete'
+2026-08-23T00:24:53.137533Z ERROR codex_models_manager::manager: failed to renew cache TTL: missing field `base_instructions` at line 95 column 5
+codex
+公式仕様との照合は完了しました。`env_vars` のSecret参照、Reasoning Engine Service Agent名、Google API宛てOAuth、`session_id`省略自体は正しい一方、B段には実行保証・モデル配置・Registry充足・検証ゲートの新規欠陥が残ります。重大度順に5件へ絞ります。
+対象追補、制約、A段手順、解決済み索引、最新のGoogle Cloud公式仕様を照合し、既決事項を除外して5件に絞り込みました。
+  ✓ 関連メモと対象ファイルの該当箇所を特定する
+  ✓ design v10追補をspec v7・README・ledger制約と照合する
+  ✓ Google Cloud／Agent Runtimeの技術前提を公式資料で検証する
+  ✓ 重大度順に最大5件へ絞り、反証可能な破綻シナリオ付きで報告する
+2026-08-23T00:25:11.750357Z ERROR codex_models_manager::manager: failed to renew cache TTL: missing field `base_instructions` at line 95 column 5
+codex
+反論あり。新規欠陥は5件です。
+
+### Y-1 — Scheduler成功とsweep成功が一致しない
+
+- 種別: 設計
+- 重大度: high
+- 対象: [design.md §14.7](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:402)、[失敗時処理](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:408)
+- 破綻シナリオ: Schedulerが `"Run the daily routine."` を送る → LLMがツールを呼ばず完了文だけ返す、またはツール失敗をSSEイベント内で説明する → `streamQuery` のHTTP自体は2xxで完了 → Schedulerは成功扱いして再試行しない → sweep未実行のまま朝のカードが更新されない。
+
+「1回だけ呼ぶ」はinstructionであり実行保証ではない。またSchedulerはSSE本文を解釈せずHTTP 2xxだけで成功判定するため、「Cloud Run失敗をRuntimeが報告すればSchedulerが再試行する」は成立しない。[Cloud Schedulerの成功判定](https://docs.cloud.google.com/scheduler/docs/reference/rest/v1/projects.locations.jobs)、[ADKのstreamQuery契約](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/use-an-adk-agent?hl=en)
+
+定期起動はLLMを通さない決定的なRuntimeメソッドを用意して `:query` から呼び、Cloud Runの非2xxをRuntimeの非2xxへ伝播させるべきである。対話用 `get_digest` とは経路を分ける。
+
+### Y-2 — Runtime配置先とGemini 3.7 Flashの推論先が不整合
+
+- 種別: 実装
+- 重大度: high
+- 対象: [design.md §14.7 配置](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:404)
+- 破綻シナリオ: Agent Runtimeを `asia-northeast1` に配置し、ADKも同リージョンをモデル呼び出し先として解決 → `gemini-3.7-flash` をTokyo endpointへ要求 → model not found／unsupported location → `run_daily_sweep` も `get_digest` も呼ばれない。
+
+Agent Runtime自体はTokyo対応だが、Gemini 3.7 Flashのモデルendpointは現時点で `global` / `us` / `eu` である。[Runtime対応地域](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/agent-locations)、[Gemini 3.7 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-7-flash)
+
+デプロイ先 `asia-northeast1` と、ADKのモデル呼び出し先 `global` を別設定として明記し、ゴール20に実モデル呼び出し確認を含める必要がある。
+
+### Y-3 — Agent Registry必須制約を成功時・フォールバック時とも弱めている
+
+- 種別: 設計
+- 重大度: high
+- 対象: [design.md Registry方針](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:406)、[フォールバック](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:408)、[spec.md GEAP制約](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/spec.md:129)
+- 破綻シナリオ: Cloud Run上4体の手動登録が失敗 → Runtime秘書1体の存在だけでゴール21を合格 → MCPツールは0件、4体も未登録。それでも「Registry実採用」を完了扱いする。さらにゴール19失敗でRuntimeを削除すると、Registry登録が0件になる。
+
+specは「自作エージェントとMCPツールを登録」「B段失敗時もRegistry登録を維持」としており、v10の緩和は明示制約違反である。また、記述どおりの非A2A ADKエージェントは自動登録されても、推論URLやA2A skillsが自動取得されず、単なる存在レコードになり得る。[自動登録の制限](https://docs.cloud.google.com/agent-registry/register-agents)、[MCPツール登録手順](https://docs.cloud.google.com/agent-registry/register-mcp-servers)
+
+ゴール21は「存在」ではなく、最低1体の検索可能な能力情報と、最低1つのMCP tool specificationを検査すべきである。B段撤退前に代替の手動登録を完了させる順序も必要。
+
+### Y-4 — Schedulerジョブ定義がそのままではJSON APIを呼べない
+
+- 種別: 実装
+- 重大度: high
+- 対象: [design.md Scheduler定義](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:405)
+- 破綻シナリオ: 記載されたJSONを `--message-body` で設定するがContent-Typeを指定しない → Schedulerは `application/octet-stream` を付与 → JSONを要求するAgent Runtime APIが400/415を返す → ゴール19失敗。
+
+公式の `streamQuery` 例は `Content-Type: application/json` を指定する一方、Schedulerのbody既定値は `application/octet-stream` である。[Schedulerの既定ヘッダ](https://docs.cloud.google.com/scheduler/docs/reference/rest/v1/projects.locations.jobs)、[streamQueryのREST例](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/use-an-adk-agent?hl=en)
+
+READMEに、`--message-body`、JSONヘッダ、OAuth、`--attempt-deadline`、retry設定、A/Bジョブの切替順序まで含む実行可能なコマンドが必要。SSEは既定3分のdeadlineとも衝突し得る。
+
+### Y-5 — ゴール22がB段未検証でも成功できる
+
+- 種別: 設計
+- 重大度: mid
+- 対象: [design.md ゴール22](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:243)
+- 破綻シナリオ: `secretary_agent` にADK import誤りや依存関係漏れがある → CI環境にはgoogle-adkがないためB段テストを `skipTest` → 既存スイートはgreen → デプロイ時に初めてImportErrorとなり、凍結直前にB段が全面停止する。
+
+「ADKなしでも既存A段が壊れない」と「B段が動く」は別ゴールにすべきである。前者はskip可、後者はピン留め依存を導入した専用環境でskip 0件を必須にする必要がある。
+
+なお、以下は欠陥ではない。
+
+- `env_vars={"KEY": {"secret": ..., "version": "latest"}}` とReasoning Engine Service Agentへの `secretAccessor` は正しい。
+- `*.googleapis.com` 宛てにScheduler OAuthを使う判断も正しい。
+- `session_id` 省略は新規セッションが作られる正式仕様であり、問題ではない。
+- 2ツール境界は直接のconfirm／配送を防ぐ。ただし `run_daily_sweep` はカード・監査等を書き込むため「読み取りツールのみ」という表現は誤りで、「配送権限を持たない」と記述すべきである。
+
+8/29凍結の観点では、B段は「決定的なRuntime起動＋検証可能なRegistry登録」までに縮めるのが妥当。現在のLLM経由cron、対話、将来のMemory/A2A価値を一括で背負う構成は、A段の完成度に対して過剰である。
+
+ワークスペースがread-onlyのため、`design-loop` 所定のfresh Claude批評の保存、`ledger.md`・`state.json`更新は実施していません。上記はCodexによる独立批評です。
+tokens used
+201,473
+反論あり。新規欠陥は5件です。
+
+### Y-1 — Scheduler成功とsweep成功が一致しない
+
+- 種別: 設計
+- 重大度: high
+- 対象: [design.md §14.7](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:402)、[失敗時処理](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:408)
+- 破綻シナリオ: Schedulerが `"Run the daily routine."` を送る → LLMがツールを呼ばず完了文だけ返す、またはツール失敗をSSEイベント内で説明する → `streamQuery` のHTTP自体は2xxで完了 → Schedulerは成功扱いして再試行しない → sweep未実行のまま朝のカードが更新されない。
+
+「1回だけ呼ぶ」はinstructionであり実行保証ではない。またSchedulerはSSE本文を解釈せずHTTP 2xxだけで成功判定するため、「Cloud Run失敗をRuntimeが報告すればSchedulerが再試行する」は成立しない。[Cloud Schedulerの成功判定](https://docs.cloud.google.com/scheduler/docs/reference/rest/v1/projects.locations.jobs)、[ADKのstreamQuery契約](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/use-an-adk-agent?hl=en)
+
+定期起動はLLMを通さない決定的なRuntimeメソッドを用意して `:query` から呼び、Cloud Runの非2xxをRuntimeの非2xxへ伝播させるべきである。対話用 `get_digest` とは経路を分ける。
+
+### Y-2 — Runtime配置先とGemini 3.7 Flashの推論先が不整合
+
+- 種別: 実装
+- 重大度: high
+- 対象: [design.md §14.7 配置](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:404)
+- 破綻シナリオ: Agent Runtimeを `asia-northeast1` に配置し、ADKも同リージョンをモデル呼び出し先として解決 → `gemini-3.7-flash` をTokyo endpointへ要求 → model not found／unsupported location → `run_daily_sweep` も `get_digest` も呼ばれない。
+
+Agent Runtime自体はTokyo対応だが、Gemini 3.7 Flashのモデルendpointは現時点で `global` / `us` / `eu` である。[Runtime対応地域](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/agent-locations)、[Gemini 3.7 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-7-flash)
+
+デプロイ先 `asia-northeast1` と、ADKのモデル呼び出し先 `global` を別設定として明記し、ゴール20に実モデル呼び出し確認を含める必要がある。
+
+### Y-3 — Agent Registry必須制約を成功時・フォールバック時とも弱めている
+
+- 種別: 設計
+- 重大度: high
+- 対象: [design.md Registry方針](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:406)、[フォールバック](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:408)、[spec.md GEAP制約](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/spec.md:129)
+- 破綻シナリオ: Cloud Run上4体の手動登録が失敗 → Runtime秘書1体の存在だけでゴール21を合格 → MCPツールは0件、4体も未登録。それでも「Registry実採用」を完了扱いする。さらにゴール19失敗でRuntimeを削除すると、Registry登録が0件になる。
+
+specは「自作エージェントとMCPツールを登録」「B段失敗時もRegistry登録を維持」としており、v10の緩和は明示制約違反である。また、記述どおりの非A2A ADKエージェントは自動登録されても、推論URLやA2A skillsが自動取得されず、単なる存在レコードになり得る。[自動登録の制限](https://docs.cloud.google.com/agent-registry/register-agents)、[MCPツール登録手順](https://docs.cloud.google.com/agent-registry/register-mcp-servers)
+
+ゴール21は「存在」ではなく、最低1体の検索可能な能力情報と、最低1つのMCP tool specificationを検査すべきである。B段撤退前に代替の手動登録を完了させる順序も必要。
+
+### Y-4 — Schedulerジョブ定義がそのままではJSON APIを呼べない
+
+- 種別: 実装
+- 重大度: high
+- 対象: [design.md Scheduler定義](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:405)
+- 破綻シナリオ: 記載されたJSONを `--message-body` で設定するがContent-Typeを指定しない → Schedulerは `application/octet-stream` を付与 → JSONを要求するAgent Runtime APIが400/415を返す → ゴール19失敗。
+
+公式の `streamQuery` 例は `Content-Type: application/json` を指定する一方、Schedulerのbody既定値は `application/octet-stream` である。[Schedulerの既定ヘッダ](https://docs.cloud.google.com/scheduler/docs/reference/rest/v1/projects.locations.jobs)、[streamQueryのREST例](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/use-an-adk-agent?hl=en)
+
+READMEに、`--message-body`、JSONヘッダ、OAuth、`--attempt-deadline`、retry設定、A/Bジョブの切替順序まで含む実行可能なコマンドが必要。SSEは既定3分のdeadlineとも衝突し得る。
+
+### Y-5 — ゴール22がB段未検証でも成功できる
+
+- 種別: 設計
+- 重大度: mid
+- 対象: [design.md ゴール22](/Users/toshixa/dev/Knowledge-discovery/design/knowledge-discovery/design.md:243)
+- 破綻シナリオ: `secretary_agent` にADK import誤りや依存関係漏れがある → CI環境にはgoogle-adkがないためB段テストを `skipTest` → 既存スイートはgreen → デプロイ時に初めてImportErrorとなり、凍結直前にB段が全面停止する。
+
+「ADKなしでも既存A段が壊れない」と「B段が動く」は別ゴールにすべきである。前者はskip可、後者はピン留め依存を導入した専用環境でskip 0件を必須にする必要がある。
+
+なお、以下は欠陥ではない。
+
+- `env_vars={"KEY": {"secret": ..., "version": "latest"}}` とReasoning Engine Service Agentへの `secretAccessor` は正しい。
+- `*.googleapis.com` 宛てにScheduler OAuthを使う判断も正しい。
+- `session_id` 省略は新規セッションが作られる正式仕様であり、問題ではない。
+- 2ツール境界は直接のconfirm／配送を防ぐ。ただし `run_daily_sweep` はカード・監査等を書き込むため「読み取りツールのみ」という表現は誤りで、「配送権限を持たない」と記述すべきである。
+
+8/29凍結の観点では、B段は「決定的なRuntime起動＋検証可能なRegistry登録」までに縮めるのが妥当。現在のLLM経由cron、対話、将来のMemory/A2A価値を一括で背負う構成は、A段の完成度に対して過剰である。
+
+ワークスペースがread-onlyのため、`design-loop` 所定のfresh Claude批評の保存、`ledger.md`・`state.json`更新は実施していません。上記はCodexによる独立批評です。
