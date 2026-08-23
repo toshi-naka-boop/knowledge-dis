@@ -1,5 +1,17 @@
 # ledger: knowledge-discovery
 
+## 批評round-13（design v13 接続部品・2巡目）の帰結 — 2026-08-23
+
+原文: reviews/round-13.md（claude C-41〜C-45）＋ round-13-codex-raw.txt（codex W-1〜W-5）。10件・重複統合で実質7論点、**全件受理**し v14 に反映。round-12 の8論点は両criticとも「概ね閉じた」と評価。
+
+- **W-1（critical・新規）**: consent の本人性が URL の agent_id だけで、ask_audit_id の宛先・pending・二重POSTを検証していない → 権限表の consent 行に「ask.to_entity==agent_id・intent connect_ask系・pending をトランザクションで検証→遷移、二重は409」を明記、service.py を変更対象に、ゴール23に追加
+- **C-42 / W-2 / C-45（high・一致）**: system の共通鍵＋`X-KD-Tenant` で他テナント digest が読め「越境は sweep のみ」と矛盾、権限表が閉じていない（probe・me・agents・監査・attachments） → **APIキーをテナント単位**にし system/demo をテナント束縛、`X-KD-Tenant`・全テナント sweep・B段コード変更を撤回（Scheduler/Runtime はテナントごとに1組）。全ルート×3主体の default-deny 表を掲載（probe は human ×、attachments/静的は現行どおり認証なし）。侵害半径を明記
+- **C-43（high）**: IAP をエッジに置くと API キーの機械主体が通らない → iap モードは機械主体も IAP 経由（SA の email を台帳 `system_accounts` で system 判定、Scheduler は OIDC）。API キーは demo 専用
+- **C-41 / C-44 / W-3（high/mid/high）**: `last_updated_at` の所有が未定義、`last_seen_due` 初期値で初回に全件+1、ページング途中で reconciliation が削除・完了を誤認、「dismissed 後の due 変更で再判定」が現行と矛盾 → `last_updated_at`=Tasks.updated をコネクタ所有に、初回は設定のみ、**完全性バリア**（全リスト・全ページ成功時のみ破壊的 reconciliation）、再判定の記述を撤回
+- **W-4（high）**: IAP 検証の鍵キャッシュ・時計ずれ・起動検査の適用条件・負系テスト → skew 30s、鍵キャッシュ（失敗時は旧鍵、期限切れは401）、audience 検査は iap のみ、負系を列挙
+- **W-5（前提/high）**: §16.4 は1.5〜2日に収まらず、models.py 抜け、ContextRouter キャッシュ、Runtime 重複巡回、「既存テスト不変」の言い過ぎ → **§16.0 部品単位の優先順と個別ゲート**（A認証→Bテナント→C Tasks/Calendar、Gmail は stretch で未実装）、models.py を範囲に、キャッシュは再起動反映と明記、テナント単位鍵で重複巡回を解消、主張を「demo/seed の機能結果不変（2環境ゲート）」に言い換え
+
+
 ## 批評round-12（design v12 接続部品）の帰結 — 2026-08-23
 
 原文: reviews/round-12.md（claude C-36〜C-40）＋ round-12-codex-raw.txt（codex Z-1〜Z-6）。11件・重複統合で実質8論点、**全件受理**し v13 に反映。ユーザー指示で批評は2巡（round-13 を続ける）。

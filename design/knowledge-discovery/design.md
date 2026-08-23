@@ -1,8 +1,8 @@
-# knowledge-discovery 設計書 v13
+# knowledge-discovery 設計書 v14
 
 入力: `spec.md` v8（§16 が v8 の FR25〜30「接続部品」に対応。§14〜§15 は v7 の FR16〜24）
-生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映 / v10: B段（Agent Runtime載せ替え）の詳細化（2026-08-23、ユーザー決定「B段を実施」を受けて§14.7を追補。A段は本番稼働済み・反証round-8/9クローズ済み） / v11: 批評round-10（claude C-31〜C-35 + codex Y-1〜Y-5）反映 / v12: 接続部品（spec v8 FR25〜30）の追補 §16（2026-08-23） / v13: 批評round-12（claude C-36〜C-40 + codex Z-1〜Z-6）反映
-状態: 改訂版（批評2巡目待ち。追補は §16・§10ゴール23〜30・§12対応表。B段 `secretary_agent/client.py` にテナントヘッダ1点の変更あり）
+生成日: 2026-08-18（v5起草） / v6: 批評round-4のC-16〜C-20反映 / v7: 批評round-5のC-21〜C-25反映 / v8: M3秘書プロアクティブ層の追補（2026-08-19。§14〜、§10/§11/§12/§15に追記） / v9: 批評round-7（claude C-26〜C-30 + codex X-1〜X-5）反映 / v10: B段（Agent Runtime載せ替え）の詳細化（2026-08-23、ユーザー決定「B段を実施」を受けて§14.7を追補。A段は本番稼働済み・反証round-8/9クローズ済み） / v11: 批評round-10（claude C-31〜C-35 + codex Y-1〜Y-5）反映 / v12: 接続部品（spec v8 FR25〜30）の追補 §16（2026-08-23） / v13: 批評round-12（claude C-36〜C-40 + codex Z-1〜Z-6）反映 / v14: 批評round-13（claude C-41〜C-45 + codex W-1〜W-5）反映
+状態: 改訂版（承認CP待ち。追補は §16・§10ゴール23〜30・§12対応表。B段コードの変更は不要になった）
 
 **v9での変更点（批評round-7由来）**:
 - C-26/X-1: プレビュー専用の `embedding_public` を新設（1段目ランキングからもprivateの影響を排除）。プレビューと正式実行の候補差は仕様として明示しUI文言に反映
@@ -241,14 +241,14 @@ messages/{audit_id}
 20. （M3・B段）SDK経由で `async_stream_query(user_id="emp_jordan_lee", message="What's on my plate today?")` を送ると `get_my_digest` が（引数なし・セッションの user_id で）呼ばれ、Jordanの停滞カード・期日リマインドを含む要約がAI発言として返る＝**実モデル呼び出しが global エンドポイントで成功**することを確認できる。Runtime秘書のLLMツール一覧が `get_my_digest` のみであり、`run_daily_sweep` と書き込み系が**LLMツールとして存在しない**ことを確認できる。別の user_id のセッションから Jordan のダイジェストが読めないことを確認できる
 21. （M3・B段と独立）Agent Registry に、Cloud Run 上の4体エージェント（手動登録）と Runtime 秘書（自動登録）が**説明・能力情報つきで**一覧・検索できることを Console または API で確認できる。手動登録は 8/27 より前に完了している
 22. （M3・B段）(a) `secretary_agent` のツール関数・オペレーションの単体テストが HTTP フェイクでオフラインに通り、既存スイートが google-adk 未インストール環境でも壊れない（import失敗時 skipTest）こと、**および (b) ピン留め依存を入れた B段専用環境（`.venv-agent` 等）で同テストが skip 0件で通る**ことを確認できる（Y-5対応: 「ADKなしで壊れない」と「B段が動く」を別ゴールにする）
-23. （v8）`AUTH_MODE=iap`: テスト用ES256鍵で署名した IAP 形式の JWT（正しい iss/aud/exp/email）が実検証コードで employee_id に解決され、署名不正・aud不一致・期限切れが 401 になること。human 主体で他人の資源を指す**全列挙経路**（query の requester_id／requester status／candidate asks・consent／secretary digest／confirm・dismiss・review の card 所有者）が 403 になること。`AUTH_MODE=demo_key` では既存テスト全件（97＋13）が不変
-24. （v8）`/api/me` が mode / tenant_id / employee_id を返し、requester.html が `human` のときペルソナ切替を表示しないこと。権限表どおり、human の `POST /api/secretary/sweep` が 403、system の human-facing 書き込みが 403 になること
-25. （v8）2テナント（InMemory）で、テナントAのプロフィール・カード・監査行がテナントBの全APIから見えないこと。実Firestoreで第2DB `kd-tenant-b` にシードを入れ、テナント別に digest が分離されることを実機確認できる（確認後にDB削除）
-26. （v8）system 主体の sweep が台帳の全テナントを処理しテナント別件数を返すこと（Scheduler／Runtime の起動経路は無変更で動く）。`IAP_AUDIENCE` の形式不正で起動が失敗すること
-27. （v8）`GoogleWorkspaceConnector` がフェイクAPI応答で tasks / schedules / mail_seeds に写像され、同じ入力の再同期で重複も `reschedule_count` 増加もなく、due 変更で +1、Tasks の completed と取得結果からの消滅が `done`（→状態機械で `resolved`）、Calendar の窓外・取消が削除されることをオフラインで確認できる。件名・本文がログに出ないこと
-28. （v8）作者アカウントの読み取り専用資格情報で `scripts/gws_probe.py` が件数を返し、**シード無しの空 InMemory** で `SOURCE_CONNECTOR=google_workspace GWS_SELF_EMPLOYEE_ID=…` の sweep→digest に実データ由来のリマインド／停滞カードが現れることを確認できる（記録は件数・種別のみ。Gmail は任意）
-29. （v8）README に認証モード・権限表・テナント台帳・コネクタ設定・IAP有効化／DWD手順・Gmail取り扱い（opt-inラベル・保持期限）が記載されていること
-30. （v8）B段 Runtime が `X-KD-Tenant` を付けて digest/sweep を呼び、サーバが system 主体としてテナント文脈を選ぶこと（既定テナントでは現行互換＝B段テスト13件不変）
+23. （部品A）`AUTH_MODE=iap`: テスト用ES256鍵で署名した IAP 形式 JWT が実検証コードで employee_id に解決され、署名不正・aud/iss 不一致・期限切れ・未来iat・email欠落が 401、skew 境界（±30秒）が許容されること。human 主体で他人の資源を指す全列挙経路（query の requester_id／requester status／candidate asks／consent（他人宛 ask_audit_id・非pending・二重POST）／secretary digest／confirm・dismiss・review の card 所有者）が 403（二重POSTは 409）になること。`AUTH_MODE=demo_key` では demo 経路の機能結果が不変（2環境ゲート green）
+24. （部品A）`/api/me` が mode / tenant_id / employee_id を返し、requester.html が `human` のときペルソナ切替を隠すこと。権限表どおり human の sweep／probe が 403、system の human-facing 書き込みが 403 になること
+25. （部品B）2テナント（InMemory）で、テナントAのプロフィール・カード・監査行がテナントBの全APIから見えず、テナントAの鍵で system 主体がテナントBの digest を取れないこと。実Firestoreで第2DB `kd-tenant-b` にシードを入れ、テナント別に digest が分離されることを実機確認できる（確認後にDB削除）
+26. （部品B）テナント単位の鍵で sweep がそのテナントだけを処理すること。`IAP_AUDIENCE` の形式不正は iap モードでのみ起動失敗し、demo では不要なこと
+27. （部品C）`GoogleWorkspaceConnector` がフェイクAPI応答で tasks / schedules に写像され、同じ入力の再同期で重複も `reschedule_count` 増加もなく、初回同期で加算されず、due 変更で +1、`last_updated_at` が Tasks.updated を写し、completed と取得結果からの消滅が `done`（→ `resolved`）、ページング途中エラー時に破壊的 reconciliation が行われず、Calendar の窓外・取消が削除されることをオフラインで確認できる
+28. （部品C）作者アカウントの読み取り専用資格情報で `scripts/gws_probe.py` が件数を返し、シード無しの空 InMemory で `SOURCE_CONNECTOR=google_workspace GWS_SELF_EMPLOYEE_ID=…` の sweep→digest に実データ由来のリマインド／停滞カードが現れることを確認できる（記録は件数・種別のみ）
+29. （共通）README に認証モード・権限表・テナント台帳（鍵と system_accounts）・コネクタ設定・IAP有効化／Scheduler OIDC／DWD 手順・Gmail の設計方針が記載されていること
+30. （共通）降格した部品がある場合、spec FR25〜30・README・本ゴールが「部品のみ（実アダプタは将来）」に同時に書き換えられていること
 
 ## 11. デモ動画の構成（3分・英語）
 
@@ -445,76 +445,95 @@ score = W_OVERDUE   × min(期日超過日数, CAP)
 - （M3・B段）Cloud Run上4体の Agent Registry 手動登録: Registry API（Agent/Serviceリソース）の具体手順は実装時に確認。通らなければ将来項目として正直に記載
 - （M3・B段）Runtime秘書のカスタムSA化・Memory Bank利用は将来項目（write-up）
 
-## 16. 接続部品（spec v8 FR25〜30。v12追補、v13で批評round-12を反映）
+## 16. 接続部品（spec v8 FR25〜30。v12追補、v13/v14で批評round-12/13を反映）
 
-**背骨**: 3つとも「差し替え点（インターフェース）＋実装2つ（デモ用／本番用）＋envで切替」の同型。デモ経路（`demo_key`／1テナント／`seed`）の挙動は**変えない**（既存テスト97件＋B段13件が不変であることが回帰の定義）。既存の配送・同意・監査・マッチングのロジックには触れない。
+**背骨**: 3つとも「差し替え点（インターフェース）＋実装2つ（デモ用／本番用）＋envで切替」の同型。**デモ経路（`demo_key`／1テナント／`seed`）の機能結果は変えない**（既存テストは依存注入の変更で最小限の書き換えが入り得るが、期待値は変えない。`.venv` 97件＋`.venv-agent` 13件の2環境ゲート）。既存の配送・同意・監査・マッチングのロジックには触れない。
+
+### 16.0 部品の優先順と個別ゲート（W-5/C-総評対応）
+
+規模の実態: ContextRouter 化は server.py の全ルート改修、models/Store の拡張、3外部API、暗号テストを含み、一括では 8/27 に収まらない。よって**部品ごとに順に作り、個別に反証を通し、通らなかった部品から順に降格する**:
+
+| 順 | 部品 | 含む | 個別ゲート（ゴール） | 撤退時の降格 |
+|---|---|---|---|---|
+| A | 認証の差し替え点 | Principal／権限表（全ルート default-deny）／IAP 検証（オフライン・本物JWT）／require_self 全列挙／`/api/me`／UI | 23・24 | demo のみ残し FR25〜26 を「部品のみ」に |
+| B | テナント＝DB | TenantRegistry／ContextRouter／テナント単位APIキー／identities／2テナントInMemory／第2DB smoke | 25・26 | 既定テナント1組のみ残し FR27 を「部品のみ」に |
+| C | データ源の差し替え点 | SourceConnector／Seed／GoogleWorkspace（**Tasks→Calendar**）／reconciliation／probe スクリプト／作者ADC確認 | 27・28 | Seed のみ残し FR28〜30 を「部品のみ」に |
+| — | Gmail アダプタ | **今回は作らない（stretch）**。ラベル opt-in・保持期限の設計文のみ残す | — | — |
+
+実機依存の確認（第2DB・作者ADC）は「手動実機ゲート」、JWT・2テナント・フェイクAPIは「オフラインCIゲート」として分ける。撤退時は spec FR／README／ゴールを同時に降格し、完了扱いにしない。
 
 ### 16.1 認証の差し替え点（FR25〜26）
 
 ```
 Principal { mode: "demo" | "human" | "system", tenant_id: str, employee_id: str | None, email: str | None }
 PrincipalResolver.resolve(request) -> Principal   # 失敗は 401
-  AUTH_MODE=demo_key : X-API-Key / api_key が一致 → mode=demo、tenant=既定、employee_id=None（各APIは従来どおり申告値を使う＝現行不変）
-  AUTH_MODE=iap      : (a) X-Goog-IAP-JWT-Assertion あり → 検証成功で mode=human（下記）
-                       (b) 代わりに X-API-Key が一致 → mode=system（機械主体: Scheduler A段 / Runtime 秘書 / 運用スクリプト）
-                       (c) どちらも無し／検証失敗 → 401
+  AUTH_MODE=demo_key : X-API-Key / api_key が既定テナントの鍵と一致 → mode=demo、tenant=既定、employee_id=None（各APIは従来どおり申告値＝現行不変）
+  AUTH_MODE=iap      : X-Goog-IAP-JWT-Assertion を検証 → email を得る
+                         email がテナント台帳の system_accounts（SAのメール）に一致 → mode=system（そのテナントに束縛）
+                         さもなくば email のドメイン→テナント→identities → mode=human
+                       API キーは iap モードでは受け付けない（機械主体も IAP 経由。Scheduler は OIDC で IAP を通す。README に手順）
 ```
 
-- **IAP JWT 検証（Z-2対応）**: google-auth `id_token.verify_token` で ES256・公開鍵 `https://www.gstatic.com/iap/verify/public_key`。**audience は Cloud Run IAP の形式 `/projects/<PROJECT_NUMBER>/locations/<REGION>/services/<SERVICE>`** を env `IAP_AUDIENCE` に取り、起動時に正規表現で形式検査（run.app URL や OAuth client ID を渡した設定ミスを起動時に落とす）。`iss == https://cloud.google.com/iap`、`exp`/`iat`、`email` claim の存在を検証。`X-Goog-Authenticated-User-Email` は表示用のみ。`google-auth` は明示的に `scripts/requirements.txt` にピン留め（推移依存任せにしない）
-- **テナント・社員の解決**: email を小文字正規化 → 台帳 `email_domains` で**一意に**テナント確定（台帳は起動時に重複ドメインを拒否。未登録ドメインは 403）→ テナントDBの `identities/{email}` → employee_id（無ければ 403）
-- **本人性突合（FR26、C-36/Z-1対応）**: `human` のとき、資源の所有者と principal.employee_id を照合し不一致は 403。対象を**列挙**する（漏れを作らない）:
-  - `POST /api/query`（`requester_id`）
-  - `GET /api/requester/{id}/status`
-  - `GET /api/candidate/{agent_id}/asks`、`POST /api/candidate/{agent_id}/consent`（`agents` で agent_id→employee_id に解決して照合）
-  - `GET /api/secretary/digest`（`employee_id`）
-  - `POST /api/secretary/confirm`、`/dismiss`、`/profile-diff/{card_id}/review`（**card_id からカードを読み `owner_employee_id` と照合**）
-  - `GET /api/audit/messages`・`GET /api/agents`・`/attachments/{id}`: テナント内の可視（監査は spec 上「全員が見る」画面。テナント境界のみ）
-- **主体×エンドポイントの権限表**: `POST /api/secretary/sweep` は **system（と demo）のみ**（human は 403。C-38/Z-3 の「一般社員が全テナントの sweep を起動できる」経路を閉じる）。human-facing の書き込み（query/confirm/dismiss/review/consent）は **human（と demo）のみ**（system は 403）。`GET /api/secretary/digest` は human（本人）と system（**`X-KD-Tenant` ヘッダ＋employee_id 明示** — B段 Runtime の対話用。§16.2）
-- `/api/me` を追加（mode / tenant_id / employee_id）。requester.html / candidate.html は起動時に参照し、`human` のときはペルソナ切替を隠して本人固定（demo では従来どおり）
-- `iap` を本体デモサービスに掛けない理由（鍵方式UIと両立しない）と、IAP を経由しない経路を残さない設定（Cloud Run IAP統合＋`--no-allow-unauthenticated`）は README に手順として記載。実機有効化の確認は spec 未決（任意・別サービス）
+- **IAP JWT 検証（Z-2/W-4対応）**: google-auth `id_token.verify_token`、ES256、公開鍵 `https://www.gstatic.com/iap/verify/public_key`、`clock_skew_in_seconds=30`、`iss == https://cloud.google.com/iap`、`exp/iat`、`email` claim 必須。**公開鍵はプロセス内キャッシュ**（Cache-Control／既定1時間、取得失敗時は期限内の旧鍵で継続、期限切れなら 503 ではなく 401 で fail-closed）。audience は Cloud Run IAP 形式 `/projects/<PROJECT_NUMBER>/locations/<REGION>/services/<SERVICE>` を `IAP_AUDIENCE` に取り、**`AUTH_MODE=iap` のときだけ**起動時に形式検査（demo では未設定でよい）。`X-Goog-Authenticated-User-Email` は表示用のみ。`google-auth` は `scripts/requirements.txt` に明示ピン留め
+- **テナント・社員の解決**: email を小文字正規化 → 台帳 `email_domains` で一意にテナント確定（起動時に重複ドメイン拒否。未登録は 403）→ テナントDBの `identities/{email}` → employee_id（無ければ 403）
+- **主体×ルートの権限表（default-deny。W-2/C-45対応。行＝server.py の全ルート）**:
+
+| ルート | demo | human | system |
+|---|---|---|---|
+| `GET /api/me` | ○ | ○ | ○ |
+| `GET /api/agents` | ○ | ○（テナント内） | ○（テナント内） |
+| `POST /api/query` | ○ | ○ **requester_id＝本人** | × |
+| `GET /api/requester/{id}/status` | ○ | ○ 本人 | × |
+| `GET /api/candidate/{agent_id}/asks` | ○ | ○ agent→employee＝本人 | × |
+| `POST /api/candidate/{agent_id}/consent` | ○ | ○ 本人 **かつ ask_audit_id の ask が `to_entity==agent_id`・intent が connect_ask系・`consent_state==pending` を同一トランザクションで検証して遷移**（W-1。二重POSTは2回目が409） | × |
+| `GET /api/secretary/digest` | ○ | ○ 本人 | ○ **自テナント内の employee_id 明示**（Runtime 対話用。鍵がテナント束縛なので越境不可） |
+| `POST /api/secretary/sweep` | ○ | × | ○ 自テナントのみ |
+| `POST /api/secretary/confirm` `/dismiss` `/profile-diff/{card_id}/review` | ○ | ○ **card の owner＝本人** | × |
+| `GET /api/audit/messages` | ○ | ○（テナント内） | ○（テナント内） |
+| `POST /api/probe/unregistered-intent` | ○ | × | ○ |
+| `GET /attachments/{id}` | 認証なしのまま（事前配置のデモ用公開ファイル。現行テストの期待を維持） |
+| `GET /` `/requester` `/candidate` `/audit`（静的） | 認証なし（データを含まない。現行どおり） |
+
+- `/api/me` を追加。requester.html / candidate.html は起動時に参照し、`human` のときはペルソナ切替を隠して本人固定
+- **割り切りの明記**: 誰が呼んでも `demo` は申告値を信じる（鍵1本のデモ）。本番は `iap`。IAP を経由しない経路を残さない設定（Cloud Run IAP統合＋`--no-allow-unauthenticated`）は README に手順。実機有効化の確認は任意（別サービス）
 
 ### 16.2 テナント＝Firestoreデータベース分離（FR27）
 
 ```
-TenantRegistry（env TENANTS_JSON、既定 [{"tenant_id":"meridian","database":"(default)","email_domains":["meridian-care.example"]}]。起動時検証: tenant_id一意・database一意・ドメイン一意）
-TenantContext { store, service, secretary, matching, static_counts }   # テナントごとに1組、遅延生成・キャッシュ
+TenantRegistry（env TENANTS_JSON。既定 [{"tenant_id":"meridian","database":"(default)","email_domains":["meridian-care.example"],"api_key_env":"DEMO_API_KEY","system_accounts":[]}]。起動時検証: tenant_id／database／ドメイン／鍵の一意）
+TenantContext { store, service, secretary, matching, static_counts }   # テナントごとに1組、遅延生成・プロセス内キャッシュ（台帳変更は再起動で反映。README明記）
 ContextRouter.for_tenant(tenant_id) -> TenantContext
 ```
 
-- 既存の「起動時に1組」を「テナントごとに1組」に一般化。`demo` では既定テナント1組なので挙動は同一。`static_counts`（監査ファネルの件数）もテナント文脈に移す（C-38）
-- **分離の主張は正確に（Z-3対応）**: これは**DB境界による分離**であり、プロセス境界ではない（同一プロセス・同一SAが全DBに到達できる）。守っているのは「リクエスト処理のコードが principal.tenant_id の TenantContext だけを受け取り、テナント横断のクエリを書く場所が無い」こと、および**横断到達が許される主体は system の sweep のみ**であること。Firestore Security Rules はサーバクライアント（ADC/IAM）には効かないため防壁として数えない（§3の記述はクライアントSDK向けのまま）
-- **sweep のテナント巡回**: `POST /api/secretary/sweep` は system 主体のみが呼べ、台帳の全テナントを順に処理して**テナント別件数を system 呼び出し元にだけ**返す（human には 403 なので件数が漏れない）
-- **B段 Runtime のテナント（Z-4/C-40対応）**: Runtime 秘書は**テナントごとに1デプロイ**（env `KD_TENANT_ID`、既定 `meridian`）。`secretary_agent/client.py` は全リクエストに `X-KD-Tenant: <KD_TENANT_ID>` を付け、サーバは system 主体のときこのヘッダでテナント文脈を選ぶ（無ければ既定テナント＝現行互換）。`run_daily_sweep` は全テナント sweep のまま（system）。これは v11 承認済み B段への**最小変更（ヘッダ1つ）**であり、本節の批評・承認範囲に含める
-- シード投入は `--database` で対象DBを選ぶ。検証用の第2DB `kd-tenant-b`（`gcloud firestore databases create --database=kd-tenant-b --location=asia-northeast1 --type=firestore-native`）に小さなシードを入れて分離を実機確認し、確認後に削除（Teardown に追記）
+- **APIキーはテナント単位（C-42/W-2/W-5対応）**: `demo`／`system` 主体は「どの鍵と一致したか」でテナントに束縛される。全テナント横断の鍵・`X-KD-Tenant` ヘッダ・全テナント sweep は**置かない**。Scheduler ジョブと B段 Runtime は**テナントごとに1組**（Runtime は env `KD_API_KEY` にそのテナントの鍵）。デモは1テナント＝現行構成そのもの（B段コードの変更不要。Runtime 重複巡回も起きない）
+- **分離の主張は正確に（Z-3対応）**: DB境界による分離（プロセス境界ではない）。守っているのは「リクエストは principal.tenant_id の TenantContext だけを受け取り、テナント横断のクエリを書く場所が無い」「越境到達が可能な主体が存在しない（鍵も IAP も束縛される）」。Firestore Security Rules はサーバクライアントに効かないため防壁に数えない。**侵害半径**: あるテナントの鍵が漏れればそのテナント全体（他テナントは無傷）
+- `static_counts`（監査ファネル）もテナント文脈へ。Gemini/埋め込みクライアントはステートレスなので共有可、Firestore クライアントは DB ごと
+- シード投入は `--database` で対象DBを選ぶ。検証用第2DB `kd-tenant-b` に小さなシードを入れ分離を実機確認し、確認後に削除（Teardown 追記）
 
 ### 16.3 データ源の差し替え点（FR28〜30）
 
 ```
-SourceConnector.sync(store, owner_employee_id, today) -> SyncSummary{tasks, schedules, mails, skipped, errors}   # 冪等
-  ├─ SeedConnector            : 無操作（シード投入済み）
-  └─ GoogleWorkspaceConnector : Tasks / Calendar / Gmail の REST を google-auth AuthorizedSession で呼ぶ（読み取り専用スコープ。google-auth は明示ピン留め、他に新規依存なし）
+SourceConnector.sync(store, owner_employee_id, today) -> SyncSummary{tasks, schedules, mails, skipped, errors, complete: bool}   # 冪等
+  ├─ SeedConnector            : 無操作
+  └─ GoogleWorkspaceConnector : Tasks / Calendar の REST を google-auth AuthorizedSession で呼ぶ（読み取り専用スコープ）。Gmail は stretch（今回は未実装）
 ```
 
-- **sync-then-detect**: `run_sweep` の先頭でテナントの所有者に `connector.sync` を実行してから検知。`seed` は無操作＝既存挙動・テスト不変。`SOURCE_CONNECTOR=seed|google_workspace`（既定 seed）
-- **所有者↔Googleアカウント**: 原則 `identities`（email）。作者本人の確認は**単独モード** `GWS_SELF_EMPLOYEE_ID=<employee_id>`: その所有者だけ同期し、他の所有者は `skipped` に数える（errors ではない。Z-6）。複数社員を読む本番形（SA＋ドメイン全体委任）は手順のみ README
-- **フィールドの所有（C-39対応）**: コネクタが書くのは供給元由来フィールド（title / description / due_date / status / `source="gws"` / `last_seen_due`）だけ。秘書所有フィールド（`reschedule_count` / `created_at` / `status_changed_at`）は次の規則でのみ更新:
-  - `reschedule_count`: 取得した due が **`last_seen_due` と異なるときだけ +1**し `last_seen_due` を更新（同じ due の再同期では増えない＝A段・B段の1日2回sweepでも二重計上しない）
-  - `created_at`: 初回同期時刻。`status_changed_at`: 初回は Tasks の `updated`（`created_at` より前の時刻になるため「着手なし＝created_at==status_changed_at」は構造的に 0。以後は status 変化を検出した同期時刻）
-  - due の正規化: Tasks の RFC3339 `due` → 日付（UTC日付）。due 無しは `due_date=None`（期日超過シグナル 0）
-- **Tasks の取得と reconciliation（C-37/Z-5対応）**: `tasks.list` を `showCompleted=true&showHidden=true` で取得し、`status=completed` → `done`。**取得結果に現れないローカルの `source="gws"` タスク（削除・別リスト移動）も `done`** にする（状態機械が `resolved` で閉じる）。`task_id = gws_task_<tasklist>_<id>`
-- **Calendar の reconciliation（Z-5）**: 今日〜N日先（既定3）の予定→ `meeting_prep`、昨日〜今日の終了済み→ `meeting_review`。**窓の外に出た／取消（status=cancelled）の `source="gws"` schedule は削除**（古い会議リマインドが overdue として残らない）。`item_id = gws_cal_<eventId>_<kind>`。経費・週報・ジャーナルはカレンダーから作らない
-- **Gmail（Z-6対応、既定 OFF）**: `GWS_GMAIL_ENABLED=false` が既定。有効時は**所有者が `kd-secretary` ラベルを付けたメールだけ**（opt-in）、直近N日・上限M件、本文 text/plain を K 文字（既定2000）に切り詰め、`mail_id = gws_mail_<msgId>`、既存IDは再投入しない。件名はカード表示用に80文字まで。**保持期限**: 差分提案の処理後（カード生成 or 明示null）に mail_seeds の本文を空にし、未処理でも 14 日で削除。Gemini に渡すのは切り詰め後の本文のみ。件名・本文をログ・監査 payload・エラーメッセージに出さない。Gmail の実動確認は任意（spec 未決）で、読む場合も上記ラベル opt-in に限る
-- **失敗時**: API 拒否・スコープ不足は `errors` に件数で積み、検知は続行（朝のカードを失わない）。認証情報・本文はエラー文に含めない
-- **ADC スコープの現実（Z-6）**: `gcloud auth application-default login --scopes=cloud-platform,tasks.readonly,calendar.readonly[,gmail.readonly]` を一次手段とする。gcloud 既定の OAuth クライアントが非Cloudスコープを拒む場合の二次手段は、作者が Cloud Console で作る OAuth クライアント（デスクトップ）＋ `google-auth-oauthlib` のインストールフロー（**依存追加はその時点でユーザー承認**）。どちらで確認したかを README に記録
-- **実動確認の偽陽性防止（Z-6）**: ゴール28は**シードを入れない空の InMemory ストア**でローカル起動し、digest に現れるものが実データ由来であることを構造的に保証する。記録は件数・種別のみ
+- **sync-then-detect**: `run_sweep` の先頭で所有者に `connector.sync` を実行してから検知。`seed` は無操作。`SOURCE_CONNECTOR=seed|google_workspace`（既定 seed）。単独モード `GWS_SELF_EMPLOYEE_ID`: その所有者だけ同期し他は `skipped`
+- **モデル拡張（W-5）**: `Task` に `source`（"seed"|"gws"）・`last_seen_due`、`Schedule` に `source`。`Store` に identities／削除系／`list_tasks(source=)` を追加。`models.py` は変更対象
+- **フィールドの所有（C-39/C-41/C-44対応）**: コネクタが書く＝ `title / description / due_date / status / last_updated_at（Tasks の updated を写す。無更新・相対停滞シグナルの実体）/ source / last_seen_due`。秘書所有＝ `reschedule_count`（取得 due が `last_seen_due` と異なるときだけ +1。**初回同期は `last_seen_due` を設定するだけで加算しない**）／`created_at`（初回同期時刻）／`status_changed_at`（初回＝Tasks.updated、以後 status 変化を検出した同期時刻）。due は RFC3339→UTC日付に正規化、無しは None
+- **取得と reconciliation（C-37/Z-5/W-3対応）**: `tasks.list` を全タスクリスト・全ページ（`nextPageToken`）・`showCompleted=true&showHidden=true` で取得。`completed`→`done`。**完全性バリア**: 全リスト・全ページが成功したときだけ「取得結果に無い `source="gws"` タスク→done」の破壊的 reconciliation を行い、途中エラー時は upsert のみ（`complete=false`）。Calendar も同様に全ページ成功時のみ「窓外・取消の `source="gws"` schedule を削除」。dismissed カードの扱いは現行どおり（同一タスクでは再生成しない。「due変更で再判定」の記述は撤回）
+- **Calendar 写像**: 今日〜N日先（既定3）→ `meeting_prep`、昨日〜今日の終了済み→ `meeting_review`。`item_id = gws_cal_<eventId>_<kind>`。経費・週報・ジャーナルはカレンダーから作らない
+- **Gmail（stretch・未実装）**: 設計文のみ残す——既定OFF、所有者の `kd-secretary` ラベル opt-in、直近N日・上限M件、本文 text/plain を K 文字に切り詰め、処理後は本文を空にし未処理は14日で削除、件名・本文をログ・監査・エラーに出さない
+- **失敗時**: API 拒否・スコープ不足は `errors` に件数で積み検知は続行。資格情報・内容はエラー文に含めない
+- **作者ADCの現実（Z-6）**: 一次 `gcloud auth application-default login --scopes=cloud-platform,tasks.readonly,calendar.readonly`。gcloud の既定クライアントが非Cloudスコープを拒む場合の二次は OAuth クライアント（デスクトップ）＋ `google-auth-oauthlib`（依存追加はその時点でユーザー承認）。ゴール28は**シード無しの空 InMemory**で偽陽性を防ぐ
 
 ### 16.4 変更範囲
 
-- 触る: `server.py`（依存の置換・権限表・`/api/me`・require_self・ContextRouter）、`secretary.py`（sweep 先頭の sync）、新規 `auth.py` / `tenancy.py` / `connectors/{base,seed,google_workspace}.py`、`store.py`/`firestore_store.py`（identities の追加、tasks/schedules の `source`/`last_seen_due`、削除系メソッド）、seeds（identities）、UI（`/api/me`）、`secretary_agent/client.py`（`X-KD-Tenant` ヘッダ）、`scripts/requirements.txt`（google-auth ピン留め）、README
-- 触らない: matching / transmission / schemas（マスク）/ 配送・同意・監査のロジック、Scheduler、Runtime デプロイ設定
-- テスト: 既存97＋13は demo/seed で不変。追加: IAP 検証（**テスト用 ES256 鍵で署名した本物のJWT＋差し替えた公開鍵取得**で実コードパスを通す。フェイク検証器で代替しない）、audience 形式検査、権限表（human/system/demo × 各エンドポイント）、require_self（列挙した全経路、書き込み系含む）、テナント分離（2テナント InMemory・全API横断ゼロ・sweep の human 403）、コネクタ写像・reconciliation（完了→done→resolved、削除→done、Calendar窓外削除）、リスケ計数の冪等、`X-KD-Tenant`
+- 触る: `server.py`（全ルートの依存置換・権限表・require_self・`/api/me`・ContextRouter）、`models.py`（Task/Schedule の source・last_seen_due）、`store.py`/`firestore_store.py`（identities・削除系・source 絞り込み）、`secretary.py`（sweep 先頭の sync）、`service.py`（consent の ask 照合＋pending CAS）、新規 `auth.py` / `tenancy.py` / `connectors/{base,seed,google_workspace}.py` / `scripts/gws_probe.py`、seeds（identities）、UI（`/api/me`）、`scripts/requirements.txt`（google-auth ピン留め）、README
+- 触らない: matching / transmission / schemas（マスク）、配送・監査のロジック、B段 `secretary_agent`、Scheduler・Runtime 設定
+- テスト: IAP（テスト用ES256鍵で署名した本物JWT＋差し替え鍵取得。負系: 署名不正・aud/iss 不一致・期限切れ・未来iat・email欠落・skew境界）、権限表（全ルート×3主体）、require_self（列挙全経路＋consent の ask 照合・pending CAS・二重POST 409）、テナント分離（2テナント InMemory 全API）、コネクタ（写像・冪等・reschedule 初回非加算・完了/消滅→done→resolved・完全性バリア・Calendar 窓外削除）、`/api/me`・UI切替
 
-### 16.5 撤退線・未決（Z-6 末尾対応）
+### 16.5 撤退線・未決
 
-- 8/27 朝までに反証を通らない部品は「差し替え点＋`Seed`/`demo` 実装のみ」に落とす。**その場合 spec FR25〜30 の該当項目・README・ゴールを同時に「部品のみ（実アダプタは将来）」へ降格し、完了扱いにしない**
-- IAP の実機有効化確認（別サービス）、Gmail の実動確認は任意（spec 未決）
+- 部品ごとのゲート（§16.0）。8/27 朝までに通らない部品から降格し、spec FR／README／ゴールを同時に降格する
+- IAP 実機有効化（別サービス）・Gmail は任意／stretch
