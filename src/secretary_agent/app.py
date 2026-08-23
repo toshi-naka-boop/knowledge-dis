@@ -15,6 +15,7 @@ and Cloud Scheduler records the attempt as a failure and retries
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from vertexai.agent_engines import AdkApp
@@ -30,18 +31,25 @@ class SecretaryApp(AdkApp):
         kwargs.setdefault("agent", build_secretary_llm_agent())
         super().__init__(**kwargs)
 
-    def run_daily_sweep(self) -> dict[str, Any]:
+    async def run_daily_sweep(self) -> dict[str, Any]:
         """Deterministic entry point for Cloud Scheduler (§14.7 入口1).
 
         No LLM involvement: calls the existing Cloud Run
         POST /api/secretary/sweep and returns its JSON result unchanged.
+
+        Declared async and executed in a worker thread so the ~10s blocking
+        HTTP call never stalls the Agent Engine server's event loop: a
+        synchronous version made the replica unresponsive to health probes
+        mid-sweep and Vertex answered "Service Unavailable" (HTTP 400
+        FAILED_PRECONDITION) even though the sweep completed on Cloud Run.
         """
         client = SecretaryApiClient()
-        return client.run_sweep()
+        return await asyncio.to_thread(client.run_sweep)
 
     def register_operations(self) -> dict[str, list[str]]:
-        """Publishes run_daily_sweep as a standard (non-stream) operation,
-        in addition to AdkApp's default session-management operations."""
+        """Publishes run_daily_sweep as a standard *async* (non-stream)
+        operation -- still invoked via the `:query` verb -- in addition to
+        AdkApp's default session-management operations."""
         operations = super().register_operations()
-        operations[""] = [*operations.get("", []), "run_daily_sweep"]
+        operations["async"] = [*operations.get("async", []), "run_daily_sweep"]
         return operations

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+import asyncio
 import unittest
 from unittest import mock
 
@@ -147,7 +148,7 @@ class SecretaryAppTest(unittest.TestCase):
         fake_client.run_sweep.return_value = {"cards_created": 3, "mail_seeds_processed": 1}
 
         with mock.patch("secretary_agent.app.SecretaryApiClient", return_value=fake_client):
-            result = app.run_daily_sweep()
+            result = asyncio.run(app.run_daily_sweep())
 
         self.assertEqual(result, {"cards_created": 3, "mail_seeds_processed": 1})
         fake_client.run_sweep.assert_called_once_with()
@@ -159,13 +160,14 @@ class SecretaryAppTest(unittest.TestCase):
 
         with mock.patch("secretary_agent.app.SecretaryApiClient", return_value=fake_client):
             with self.assertRaises(SecretaryApiError):
-                app.run_daily_sweep()
+                asyncio.run(app.run_daily_sweep())
 
     def test_run_daily_sweep_registered_as_standard_non_stream_operation(self):
         app = SecretaryApp()
         operations = app.register_operations()
 
-        self.assertIn("run_daily_sweep", operations.get("", []))
+        self.assertIn("run_daily_sweep", operations.get("async", []))
+        self.assertNotIn("run_daily_sweep", operations.get("", []))
         # Never exposed as a stream/async_stream (LLM-facing) operation.
         self.assertNotIn("run_daily_sweep", operations.get("stream", []))
         self.assertNotIn("run_daily_sweep", operations.get("async_stream", []))
