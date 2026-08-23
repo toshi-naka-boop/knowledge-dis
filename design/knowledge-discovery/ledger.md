@@ -10,6 +10,8 @@
 - **B-4（low）**: `google-genai` 未ピン留め → `google-genai==2.19.0` を requirements-agent.txt にピン留め
 - **B-5（low・受理／対応見送り）**: ToolContext・timeout・env をモック置換しており外部契約をテストで検証していない → ライブ検証（ゴール19〜21の実機確認）を ledger に記録済みで代替。凍結前の追加テストは見送り（write-upの既知制限に含める）
 
+**最終確認（2026-08-23 02:02 UTC）**: timeout120s・`min_instances=0`・カスタムロールSAで再デプロイ後、Scheduler単独発火→1試行でHTTP 200（約20秒）、Cloud Run sweep 1件、再試行なし。**B段クローズ**。本番値: reasoningEngines/4310793666370207744（asia-northeast1）、cpu4/8Gi、min0/max2、concurrency4、Scheduler `kd-secretary-sweep-runtime` 07:55 JST（A段 `kd-secretary-sweep` 08:00 JST と並走）。
+
 
 ## B段実装・検証の記録 — 2026-08-23
 
