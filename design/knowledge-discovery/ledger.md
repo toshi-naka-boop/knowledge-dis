@@ -1,5 +1,15 @@
 # ledger: knowledge-discovery
 
+## 反証round-15（round-14修正のクローズ検証）の帰結 — 2026-08-24
+
+原文: reviews/round-15.md（critic: claude design-critic = claude-opus-5[1m]、fresh）。round-14 の13指摘は **12件クローズ・V-15 部分クローズ**（high 4系統は原文再現スクリプトの再実行で破綻消滅を実測）。新規 low 3件はメインループが直接修正（コミット caf0aa9）:
+- **R-3（low）**: 単独モードが未登録 employee_id でも無条件に同期先 → ゴール28（空ストア）の要件と両立させるため同期は許容し、`sync_self_owner_registered` フラグで未登録を可視化
+- **R-4（low）**: 設定ミス時に所有者数ぶん例外（400回） → misconfigured コネクタは1回だけ記録して早期終了
+- **R-5（low・設計差し戻し）**: design §16.3 が実装と不整合（cancelled_ids の扱い・fail-closed 必須・カウンタ名・`showDeleted` 未指定で取消経路がデッド） → §16.3 を更新（取消は明示状態として完全性に関わらず削除、窓外は全ページ成功時のみ）、Calendar 取得に `showDeleted=true`
+
+**実機ゲート（2026-08-24）**: ゴール25 合格（第2DB `kd-tenant-b` を作成・シード→ローカル2テナント起動→鍵ごとに /api/me が別テナント、Aはカード2/監査15・Bは0/0、Bの鍵の sweep はBのみ、不正鍵401→DB削除）。本番（rev 00006）のデモ経路は不変（/api/me=demo/meridian、キーなし401、digest・sweep冪等・監査15件）。**ゴール28（作者ADCでの実データ）は作者のスコープ付きログイン待ち**。
+
+
 ## 反証round-14（接続部品 A〜D 実装・3レンズ）のルーティング — 2026-08-24
 
 原文: reviews/round-14-correctness.md（V-11〜V-15）／ round-14-safety.md（S-11〜S-13）／ round-14-excess-codex-raw.txt（E-11〜E-15。critic: claude design-critic ×2 = claude-opus-5[1m]、過剰実装 = codex/gpt-5.6-sol xhigh）。13件・重複統合で実質7論点、**全件「実装」種別として受理**（設計差し戻しなし）。修正は sonnet サブエージェントへ委譲、修正後に再検証・クローズ検証。
