@@ -3,13 +3,9 @@
 `SourceConnector.fetch()` is the data-source differentiation point: it takes an
 owner and today's date and returns a `FetchResult` describing what that owner's
 external tools currently look like. It has no side effects — it never touches
-`Store`. Reconciling a `FetchResult` against `Store` (upsert, destructive
-delete under the completeness barrier, `reschedule_count` bookkeeping, etc.) is
-`apply_fetch_result`'s job, implemented in the follow-up integration step (C-2)
-once `models.py` gains `Task.source` / `Task.last_seen_due` / `Schedule.source`
-and `Store` gains identity/deletion/filter APIs. This module only fixes that
-function's signature and contract so C-2 has a stable target to implement
-against.
+`Store`. `apply_fetch_result` reconciles a `FetchResult` into `Store` (upsert,
+destructive delete under the completeness barrier, `reschedule_count`
+bookkeeping, etc.) per §16.3「フィールドの所有」「取得と reconciliation」.
 """
 
 from __future__ import annotations
@@ -17,6 +13,8 @@ from __future__ import annotations
 import abc
 from dataclasses import dataclass, field
 from typing import Any
+
+from knowledge_discovery.models import MailSeed, Schedule, Task, utc_now_iso
 
 
 @dataclass
@@ -164,41 +162,132 @@ class SourceConnector(abc.ABC):
 def apply_fetch_result(
     store: Any, owner_employee_id: str, result: FetchResult, today: str
 ) -> SyncSummary:
-    """Reconcile a `FetchResult` into `Store` (§16.3). Implemented in C-2.
+    """Reconcile a `FetchResult` into `Store` (§16.3「フィールドの所有」「取得と reconciliation」).
 
-    This is deliberately unimplemented in the current step (part C, pure
-    connector layer only). It is wired up once `models.py` gains
-    `Task.source` / `Task.last_seen_due` / `Schedule.source` and `Store`
-    gains identities / deletion / `list_tasks(source=)` (§16.3「モデル拡張」).
+    Field ownership (C-39/C-41/C-44):
+        - Connector-owned (overwritten verbatim from the fetched record every
+          sync): title / description / due_date / status / last_updated_at /
+          source="gws" / last_seen_due.
+        - Secretary-owned (computed here against the previously stored
+          record, never touched by the connector): reschedule_count,
+          created_at, status_changed_at.
+        - On first sync: created_at = this sync's timestamp, status_changed_at
+          = the source's own last_updated_at, last_seen_due is set (not
+          compared), reschedule_count stays 0.
+        - On a resync: reschedule_count += 1 only if the fetched due_date
+          differs from the stored last_seen_due; status_changed_at is bumped
+          to this sync's timestamp only if status actually changed.
 
-    Intended contract for C-2:
-        - Upsert every `TaskRecord` / `ScheduleRecord` / `MailRecord` by its
-          `source_id`, writing only the connector-owned fields verbatim.
-        - `reschedule_count` increments only when the fetched `due_date`
-          differs from the stored `last_seen_due` on a record that already
-          existed before this sync (never on first sync — first sync only
-          sets `last_seen_due`).
-        - `created_at` is set once, at first sync. `status_changed_at` is
-          set to the source's `last_updated_at` at first sync, and to the
-          sync time whenever `status` changes thereafter.
-        - Destructive reconciliation (marking missing `source="gws"` tasks
-          `"done"`; deleting out-of-window or `cancelled_ids` `source="gws"`
-          schedules) happens only when `result.complete` is True. Otherwise
-          only upserts are applied.
-        - Mail seeds: append-only (no destructive reconciliation); existing
-          `mail_id`s are never re-inserted.
+    Completeness barrier (W-3): destructive reconciliation — marking a
+    missing `source="gws"` task `"done"`, deleting an out-of-window or
+    `cancelled_ids` `source="gws"` schedule — runs only when `result.complete`
+    is True. Otherwise only upserts are applied.
 
-        Args:
-            store: The `Store` implementation to write into.
-            owner_employee_id: The employee these records belong to.
-            result: The `FetchResult` to reconcile.
-            today: Reference date as `YYYY-MM-DD`.
+    Mail seeds (part D): existing `mail_id`s are never re-inserted (append-
+    only; no destructive reconciliation for messages that vanish from
+    Gmail — "メールは消滅を同期しない").
 
-        Returns:
-            A `SyncSummary` describing what was written.
+    Args:
+        store: The `Store` implementation to write into.
+        owner_employee_id: The employee these records belong to.
+        result: The `FetchResult` to reconcile.
+        today: Reference date as `YYYY-MM-DD` (unused directly here beyond
+            documenting the sync's reference date; the actual sync timestamp
+            used for created_at/status_changed_at is captured once below so
+            every record touched by this call agrees on "now").
+
+    Returns:
+        A `SyncSummary` describing what was written (counts only — never
+        titles, subjects, or bodies).
     """
-    raise NotImplementedError(
-        "apply_fetch_result is implemented in C-2, after models.py gains "
-        "Task.source/Task.last_seen_due/Schedule.source and Store gains "
-        "identities/deletion/list_tasks(source=) per design.md §16.3"
-    )
+    sync_time = utc_now_iso()
+    summary = SyncSummary()
+
+    # -- Tasks ---------------------------------------------------------
+    fetched_task_ids: set[str] = set()
+    for record in result.tasks:
+        fetched_task_ids.add(record.source_id)
+        existing = store.get_task(record.source_id)
+        if existing is None or existing.owner_employee_id != owner_employee_id:
+            task = Task(
+                task_id=record.source_id,
+                owner_employee_id=owner_employee_id,
+                title=record.title,
+                description=record.description,
+                status=record.status,
+                due_date=record.due_date or "",
+                created_at=sync_time,
+                last_updated_at=record.last_updated_at,
+                reschedule_count=0,
+                status_changed_at=record.last_updated_at,
+                source="gws",
+                last_seen_due=record.due_date,
+            )
+        else:
+            task = existing
+            if task.last_seen_due != record.due_date:
+                task.reschedule_count += 1
+            if task.status != record.status:
+                task.status_changed_at = sync_time
+            task.title = record.title
+            task.description = record.description
+            task.due_date = record.due_date or ""
+            task.status = record.status
+            task.last_updated_at = record.last_updated_at
+            task.source = "gws"
+            task.last_seen_due = record.due_date
+        store.save_task(task)
+        summary.tasks += 1
+
+    if result.complete:
+        for existing_task in store.list_tasks(owner_employee_id=owner_employee_id, source="gws"):
+            if existing_task.task_id in fetched_task_ids or existing_task.status == "done":
+                continue
+            existing_task.status = "done"
+            existing_task.status_changed_at = sync_time
+            store.save_task(existing_task)
+
+    # -- Schedules -------------------------------------------------------
+    fetched_schedule_ids: set[str] = set()
+    for srecord in result.schedules:
+        fetched_schedule_ids.add(srecord.source_id)
+        schedule = Schedule(
+            item_id=srecord.source_id,
+            owner_employee_id=owner_employee_id,
+            kind=srecord.kind,
+            title=srecord.title,
+            due_date=srecord.due_date,
+            source="gws",
+        )
+        store.save_schedule(schedule)
+        summary.schedules += 1
+
+    if result.complete:
+        # A source="gws" schedule this sync didn't return is either
+        # out-of-window or explicitly reported cancelled (cancelled events
+        # never appear in result.schedules) — either way, delete it.
+        for existing_schedule in store.list_schedules(
+            owner_employee_id=owner_employee_id, source="gws"
+        ):
+            if existing_schedule.item_id not in fetched_schedule_ids:
+                store.delete_schedule(existing_schedule.item_id)
+
+    # -- Mail (part D) -----------------------------------------------------
+    for mrecord in result.mails:
+        if store.get_mail_seed(mrecord.source_id) is not None:
+            summary.skipped += 1
+            continue
+        mail = MailSeed(
+            mail_id=mrecord.source_id,
+            owner_employee_id=owner_employee_id,
+            subject=mrecord.subject,
+            body=mrecord.body,
+            received_at=mrecord.received_at or sync_time,
+            processed=False,
+        )
+        store.save_mail_seed(mail)
+        summary.mails += 1
+
+    summary.errors = list(result.errors)
+    summary.complete = result.complete
+    return summary

@@ -187,13 +187,27 @@ class FirestoreStore(Store):
         doc_ref = self.db.collection("tasks").document(task.task_id)
         doc_ref.set(task.to_dict())
 
-    def list_tasks(self, owner_employee_id: str | None = None) -> list[Task]:
-        """List tasks, optionally filtered by owner_employee_id."""
+    def get_task(self, task_id: str) -> Task | None:
+        """Retrieve a task by task_id."""
+        doc = self.db.collection("tasks").document(task_id).get()
+        if hasattr(doc, "exists") and not doc.exists:
+            return None
+        data = doc.to_dict() if hasattr(doc, "to_dict") else None
+        if not data:
+            return None
+        return Task.from_dict(data)
+
+    def list_tasks(
+        self, owner_employee_id: str | None = None, source: str | None = None
+    ) -> list[Task]:
+        """List tasks, optionally filtered by owner_employee_id and/or source."""
         col = self.db.collection("tasks")
+        query = col
         if owner_employee_id is not None:
-            docs = col.where("owner_employee_id", "==", owner_employee_id).stream()
-        else:
-            docs = col.stream()
+            query = query.where("owner_employee_id", "==", owner_employee_id)
+        if source is not None:
+            query = query.where("source", "==", source)
+        docs = query.stream()
         tasks: list[Task] = []
         for doc in docs:
             data = doc.to_dict() if hasattr(doc, "to_dict") else None
@@ -210,19 +224,27 @@ class FirestoreStore(Store):
         doc_ref = self.db.collection("schedules").document(schedule.item_id)
         doc_ref.set(schedule.to_dict())
 
-    def list_schedules(self, owner_employee_id: str | None = None) -> list[Schedule]:
-        """List schedules, optionally filtered by owner_employee_id."""
+    def list_schedules(
+        self, owner_employee_id: str | None = None, source: str | None = None
+    ) -> list[Schedule]:
+        """List schedules, optionally filtered by owner_employee_id and/or source."""
         col = self.db.collection("schedules")
+        query = col
         if owner_employee_id is not None:
-            docs = col.where("owner_employee_id", "==", owner_employee_id).stream()
-        else:
-            docs = col.stream()
+            query = query.where("owner_employee_id", "==", owner_employee_id)
+        if source is not None:
+            query = query.where("source", "==", source)
+        docs = query.stream()
         schedules: list[Schedule] = []
         for doc in docs:
             data = doc.to_dict() if hasattr(doc, "to_dict") else None
             if data:
                 schedules.append(Schedule.from_dict(data))
         return schedules
+
+    def delete_schedule(self, item_id: str) -> None:
+        """Delete a schedule reminder by item_id (§16.3 Calendar reconciliation)."""
+        self.db.collection("schedules").document(item_id).delete()
 
     # -------------------------------------------------------------------------
     # MailSeed operations (mail_seeds collection)
@@ -260,6 +282,10 @@ class FirestoreStore(Store):
             if data:
                 mails.append(MailSeed.from_dict(data))
         return mails
+
+    def delete_mail_seed(self, mail_id: str) -> None:
+        """Delete a mail seed by mail_id (§16.3 Gmail 14-day retention)."""
+        self.db.collection("mail_seeds").document(mail_id).delete()
 
     # -------------------------------------------------------------------------
     # Card operations (cards collection)

@@ -10,6 +10,9 @@ sequences and injected failures. Covers:
 - Gmail (part D): disabled by default, label-not-found -> zero mails (not an
   error), pagination up to the configured cap, subject/body truncation, and
   that logs never carry subject/body content (assertLogs on counts only).
+- apply_fetch_result (C-2): field ownership (connector- vs secretary-owned),
+  first-sync non-accrual, reschedule accrual on due change, completeness
+  barrier for both Tasks (done) and Calendar (delete), and mail_id dedup.
 """
 
 from __future__ import annotations
@@ -24,7 +27,14 @@ from unittest import mock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from knowledge_discovery.connectors.base import FetchResult, SourceConnector
+from knowledge_discovery.connectors.base import (
+    FetchResult,
+    MailRecord,
+    ScheduleRecord,
+    SourceConnector,
+    TaskRecord,
+    apply_fetch_result,
+)
 from knowledge_discovery.connectors.google_workspace import (
     CALENDAR_BASE,
     GMAIL_BASE,
@@ -32,6 +42,8 @@ from knowledge_discovery.connectors.google_workspace import (
     GoogleWorkspaceConnector,
 )
 from knowledge_discovery.connectors.seed import SeedConnector
+from knowledge_discovery.models import Schedule
+from knowledge_discovery.store import InMemoryStore
 
 
 def _b64url(text: str) -> str:
@@ -490,6 +502,205 @@ class TestDefaultSession(unittest.TestCase):
                 "https://www.googleapis.com/auth/gmail.readonly", called_scopes
             )
             m_session.assert_called_once_with(fake_credentials)
+
+
+class TestApplyFetchResult(unittest.TestCase):
+    """apply_fetch_result (C-2): field ownership, reconciliation, mail dedup."""
+
+    def setUp(self) -> None:
+        self.store = InMemoryStore()
+        self.owner = "emp_x"
+        self.today = "2026-08-24"
+
+    def test_first_sync_upserts_task_and_does_not_accrue_reschedule(self) -> None:
+        result = FetchResult(
+            tasks=[
+                TaskRecord(
+                    source_id="gws_task_l1_t1",
+                    title="Write report",
+                    description="notes",
+                    due_date="2026-08-25",
+                    status="todo",
+                    last_updated_at="2026-08-20T10:00:00Z",
+                )
+            ],
+            complete=True,
+        )
+        summary = apply_fetch_result(self.store, self.owner, result, self.today)
+        self.assertEqual(summary.tasks, 1)
+        self.assertEqual(summary.errors, [])
+        self.assertTrue(summary.complete)
+
+        task = self.store.get_task("gws_task_l1_t1")
+        self.assertIsNotNone(task)
+        self.assertEqual(task.owner_employee_id, self.owner)
+        self.assertEqual(task.title, "Write report")
+        self.assertEqual(task.due_date, "2026-08-25")
+        self.assertEqual(task.status, "todo")
+        self.assertEqual(task.source, "gws")
+        self.assertEqual(task.last_seen_due, "2026-08-25")
+        # First sync: no reschedule to accrue, only bookkeeping is set.
+        self.assertEqual(task.reschedule_count, 0)
+        self.assertEqual(task.last_updated_at, "2026-08-20T10:00:00Z")
+        self.assertEqual(task.status_changed_at, "2026-08-20T10:00:00Z")
+
+    def test_resync_with_same_due_date_does_not_increment_reschedule(self) -> None:
+        record = TaskRecord(
+            source_id="gws_task_l1_t1",
+            title="Write report",
+            due_date="2026-08-25",
+            status="todo",
+            last_updated_at="2026-08-20T10:00:00Z",
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[record], complete=True), self.today)
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[record], complete=True), self.today)
+        task = self.store.get_task("gws_task_l1_t1")
+        self.assertEqual(task.reschedule_count, 0)
+
+    def test_resync_with_changed_due_date_increments_reschedule_once(self) -> None:
+        first = TaskRecord(
+            source_id="gws_task_l1_t1",
+            title="Write report",
+            due_date="2026-08-25",
+            status="todo",
+            last_updated_at="2026-08-20T10:00:00Z",
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[first], complete=True), self.today)
+
+        rescheduled = TaskRecord(
+            source_id="gws_task_l1_t1",
+            title="Write report",
+            due_date="2026-08-28",
+            status="todo",
+            last_updated_at="2026-08-21T10:00:00Z",
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[rescheduled], complete=True), self.today)
+        task = self.store.get_task("gws_task_l1_t1")
+        self.assertEqual(task.reschedule_count, 1)
+        self.assertEqual(task.last_seen_due, "2026-08-28")
+        self.assertEqual(task.last_updated_at, "2026-08-21T10:00:00Z")
+
+        # A further resync with the same (new) due date must not increment again.
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[rescheduled], complete=True), self.today)
+        self.assertEqual(self.store.get_task("gws_task_l1_t1").reschedule_count, 1)
+
+    def test_status_change_updates_status_changed_at(self) -> None:
+        todo = TaskRecord(
+            source_id="gws_task_l1_t1",
+            title="Write report",
+            due_date="2026-08-25",
+            status="todo",
+            last_updated_at="2026-08-20T10:00:00Z",
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[todo], complete=True), self.today)
+        original_status_changed_at = self.store.get_task("gws_task_l1_t1").status_changed_at
+
+        done = TaskRecord(
+            source_id="gws_task_l1_t1",
+            title="Write report",
+            due_date="2026-08-25",
+            status="done",
+            last_updated_at="2026-08-22T10:00:00Z",
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[done], complete=True), self.today)
+        task = self.store.get_task("gws_task_l1_t1")
+        self.assertEqual(task.status, "done")
+        self.assertNotEqual(task.status_changed_at, original_status_changed_at)
+
+    def test_task_missing_from_complete_fetch_is_marked_done(self) -> None:
+        record = TaskRecord(
+            source_id="gws_task_l1_t1",
+            title="Write report",
+            due_date="2026-08-25",
+            status="todo",
+            last_updated_at="2026-08-20T10:00:00Z",
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[record], complete=True), self.today)
+        # Next sync no longer reports this task, but is complete.
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[], complete=True), self.today)
+        task = self.store.get_task("gws_task_l1_t1")
+        self.assertEqual(task.status, "done")
+
+    def test_task_missing_from_incomplete_fetch_is_not_marked_done(self) -> None:
+        record = TaskRecord(
+            source_id="gws_task_l1_t1",
+            title="Write report",
+            due_date="2026-08-25",
+            status="todo",
+            last_updated_at="2026-08-20T10:00:00Z",
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(tasks=[record], complete=True), self.today)
+        # Next sync fails partway through: no destructive reconciliation.
+        apply_fetch_result(
+            self.store,
+            self.owner,
+            FetchResult(tasks=[], complete=False, errors=["tasks.list: HTTP 500"]),
+            self.today,
+        )
+        task = self.store.get_task("gws_task_l1_t1")
+        self.assertEqual(task.status, "todo")
+
+    def test_calendar_out_of_window_schedule_deleted_on_complete_sync(self) -> None:
+        first = ScheduleRecord(
+            source_id="gws_cal_ev1_meeting_prep", kind="meeting_prep", title="Kickoff", due_date="2026-08-25"
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(schedules=[first], complete=True), self.today)
+        self.assertIsNotNone(self._find_schedule("gws_cal_ev1_meeting_prep"))
+
+        # The event has scrolled out of the fetch window this sync.
+        apply_fetch_result(self.store, self.owner, FetchResult(schedules=[], complete=True), self.today)
+        self.assertIsNone(self._find_schedule("gws_cal_ev1_meeting_prep"))
+
+    def test_calendar_cancelled_event_schedule_deleted_on_complete_sync(self) -> None:
+        first = ScheduleRecord(
+            source_id="gws_cal_ev1_meeting_prep", kind="meeting_prep", title="Kickoff", due_date="2026-08-25"
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(schedules=[first], complete=True), self.today)
+
+        apply_fetch_result(
+            self.store,
+            self.owner,
+            FetchResult(schedules=[], cancelled_ids=["ev1"], complete=True),
+            self.today,
+        )
+        self.assertIsNone(self._find_schedule("gws_cal_ev1_meeting_prep"))
+
+    def test_calendar_reconciliation_skipped_on_incomplete_sync(self) -> None:
+        first = ScheduleRecord(
+            source_id="gws_cal_ev1_meeting_prep", kind="meeting_prep", title="Kickoff", due_date="2026-08-25"
+        )
+        apply_fetch_result(self.store, self.owner, FetchResult(schedules=[first], complete=True), self.today)
+        apply_fetch_result(
+            self.store,
+            self.owner,
+            FetchResult(schedules=[], complete=False, errors=["calendar.events: HTTP 503"]),
+            self.today,
+        )
+        self.assertIsNotNone(self._find_schedule("gws_cal_ev1_meeting_prep"))
+
+    def test_existing_mail_id_is_not_reinserted(self) -> None:
+        record = MailRecord(source_id="gws_mail_m1", subject="Hi", body="Body text", received_at="2026-08-20T00:00:00Z")
+        summary1 = apply_fetch_result(self.store, self.owner, FetchResult(mails=[record], complete=True), self.today)
+        self.assertEqual(summary1.mails, 1)
+        self.assertEqual(summary1.skipped, 0)
+
+        summary2 = apply_fetch_result(self.store, self.owner, FetchResult(mails=[record], complete=True), self.today)
+        self.assertEqual(summary2.mails, 0)
+        self.assertEqual(summary2.skipped, 1)
+        # Only one mail_seed exists in the store, not two.
+        self.assertEqual(len(self.store.list_mail_seeds(owner_employee_id=self.owner)), 1)
+
+    def test_sync_summary_reflects_errors_and_completeness(self) -> None:
+        result = FetchResult(complete=False, errors=["tasks.list: HTTP 500"])
+        summary = apply_fetch_result(self.store, self.owner, result, self.today)
+        self.assertFalse(summary.complete)
+        self.assertEqual(summary.errors, ["tasks.list: HTTP 500"])
+
+    def _find_schedule(self, item_id: str) -> Schedule | None:
+        for s in self.store.list_schedules(owner_employee_id=self.owner):
+            if s.item_id == item_id:
+                return s
+        return None
 
 
 if __name__ == "__main__":

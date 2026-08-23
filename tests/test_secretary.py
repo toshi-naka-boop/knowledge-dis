@@ -20,6 +20,7 @@ import threading
 import unittest
 from datetime import date, timedelta
 from types import SimpleNamespace
+from unittest import mock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -38,6 +39,11 @@ os.environ["STAGNATION_T2"] = "7.0"
 os.environ["STAGNATION_CAP"] = "10"
 os.environ["STAGNATION_NEGLECT_WINDOW"] = "3"
 
+from knowledge_discovery.connectors.base import (  # noqa: E402
+    FetchResult,
+    SourceConnector,
+    TaskRecord,
+)
 from knowledge_discovery.matching import (  # noqa: E402
     DeterministicEmbedder,
     FakeConnectionInferencer,
@@ -880,6 +886,230 @@ class TestLLMClientWiring(SecretaryTestBase):
         diff_cards = [c for c in self.store.list_cards(status="open") if c.type == "profile_diff"]
         self.assertEqual(len(diff_cards), 1)
         self.assertEqual(diff_cards[0].payload["item_key"], "expertise")
+
+
+class FakeSourceConnector(SourceConnector):
+    """Test double: `results` maps employee_id -> a FetchResult, or a
+    zero-arg callable returning one (so a test can change what the next
+    sweep sees). Missing owners get an empty complete FetchResult. Raises
+    if the mapped value is an Exception instance (to exercise the
+    per-owner failure path without stopping the whole sweep, §16.3).
+    """
+
+    def __init__(self, results: dict[str, object] | None = None) -> None:
+        self.results: dict[str, object] = results or {}
+        self.calls: list[str] = []
+
+    def fetch(self, owner_employee_id: str, today: str) -> FetchResult:
+        self.calls.append(owner_employee_id)
+        value = self.results.get(owner_employee_id, FetchResult(complete=True))
+        if isinstance(value, Exception):
+            raise value
+        if callable(value):
+            return value()
+        return value
+
+
+# (g) Sync-then-detect (§16.3, C-2) ------------------------------------------
+
+
+class TestSyncThenDetect(SecretaryTestBase):
+    def _register_owner(self, owner: str) -> None:
+        """Registers owner as an agent+profile so the sync step's target
+        owner set (agents ∪ profiles) includes them, without engineering a
+        matching candidate.
+        """
+        self.store.save_agent(
+            Agent(
+                agent_id=f"agent_{owner}",
+                employee_id=owner,
+                display_name=owner,
+                supported_intents=["connect_ask", "connect_ask_private", "no_connection"],
+                active=True,
+            )
+        )
+        self.store.save_profile(Profile(employee_id=owner, name=owner, role="Role"))
+
+    def test_default_connector_is_seed_and_behavior_is_unchanged(self) -> None:
+        # No connector passed to SecretaryTestBase's fixture: must default to
+        # a no-op SeedConnector, so a seed-populated task is scored exactly
+        # as before sync-then-detect existed.
+        self._add_matching_candidate()
+        task = self._make_high_score_task()
+        self.store.save_task(task)
+
+        result = self.secretary.run_sweep(demo_today=TODAY_STR)
+
+        card = self.store.find_open_card_for_task("emp_owner", task.task_id)
+        self.assertIsNotNone(card)
+        self.assertEqual(card.tier, "request_draft")
+        self.assertEqual(result["sync_tasks"], 0)
+        self.assertEqual(result["sync_errors"], 0)
+
+    def test_synced_task_is_detected_and_resolves_when_source_marks_it_done(self) -> None:
+        owner = "emp_owner"
+        self._register_owner(owner)
+        self._add_matching_candidate()
+
+        far_past = _iso(TODAY - timedelta(days=20))
+        connector = FakeSourceConnector(
+            {
+                owner: FetchResult(
+                    tasks=[
+                        TaskRecord(
+                            source_id="gws_task_x",
+                            title="Kubernetes upgrade project",
+                            due_date=far_past,
+                            status="todo",
+                            last_updated_at=far_past + "T00:00:00Z",
+                        )
+                    ],
+                    complete=True,
+                )
+            }
+        )
+        secretary = SecretaryService(
+            store=self.store,
+            kd_service=self.kd_service,
+            matching_engine=self.matching_engine,
+            t1=3.0,
+            t2=7.0,
+            connector=connector,
+        )
+
+        result = secretary.run_sweep(demo_today=TODAY_STR)
+        # _add_matching_candidate() also registers "emp_match" as an
+        # agent+profile, so it's synced too (harmlessly, with an empty
+        # FetchResult default) — only assert the owner under test was synced.
+        self.assertIn(owner, connector.calls)
+        self.assertEqual(result["sync_tasks"], 1)
+
+        synced_task = self.store.get_task("gws_task_x")
+        self.assertIsNotNone(synced_task)
+        self.assertEqual(synced_task.source, "gws")
+
+        card = self.store.find_open_card_for_task(owner, "gws_task_x")
+        self.assertIsNotNone(card)
+        self.assertEqual(card.tier, "request_draft")
+
+        # The source no longer reports the task at all (e.g. deleted/completed
+        # upstream): a complete resync marks it done, and the next sweep's
+        # detection pass resolves the open card.
+        connector.results[owner] = FetchResult(tasks=[], complete=True)
+        secretary.run_sweep(demo_today=TODAY_STR)
+
+        self.assertEqual(self.store.get_task("gws_task_x").status, "done")
+        resolved_card = self.store.get_card(card.card_id)
+        self.assertEqual(resolved_card.status, "resolved")
+        self.assertEqual(resolved_card.resolved_reason, "task_done")
+
+    def test_self_employee_id_mode_skips_other_owners(self) -> None:
+        owner_a = "emp_a"
+        owner_b = "emp_b"
+        self._register_owner(owner_a)
+        self._register_owner(owner_b)
+        connector = FakeSourceConnector({owner_a: FetchResult(complete=True), owner_b: FetchResult(complete=True)})
+        secretary = SecretaryService(
+            store=self.store,
+            kd_service=self.kd_service,
+            matching_engine=self.matching_engine,
+            t1=3.0,
+            t2=7.0,
+            connector=connector,
+        )
+
+        with mock.patch.dict(os.environ, {"GWS_SELF_EMPLOYEE_ID": owner_a}):
+            result = secretary.run_sweep(demo_today=TODAY_STR)
+
+        self.assertEqual(connector.calls, [owner_a])
+        self.assertEqual(result["sync_skipped"], 1)
+
+    def test_sync_failure_for_one_owner_does_not_halt_the_sweep(self) -> None:
+        owner_failing = "emp_failing"
+        owner_ok = "emp_owner"
+        self._register_owner(owner_failing)
+        self._register_owner(owner_ok)
+        self._add_matching_candidate()  # registers a separate candidate, emp_match
+
+        connector = FakeSourceConnector({owner_failing: RuntimeError("boom")})
+        secretary = SecretaryService(
+            store=self.store,
+            kd_service=self.kd_service,
+            matching_engine=self.matching_engine,
+            t1=3.0,
+            t2=7.0,
+            connector=connector,
+        )
+
+        # Detection must still run over pre-existing (e.g. seed) data even
+        # though one owner's sync raised.
+        task = self._make_high_score_task(owner=owner_ok)
+        self.store.save_task(task)
+
+        result = secretary.run_sweep(demo_today=TODAY_STR)
+
+        self.assertEqual(result["sync_errors"], 1)
+        card = self.store.find_open_card_for_task(owner_ok, task.task_id)
+        self.assertIsNotNone(card)
+        self.assertEqual(card.tier, "request_draft")
+
+
+class TestMailRetention(SecretaryTestBase):
+    """§16.3 Gmail part D retention: clear processed bodies, 14-day delete.
+
+    Runs inside run_sweep() regardless of connector (SeedConnector never
+    produces mail_seeds, but retention still applies to any mail_seed
+    already in Store, matching how generate_seeds.py seeds them directly).
+    """
+
+    def test_body_cleared_after_processing_same_sweep(self) -> None:
+        mail = MailSeed(
+            mail_id="mail_ret_1",
+            owner_employee_id="emp_owner",
+            subject="Update",
+            body="This body is definitely longer than ten characters so the heuristic fires.",
+            received_at=_iso(TODAY) + "T09:00:00Z",
+            processed=False,
+        )
+        self.store.save_mail_seed(mail)
+
+        self.secretary.run_sweep(demo_today=TODAY_STR)
+
+        reloaded = self.store.get_mail_seed("mail_ret_1")
+        self.assertTrue(reloaded.processed)
+        self.assertEqual(reloaded.body, "")
+
+    def test_mail_at_or_past_retention_window_is_deleted(self) -> None:
+        old_received = _iso(TODAY - timedelta(days=14)) + "T00:00:00Z"
+        mail = MailSeed(
+            mail_id="mail_ret_old",
+            owner_employee_id="emp_owner",
+            subject="Old",
+            body="Old body text that should be purged outright.",
+            received_at=old_received,
+            processed=False,
+        )
+        self.store.save_mail_seed(mail)
+
+        self.secretary.run_sweep(demo_today=TODAY_STR)
+
+        self.assertIsNone(self.store.get_mail_seed("mail_ret_old"))
+
+    def test_mail_within_retention_window_is_kept(self) -> None:
+        recent_received = _iso(TODAY - timedelta(days=1)) + "T00:00:00Z"
+        mail = MailSeed(
+            mail_id="mail_ret_recent",
+            owner_employee_id="emp_owner",
+            subject="Recent",
+            body="Recent body text.",
+            received_at=recent_received,
+            processed=False,
+        )
+        self.store.save_mail_seed(mail)
+
+        self.secretary.run_sweep(demo_today=TODAY_STR)
+
+        self.assertIsNotNone(self.store.get_mail_seed("mail_ret_recent"))
 
 
 if __name__ == "__main__":

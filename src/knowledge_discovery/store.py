@@ -92,8 +92,15 @@ class Store(ABC):
         pass
 
     @abstractmethod
-    def list_tasks(self, owner_employee_id: str | None = None) -> list[Task]:
-        """List tasks, optionally filtered by owner_employee_id."""
+    def get_task(self, task_id: str) -> Task | None:
+        """Retrieve a task by task_id."""
+        pass
+
+    @abstractmethod
+    def list_tasks(
+        self, owner_employee_id: str | None = None, source: str | None = None
+    ) -> list[Task]:
+        """List tasks, optionally filtered by owner_employee_id and/or source."""
         pass
 
     # Schedule operations (schedules collection §14.2)
@@ -103,8 +110,18 @@ class Store(ABC):
         pass
 
     @abstractmethod
-    def list_schedules(self, owner_employee_id: str | None = None) -> list[Schedule]:
-        """List schedules, optionally filtered by owner_employee_id."""
+    def list_schedules(
+        self, owner_employee_id: str | None = None, source: str | None = None
+    ) -> list[Schedule]:
+        """List schedules, optionally filtered by owner_employee_id and/or source."""
+        pass
+
+    @abstractmethod
+    def delete_schedule(self, item_id: str) -> None:
+        """Delete a schedule reminder by item_id (§16.3 Calendar reconciliation).
+
+        No-op if the item_id doesn't exist.
+        """
         pass
 
     # MailSeed operations (mail_seeds collection §14.2, §14.5)
@@ -123,6 +140,14 @@ class Store(ABC):
         self, owner_employee_id: str | None = None, unprocessed_only: bool = False
     ) -> list[MailSeed]:
         """List mail seeds, optionally filtered by owner and/or unprocessed status."""
+        pass
+
+    @abstractmethod
+    def delete_mail_seed(self, mail_id: str) -> None:
+        """Delete a mail seed by mail_id (§16.3 Gmail 14-day retention).
+
+        No-op if the mail_id doesn't exist.
+        """
         pass
 
     # Card operations (cards collection §14.2)
@@ -304,10 +329,18 @@ class InMemoryStore(Store):
         stored = deepcopy(task)
         self._tasks[stored.task_id] = stored
 
-    def list_tasks(self, owner_employee_id: str | None = None) -> list[Task]:
+    def get_task(self, task_id: str) -> Task | None:
+        t = self._tasks.get(task_id)
+        return deepcopy(t) if t is not None else None
+
+    def list_tasks(
+        self, owner_employee_id: str | None = None, source: str | None = None
+    ) -> list[Task]:
         tasks = list(self._tasks.values())
         if owner_employee_id is not None:
             tasks = [t for t in tasks if t.owner_employee_id == owner_employee_id]
+        if source is not None:
+            tasks = [t for t in tasks if t.source == source]
         return [deepcopy(t) for t in tasks]
 
     # Schedule operations
@@ -315,11 +348,18 @@ class InMemoryStore(Store):
         stored = deepcopy(schedule)
         self._schedules[stored.item_id] = stored
 
-    def list_schedules(self, owner_employee_id: str | None = None) -> list[Schedule]:
+    def list_schedules(
+        self, owner_employee_id: str | None = None, source: str | None = None
+    ) -> list[Schedule]:
         schedules = list(self._schedules.values())
         if owner_employee_id is not None:
             schedules = [s for s in schedules if s.owner_employee_id == owner_employee_id]
+        if source is not None:
+            schedules = [s for s in schedules if s.source == source]
         return [deepcopy(s) for s in schedules]
+
+    def delete_schedule(self, item_id: str) -> None:
+        self._schedules.pop(item_id, None)
 
     # MailSeed operations
     def save_mail_seed(self, mail: MailSeed) -> None:
@@ -339,6 +379,9 @@ class InMemoryStore(Store):
         if unprocessed_only:
             mails = [m for m in mails if not m.processed]
         return [deepcopy(m) for m in mails]
+
+    def delete_mail_seed(self, mail_id: str) -> None:
+        self._mail_seeds.pop(mail_id, None)
 
     # Card operations
     def save_card(self, card: Card) -> None:

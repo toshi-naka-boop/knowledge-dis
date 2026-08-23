@@ -330,6 +330,11 @@ class Task:
         last_updated_at: ISO8601 last updated timestamp.
         reschedule_count: Number of times this task has been rescheduled.
         status_changed_at: ISO8601 timestamp of last status change.
+        source: Data source that owns this task's connector-facing fields
+            ('seed' | 'gws', §16.3 モデル拡張).
+        last_seen_due: due_date observed on the previous sync, used by
+            apply_fetch_result to detect a reschedule (§16.3 フィールドの所有).
+            None for seed-origin tasks / tasks never synced.
     """
 
     task_id: str
@@ -342,6 +347,8 @@ class Task:
     last_updated_at: str = field(default_factory=utc_now_iso)
     reschedule_count: int = 0
     status_changed_at: str = field(default_factory=utc_now_iso)
+    source: str = "seed"  # "seed" | "gws"
+    last_seen_due: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -355,6 +362,8 @@ class Task:
             "last_updated_at": self.last_updated_at,
             "reschedule_count": self.reschedule_count,
             "status_changed_at": self.status_changed_at,
+            "source": self.source,
+            "last_seen_due": self.last_seen_due,
         }
 
     @classmethod
@@ -370,6 +379,8 @@ class Task:
             last_updated_at=data.get("last_updated_at", utc_now_iso()),
             reschedule_count=int(data.get("reschedule_count", 0)),
             status_changed_at=data.get("status_changed_at", utc_now_iso()),
+            source=data.get("source", "seed"),
+            last_seen_due=data.get("last_seen_due"),
         )
 
 
@@ -384,6 +395,7 @@ class Schedule:
               'meeting_prep' | 'meeting_review' | 'journal'.
         title: Schedule title / description.
         due_date: Due date in ISO format (YYYY-MM-DD).
+        source: Data source that owns this schedule ('seed' | 'gws', §16.3).
     """
 
     item_id: str
@@ -391,6 +403,7 @@ class Schedule:
     kind: str
     title: str
     due_date: str
+    source: str = "seed"  # "seed" | "gws"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -399,6 +412,7 @@ class Schedule:
             "kind": self.kind,
             "title": self.title,
             "due_date": self.due_date,
+            "source": self.source,
         }
 
     @classmethod
@@ -409,6 +423,7 @@ class Schedule:
             kind=data.get("kind", ""),
             title=data.get("title", ""),
             due_date=data.get("due_date", ""),
+            source=data.get("source", "seed"),
         )
 
 

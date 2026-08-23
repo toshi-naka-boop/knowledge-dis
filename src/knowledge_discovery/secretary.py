@@ -20,6 +20,7 @@ import re
 from typing import Any
 import uuid
 
+from knowledge_discovery.connectors import SeedConnector, SourceConnector, apply_fetch_result
 from knowledge_discovery.matching import MatchingEngine
 from knowledge_discovery.models import (
     Card,
@@ -33,6 +34,11 @@ from knowledge_discovery.models import (
 )
 from knowledge_discovery.service import KnowledgeDiscoveryService
 from knowledge_discovery.store import Store
+
+# Mail retention window (§16.3 Gmail part D, fixed at 14 days per design).
+# Applies regardless of source (SeedConnector never produces mail_seeds, so
+# this is a no-op in demo mode).
+MAIL_RETENTION_DAYS: int = 14
 
 # -----------------------------------------------------------------------------
 # Configuration & Weights (§14.3)
@@ -305,6 +311,7 @@ class SecretaryService:
         llm_client: Any | None = None,
         t1: float = STAGNATION_T1,
         t2: float = STAGNATION_T2,
+        connector: SourceConnector | None = None,
     ) -> None:
         self.store = store
         self.kd_service = kd_service
@@ -312,10 +319,81 @@ class SecretaryService:
         self.llm_client = llm_client
         self.t1 = t1
         self.t2 = t2
+        self.connector = connector or SeedConnector()
         assert self.t1 < self.t2, f"t1 ({self.t1}) must be < t2 ({self.t2})"
+
+    def _sync_owners(
+        self, registered_agents: list[Any], profiles_list: list[Profile], ref_today: date
+    ) -> dict[str, int]:
+        """Sync-then-detect's "sync" half (§16.3): pull each tenant owner's
+        external data through `self.connector` and reconcile it via
+        `apply_fetch_result` before stagnation detection runs. `SeedConnector`
+        (the default) is a no-op, so this is a no-op in demo mode.
+
+        Single-owner mode (`GWS_SELF_EMPLOYEE_ID`): only that owner is
+        synced; every other owner is counted as skipped rather than synced.
+        A connector/reconciliation failure for one owner is caught and
+        counted so it never halts the sweep (§16.3 failure handling) — and
+        never logs task/mail titles or bodies.
+        """
+        today_str = ref_today.isoformat()
+        self_only = os.environ.get("GWS_SELF_EMPLOYEE_ID", "").strip()
+        target_owners = {a.employee_id for a in registered_agents} | {
+            p.employee_id for p in profiles_list
+        }
+
+        stats = {
+            "sync_tasks": 0,
+            "sync_schedules": 0,
+            "sync_mails": 0,
+            "sync_skipped": 0,
+            "sync_errors": 0,
+        }
+        for owner_id in sorted(target_owners):
+            if self_only and owner_id != self_only:
+                stats["sync_skipped"] += 1
+                continue
+            try:
+                fetch_result = self.connector.fetch(owner_id, today_str)
+                summary = apply_fetch_result(self.store, owner_id, fetch_result, today_str)
+            except Exception:
+                stats["sync_errors"] += 1
+                continue
+            stats["sync_tasks"] += summary.tasks
+            stats["sync_schedules"] += summary.schedules
+            stats["sync_mails"] += summary.mails
+            stats["sync_skipped"] += summary.skipped
+            stats["sync_errors"] += len(summary.errors)
+        return stats
+
+    def _apply_mail_retention(self, ref_today: date) -> None:
+        """Enforce mail_seed retention (§16.3 Gmail part D).
+
+        Runs every sweep regardless of connector: a mail whose body was
+        already cleared has nothing left to clear, and SeedConnector never
+        produces mail_seeds, so this is a no-op in demo mode.
+        - Any mail already `processed=True` with a non-empty body has its
+          body cleared (the diff proposal, if any, was already extracted
+          and written to a card; the raw body has no further use).
+        - Any mail (processed or not) older than MAIL_RETENTION_DAYS is
+          deleted outright.
+        """
+        for mail in self.store.list_mail_seeds():
+            received = _parse_date_or_timestamp(mail.received_at)
+            if received is not None and (ref_today - received).days >= MAIL_RETENTION_DAYS:
+                self.store.delete_mail_seed(mail.mail_id)
+                continue
+            if mail.processed and mail.body:
+                mail.body = ""
+                self.store.save_mail_seed(mail)
 
     def run_sweep(self, demo_today: str | None = None) -> dict[str, Any]:
         """Execute full secretary sweep across all tasks and mail seeds (§14.1, §14.2, §14.5).
+
+        Sync-then-detect (§16.3): the tenant's owners (agents registered +
+        profiles owners) are synced through `self.connector` first; stagnation
+        detection below then runs against whatever is in `Store` afterward
+        (seed data, previously-synced gws data, or freshly-synced gws data).
 
         State Machine Rules (§14.2):
         1. Confirmed or Dismissed tasks: Do NOT recreate cards.
@@ -326,10 +404,13 @@ class SecretaryService:
         5. Idempotent: Never creates duplicate open cards for the same (owner, task_id).
         """
         ref_today = get_today(demo_today)
-        all_tasks = self.store.list_tasks()
         registered_agents = self.store.list_agents(active_only=True)
         profiles_list = self.store.list_profiles()
         profiles_map = {p.employee_id: p for p in profiles_list}
+
+        sync_stats = self._sync_owners(registered_agents, profiles_list, ref_today)
+
+        all_tasks = self.store.list_tasks()
 
         # Group tasks by owner_employee_id
         tasks_by_owner: dict[str, list[Task]] = {}
@@ -593,7 +674,13 @@ class SecretaryService:
             mail.processed = True
             self.store.save_mail_seed(mail)
 
-        return {
+        # ---------------------------------------------------------------------
+        # Mail retention (§16.3 Gmail part D): clear processed bodies, delete
+        # anything past MAIL_RETENTION_DAYS. Runs every sweep.
+        # ---------------------------------------------------------------------
+        self._apply_mail_retention(ref_today)
+
+        result = {
             "status": "ok",
             "date": ref_today.isoformat(),
             "tasks_evaluated": tasks_evaluated,
@@ -603,6 +690,8 @@ class SecretaryService:
             "cards_resolved": cards_resolved,
             "diff_cards_created": diff_cards_created,
         }
+        result.update(sync_stats)
+        return result
 
     def get_morning_digest(
         self,
