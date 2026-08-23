@@ -354,9 +354,64 @@ class FirestoreStore(Store):
 
         return _txn(transaction)
 
+    # -------------------------------------------------------------------------
+    # Identity operations (identities collection, design §16.1 Part A)
+    # -------------------------------------------------------------------------
+
+    def get_identity(self, email: str) -> str | None:
+        """Resolve a verified email to its employee_id, or None if unregistered."""
+        doc = self.db.collection("identities").document(email.strip().lower()).get()
+        if hasattr(doc, "exists") and not doc.exists:
+            return None
+        data = doc.to_dict() if hasattr(doc, "to_dict") else None
+        if not data:
+            return None
+        return data.get("employee_id")
+
+    def save_identity(self, email: str, employee_id: str) -> None:
+        """Register (or update) the employee_id bound to an email address."""
+        normalized_email = email.strip().lower()
+        doc_ref = self.db.collection("identities").document(normalized_email)
+        doc_ref.set({"email": normalized_email, "employee_id": employee_id})
+
+    def try_transition_ask_consent(
+        self, ask_audit_id: str, agent_id: str, new_consent_state: str
+    ) -> tuple[Message | None, str]:
+        """Atomically verify and transition an ask message's consent_state (W-1, §16.1)."""
+        doc_ref = self.db.collection("messages").document(ask_audit_id)
+        transaction = self.db.transaction()
+
+        @firestore.transactional
+        def _txn(txn: Any) -> tuple[Message | None, str]:
+            snapshot = doc_ref.get(transaction=txn)
+            if hasattr(snapshot, "exists") and not snapshot.exists:
+                return None, "not_found"
+            data = snapshot.to_dict() if hasattr(snapshot, "to_dict") else None
+            if not data:
+                return None, "not_found"
+            msg = Message.from_dict(data)
+            if msg.to_entity != agent_id or msg.intent not in ("connect_ask", "connect_ask_private"):
+                return msg, "forbidden"
+            if msg.consent_state != "pending":
+                return msg, "conflict"
+            msg.consent_state = new_consent_state
+            txn.set(doc_ref, msg.to_dict())
+            return msg, "ok"
+
+        return _txn(transaction)
+
     def clear(self) -> None:
         """Clear all stored data across all collections."""
-        for col_name in ("agents", "profiles", "messages", "tasks", "schedules", "mail_seeds", "cards"):
+        for col_name in (
+            "agents",
+            "profiles",
+            "messages",
+            "tasks",
+            "schedules",
+            "mail_seeds",
+            "cards",
+            "identities",
+        ):
             col = self.db.collection(col_name)
             docs = col.stream()
             for doc in docs:

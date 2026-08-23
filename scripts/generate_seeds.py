@@ -205,6 +205,21 @@ FIXED_PERSONAS_DATA = [
 ]
 
 
+# -----------------------------------------------------------------------------
+# Identities (design §16.1 Part A): IAP-verified email -> employee_id.
+# Covers the 4 fixed personas plus requester persona Jordan Lee (who has no
+# agent/profile, only tasks/schedules/mail_seeds).
+# -----------------------------------------------------------------------------
+
+IDENTITY_SEEDS: dict[str, str] = {
+    "rachel.kim@meridian-care.example": "emp_rachel_kim",
+    "marcus.delgado@meridian-care.example": "emp_marcus_delgado",
+    "elena.vasquez@meridian-care.example": "emp_elena_vasquez",
+    "tom.whitfield@meridian-care.example": "emp_tom_whitfield",
+    "jordan.lee@meridian-care.example": "emp_jordan_lee",
+}
+
+
 def build_fixed_personas() -> tuple[list[Agent], list[Profile]]:
     """Build the 4 fixed agents and their corresponding profiles."""
     agents: list[Agent] = []
@@ -640,6 +655,7 @@ def populate_store(
         print(f"Total M3 Tasks to store:    {len(m3_tasks)}")
         print(f"Total M3 Schedules to store:{len(m3_schedules)}")
         print(f"Total M3 MailSeeds to store:{len(m3_mail_seeds)}")
+        print(f"Total Identities to store:  {len(IDENTITY_SEEDS)}")
         print("\n--- Registered Agents (4) ---")
         for a in agents:
             print(f"  • {a.agent_id}: {a.display_name} (employee_id={a.employee_id}, active={a.active})")
@@ -670,9 +686,14 @@ def populate_store(
     for m in m3_mail_seeds:
         store.save_mail_seed(m)
 
+    # Save identities (design §16.1 Part A: IAP email -> employee_id)
+    for email, employee_id in IDENTITY_SEEDS.items():
+        store.save_identity(email, employee_id)
+
     print(
         f"Successfully populated store with {len(agents)} agents, {len(profiles)} profiles, "
-        f"{len(m3_tasks)} tasks, {len(m3_schedules)} schedules, and {len(m3_mail_seeds)} mail seeds."
+        f"{len(m3_tasks)} tasks, {len(m3_schedules)} schedules, {len(m3_mail_seeds)} mail seeds, "
+        f"and {len(IDENTITY_SEEDS)} identities."
     )
     return len(agents), len(profiles)
 

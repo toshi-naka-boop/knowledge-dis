@@ -38,6 +38,14 @@ class QuerySubmissionResult:
     dropped_candidates: list[DroppedCandidate]
 
 
+class ConsentForbiddenError(Exception):
+    """Ask does not belong to this candidate (to_entity mismatch or non-connect_ask intent, W-1)."""
+
+
+class ConsentConflictError(Exception):
+    """Ask is not 'pending' (e.g. a duplicate consent POST after the first already resolved it, W-1)."""
+
+
 @dataclass
 class ConsentResult:
     """Output of processing a candidate consent reply."""
@@ -132,14 +140,28 @@ class KnowledgeDiscoveryService:
         reason_text: str = "",
         attachment: Attachment | dict[str, Any] | None = None,
     ) -> ConsentResult:
-        """Process a candidate's consent decision (granted or declined)."""
-        original_ask = self.store.get_message(ask_audit_id)
-        if original_ask is None:
-            raise ValueError(f"Ask message with ID '{ask_audit_id}' not found")
+        """Process a candidate's consent decision (granted or declined).
 
-        # Update original ask message consent state
-        original_ask.consent_state = decision
-        self.store.save_message(original_ask)
+        The ask->decision transition is verified and performed atomically
+        (W-1, design §16.1): the ask must exist, address this candidate,
+        carry a connect_ask* intent, and still be 'pending'. A second POST
+        against the same ask_audit_id (double-submit) raises ConsentConflictError.
+        """
+        original_ask, outcome = self.store.try_transition_ask_consent(
+            ask_audit_id, candidate_entity_id, decision
+        )
+        if outcome == "not_found":
+            raise ValueError(f"Ask message with ID '{ask_audit_id}' not found")
+        if outcome == "forbidden":
+            raise ConsentForbiddenError(
+                f"Ask '{ask_audit_id}' does not belong to candidate '{candidate_entity_id}'"
+            )
+        if outcome == "conflict":
+            state = original_ask.consent_state if original_ask else "?"
+            raise ConsentConflictError(
+                f"Ask '{ask_audit_id}' is no longer pending (current state: {state})"
+            )
+        assert original_ask is not None  # outcome == "ok"
 
         # 1. Record consent_reply message
         reply_msg = self.transmission.send(

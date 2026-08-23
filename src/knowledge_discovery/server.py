@@ -1,7 +1,10 @@
 """FastAPI server for knowledge-discovery (Milestone 2).
 
-Follows design.md §3 - §7:
-- Protected by DEMO_API_KEY (X-API-Key header or query parameter).
+Follows design.md §3 - §7, §16.1:
+- Every route resolves a Principal (demo/human/system, see auth.py) and is
+  gated by the §16.1 permission table. AUTH_MODE=demo_key (default) checks
+  X-API-Key/api_key against DEMO_API_KEY; AUTH_MODE=iap verifies the
+  IAP-signed assertion instead.
 - POST /api/query: Submit question, run 2-track matching, dispatch asks.
 - GET /api/requester/{requester_id}/status: Requester projection (strict candidate ID & consent isolation rules).
 - GET /api/candidate/{agent_id}/asks: Candidate inbox for received asks.
@@ -17,14 +20,19 @@ import os
 from pathlib import Path
 from typing import Any
 
+from knowledge_discovery.auth import Principal, PrincipalResolver, build_principal_resolver
 from knowledge_discovery.matching import DeterministicEmbedder, FakeConnectionInferencer, MatchingEngine
 from knowledge_discovery.models import Attachment
 from knowledge_discovery.secretary import SecretaryService
-from knowledge_discovery.service import KnowledgeDiscoveryService
+from knowledge_discovery.service import (
+    ConsentConflictError,
+    ConsentForbiddenError,
+    KnowledgeDiscoveryService,
+)
 from knowledge_discovery.store import InMemoryStore, Store
 
 try:
-    from fastapi import Depends, FastAPI, Header, HTTPException, Query, Security, status
+    from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
     from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
     from pydantic import BaseModel, Field
 except ImportError as exc:
@@ -168,6 +176,7 @@ def create_app(
     service: KnowledgeDiscoveryService | None = None,
     api_key: str | None = None,
     llm_client: Any | None = None,
+    principal_resolver: PrincipalResolver | None = None,
 ) -> Any:
     """Create and configure the FastAPI application."""
     if FastAPI is None:
@@ -206,18 +215,51 @@ def create_app(
 
     web_dir = Path(__file__).parent / "web"
 
-    # API Key verification dependency
-    def verify_api_key(
-        x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-        api_key_query: str | None = Query(default=None, alias="api_key"),
-    ) -> str:
-        provided_key = x_api_key or api_key_query
-        if not provided_key or provided_key != expected_api_key:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing API key. Provide header 'X-API-Key' or query parameter 'api_key'.",
-            )
-        return provided_key
+    # Principal resolution dependency (design §16.1, Part A): AUTH_MODE=demo_key
+    # (default) reproduces the old X-API-Key/api_key check; AUTH_MODE=iap
+    # verifies the IAP-signed assertion instead. Every route below depends on
+    # this single function and then applies the §16.1 permission table.
+    resolver = principal_resolver or build_principal_resolver(store, expected_api_key)
+
+    def get_principal(request: Request) -> Principal:
+        return resolver.resolve(request)
+
+    # -------------------------------------------------------------------------
+    # §16.1 permission-table helpers (default-deny: every route below states
+    # explicitly what each of demo/human/system may do; nothing is implicit)
+    # -------------------------------------------------------------------------
+
+    def _deny_system(principal: Principal) -> None:
+        if principal.mode == "system":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted for system principals.")
+
+    def _deny_human(principal: Principal) -> None:
+        if principal.mode == "human":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted for human principals.")
+
+    def _require_self_employee(principal: Principal, employee_id: str) -> None:
+        """human must act only as themselves; demo/system are unaffected here."""
+        if principal.mode == "human" and principal.employee_id != employee_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee_id.")
+
+    def _require_self_agent(principal: Principal, agent_id: str) -> None:
+        """human may only act through the agent bound to their own employee_id."""
+        if principal.mode != "human":
+            return
+        agent = store.get_agent(agent_id)
+        if agent is None or agent.employee_id != principal.employee_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this agent_id.")
+
+    def _require_card_owner(principal: Principal, card_id: str) -> None:
+        """human may only act on secretary cards they own; missing cards fall
+        through to the service layer's own 404 handling."""
+        if principal.mode != "human":
+            return
+        card = store.get_card(card_id)
+        if card is None:
+            return
+        if card.owner_employee_id != principal.employee_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this card.")
 
     # -------------------------------------------------------------------------
     # Web UI Routes (HTML Static Pages)
@@ -264,8 +306,18 @@ def create_app(
     # API Endpoints
     # -------------------------------------------------------------------------
 
-    @app.get("/api/agents", dependencies=[Depends(verify_api_key)])
-    def list_registered_agents() -> dict[str, Any]:
+    @app.get("/api/me")
+    def get_me(principal: Principal = Depends(get_principal)) -> dict[str, Any]:
+        """Return the resolved caller identity (design §16.1). UI shells use
+        this to hide the demo persona switcher once mode != 'demo'."""
+        return {
+            "mode": principal.mode,
+            "tenant_id": principal.tenant_id,
+            "employee_id": principal.employee_id,
+        }
+
+    @app.get("/api/agents")
+    def list_registered_agents(principal: Principal = Depends(get_principal)) -> dict[str, Any]:
         """List active registered agents for UI dropdowns."""
         agents = store.list_agents(active_only=True)
         return {
@@ -280,9 +332,11 @@ def create_app(
             ]
         }
 
-    @app.post("/api/query", dependencies=[Depends(verify_api_key)])
-    def submit_query(req: QueryRequest) -> dict[str, Any]:
+    @app.post("/api/query")
+    def submit_query(req: QueryRequest, principal: Principal = Depends(get_principal)) -> dict[str, Any]:
         """Submit a question, run 2-track 2-stage matching, and dispatch asks."""
+        _deny_system(principal)
+        _require_self_employee(principal, req.requester_id)
         result = service.submit_query(
             requester_id=req.requester_id,
             question_text=req.question_text,
@@ -307,8 +361,10 @@ def create_app(
             "dispatched_asks": [m.audit_id for m in result.dispatched_asks],
         }
 
-    @app.get("/api/requester/{requester_id}/status", dependencies=[Depends(verify_api_key)])
-    def get_requester_status(requester_id: str) -> dict[str, Any]:
+    @app.get("/api/requester/{requester_id}/status")
+    def get_requester_status(
+        requester_id: str, principal: Principal = Depends(get_principal)
+    ) -> dict[str, Any]:
         """Return requester-facing status projection (design.md §3, §6.4).
 
         Strict Privacy Rules:
@@ -316,6 +372,8 @@ def create_app(
         - When resolved (matched or declined): Respondent ID/name and reason/attachment are exposed.
         - NEVER exposes connect_ask vs connect_ask_private distinction or internal consent events.
         """
+        _deny_system(principal)
+        _require_self_employee(principal, requester_id)
         raw_statuses = service.get_requester_status(requester_id=requester_id)
 
         formatted_statuses: list[dict[str, Any]] = []
@@ -351,9 +409,13 @@ def create_app(
             "statuses": formatted_statuses,
         }
 
-    @app.get("/api/candidate/{agent_id}/asks", dependencies=[Depends(verify_api_key)])
-    def get_candidate_asks(agent_id: str) -> dict[str, Any]:
+    @app.get("/api/candidate/{agent_id}/asks")
+    def get_candidate_asks(
+        agent_id: str, principal: Principal = Depends(get_principal)
+    ) -> dict[str, Any]:
         """Retrieve synergy requests dispatched to the specified candidate agent."""
+        _deny_system(principal)
+        _require_self_agent(principal, agent_id)
         all_messages = store.list_messages()
         candidate_asks = [
             m for m in all_messages
@@ -382,9 +444,13 @@ def create_app(
             ],
         }
 
-    @app.post("/api/candidate/{agent_id}/consent", dependencies=[Depends(verify_api_key)])
-    def submit_candidate_consent(agent_id: str, req: ConsentRequest) -> dict[str, Any]:
+    @app.post("/api/candidate/{agent_id}/consent")
+    def submit_candidate_consent(
+        agent_id: str, req: ConsentRequest, principal: Principal = Depends(get_principal)
+    ) -> dict[str, Any]:
         """Submit candidate consent reply (granted or declined with optional attachment)."""
+        _deny_system(principal)
+        _require_self_agent(principal, agent_id)
         att = None
         if req.attachment is not None:
             att = Attachment(type=req.attachment.type, content=req.attachment.content)
@@ -405,14 +471,18 @@ def create_app(
             }
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+        except ConsentForbiddenError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+        except ConsentConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
 
     # Counting profiles per poll would pull all 400 documents (with 3072-dim
     # embeddings, ~10MB) from Firestore every 3 seconds (E-4). The counts are
     # static for the demo, so compute them once on first request.
     static_counts: dict[str, int] = {}
 
-    @app.get("/api/audit/messages", dependencies=[Depends(verify_api_key)])
-    def get_audit_messages() -> dict[str, Any]:
+    @app.get("/api/audit/messages")
+    def get_audit_messages(principal: Principal = Depends(get_principal)) -> dict[str, Any]:
         """Retrieve audit dashboard records with fail-closed masked payloads and funnel stats."""
         records = service.get_audit_dashboard_records()
         if not static_counts:
@@ -448,21 +518,28 @@ def create_app(
     # by calling SecretaryService directly with demo_today=, or by setting
     # DEMO_TODAY in the environment.
 
-    @app.post("/api/secretary/sweep", dependencies=[Depends(verify_api_key)])
-    def run_secretary_sweep() -> dict[str, Any]:
+    @app.post("/api/secretary/sweep")
+    def run_secretary_sweep(principal: Principal = Depends(get_principal)) -> dict[str, Any]:
         """Execute proactive secretary sweep across all tasks and mail seeds (§14.1)."""
+        _deny_human(principal)
         return secretary_service.run_sweep()
 
-    @app.get("/api/secretary/digest", dependencies=[Depends(verify_api_key)])
+    @app.get("/api/secretary/digest")
     def get_morning_digest(
         employee_id: str = Query(..., description="Employee ID"),
+        principal: Principal = Depends(get_principal),
     ) -> dict[str, Any]:
         """Retrieve dynamic morning digest for employee (§14.2, §14.8)."""
+        _require_self_employee(principal, employee_id)
         return secretary_service.get_morning_digest(employee_id=employee_id)
 
-    @app.post("/api/secretary/confirm", dependencies=[Depends(verify_api_key)])
-    def confirm_stagnation_card(req: ConfirmCardRequest) -> dict[str, Any]:
+    @app.post("/api/secretary/confirm")
+    def confirm_stagnation_card(
+        req: ConfirmCardRequest, principal: Principal = Depends(get_principal)
+    ) -> dict[str, Any]:
         """Confirm a stagnation card and dispatch discovery query (§14.4)."""
+        _deny_system(principal)
+        _require_card_owner(principal, req.card_id)
         try:
             return secretary_service.confirm_stagnation_card(
                 card_id=req.card_id,
@@ -473,9 +550,13 @@ def create_app(
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
-    @app.post("/api/secretary/profile-diff/{card_id}/review", dependencies=[Depends(verify_api_key)])
-    def review_profile_diff(card_id: str, req: ProfileDiffReviewRequest) -> dict[str, Any]:
+    @app.post("/api/secretary/profile-diff/{card_id}/review")
+    def review_profile_diff(
+        card_id: str, req: ProfileDiffReviewRequest, principal: Principal = Depends(get_principal)
+    ) -> dict[str, Any]:
         """Review profile diff proposal with 4 choices (§14.5)."""
+        _deny_system(principal)
+        _require_card_owner(principal, card_id)
         try:
             return secretary_service.review_profile_diff(
                 card_id=card_id,
@@ -490,19 +571,24 @@ def create_app(
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
-    @app.post("/api/secretary/cards/{card_id}/dismiss", dependencies=[Depends(verify_api_key)])
-    def dismiss_secretary_card(card_id: str) -> dict[str, Any]:
+    @app.post("/api/secretary/cards/{card_id}/dismiss")
+    def dismiss_secretary_card(
+        card_id: str, principal: Principal = Depends(get_principal)
+    ) -> dict[str, Any]:
         """Dismiss a secretary card (§14.2)."""
+        _deny_system(principal)
+        _require_card_owner(principal, card_id)
         try:
             return secretary_service.dismiss_card(card_id=card_id)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
-    @app.post("/api/probe/unregistered-intent", dependencies=[Depends(verify_api_key)])
-    def probe_unregistered_intent() -> dict[str, Any]:
+    @app.post("/api/probe/unregistered-intent")
+    def probe_unregistered_intent(principal: Principal = Depends(get_principal)) -> dict[str, Any]:
         """Demo probe (E-2): push an unregistered payload_type through the
         transmission layer so the schema-registry rejection (red row) can be
         shown live on the deployed system during the demo's governance act."""
+        _deny_human(principal)
         msg = service.transmission.send(
             from_entity="demo_probe",
             to_entity="agent_marcus_delgado" if store.get_agent("agent_marcus_delgado") else "system",

@@ -64,6 +64,46 @@ Open `http://localhost:8080/requester?api_key=<your-demo-key>` (also
 score ~0.59 in that space; the default 0.20 suits only the offline test
 embedder).
 
+## Authentication (design v15 §16.1, Part A)
+
+`AUTH_MODE` selects how each request's `Principal` (`mode: demo|human|system`,
+`tenant_id`, `employee_id`, `email`) is resolved. Every route enforces a
+default-deny permission table over this Principal (design.md §16.1); the two
+modes below are the only ones implemented so far — tenancy (Part B, multiple
+Firestore databases) and data connectors (Part C/D) are future work, so
+`tenant_id` is currently always the fixed value `meridian`.
+
+- **`AUTH_MODE=demo_key` (default)**: unchanged from the pre-Part-A behavior.
+  `X-API-Key` header or `api_key` query parameter must match `DEMO_API_KEY`;
+  every request resolves to `mode=demo` and each API trusts the identity it
+  is given in the request body/path (single shared key, single actor plays
+  all personas — see "Demo-mode simplifications" below).
+- **`AUTH_MODE=iap`**: for Cloud Run behind Identity-Aware Proxy
+  (`--no-allow-unauthenticated`, IAP enabled on the service). Requests must
+  carry `X-Goog-IAP-JWT-Assertion`; it is verified with
+  `google.oauth2.id_token.verify_token` (ES256, IAP's public key endpoint,
+  `clock_skew_in_seconds=30`, issuer `https://cloud.google.com/iap`, `email`
+  claim required). The verified email resolves to a Principal:
+  - listed in `IAP_SYSTEM_ACCOUNTS` (comma-separated service account emails,
+    e.g. the Scheduler jobs' OIDC identity) -> `mode=system`
+  - domain in `IAP_ALLOWED_DOMAINS` (comma-separated, e.g.
+    `meridian-care.example`) and registered in the `identities` collection
+    (seeded by `scripts/generate_seeds.py`) -> `mode=human`, `employee_id`
+    resolved from the identity record
+  - otherwise -> `403`
+  - `IAP_AUDIENCE` (Cloud Run IAP format:
+    `/projects/<PROJECT_NUMBER>/locations/<REGION>/services/<SERVICE>`) is
+    required and format-checked at startup only when `AUTH_MODE=iap`. API
+    keys are not accepted in this mode — machine callers (Cloud Scheduler)
+    must also go through IAP via an OIDC token.
+  - The IAP public key is cached in-process (~1h, Cache-Control aware); a
+    failed refetch keeps serving the previous key for one more window before
+    failing closed with `401` (never a silent `503`).
+
+`GET /api/me` returns the resolved `{mode, tenant_id, employee_id}` and is
+used by `requester.html`/`candidate.html` to hide the demo persona switcher
+once `mode != demo`.
+
 ## Tests
 
 ```bash

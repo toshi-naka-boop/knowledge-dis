@@ -171,6 +171,37 @@ class Store(ABC):
         """
         pass
 
+    # Identity operations (identities collection, design §16.1 Part A)
+    @abstractmethod
+    def get_identity(self, email: str) -> str | None:
+        """Resolve a verified email to its employee_id, or None if unregistered."""
+        pass
+
+    @abstractmethod
+    def save_identity(self, email: str, employee_id: str) -> None:
+        """Register (or update) the employee_id bound to an email address."""
+        pass
+
+    @abstractmethod
+    def try_transition_ask_consent(
+        self, ask_audit_id: str, agent_id: str, new_consent_state: str
+    ) -> tuple[Message | None, str]:
+        """Atomically verify and transition an ask message's consent_state (W-1, §16.1).
+
+        Verifies: message exists, message.to_entity == agent_id, message.intent
+        is 'connect_ask' or 'connect_ask_private', and message.consent_state == 'pending'
+        -- then transitions consent_state to new_consent_state, all under one lock/transaction.
+
+        Returns (message, outcome), outcome one of:
+        - 'ok': transition performed; message reflects the new consent_state.
+        - 'not_found': no message with this audit_id.
+        - 'forbidden': message exists but to_entity != agent_id, or intent is
+          not a connect_ask variant.
+        - 'conflict': message exists and belongs to this agent, but consent_state
+          is not 'pending' (e.g. a duplicate POST after the first has resolved it).
+        """
+        pass
+
     @abstractmethod
     def clear(self) -> None:
         """Clear all stored data (useful for test isolation)."""
@@ -190,6 +221,8 @@ class InMemoryStore(Store):
         self._mail_seeds: dict[str, MailSeed] = {}
         self._cards: dict[str, Card] = {}
         self._card_lock = threading.Lock()
+        self._identities: dict[str, str] = {}
+        self._consent_lock = threading.Lock()
 
     def save_agent(self, agent: Agent) -> None:
         """Save or update an agent record in the registry."""
@@ -361,6 +394,28 @@ class InMemoryStore(Store):
             self._cards[card.card_id] = deepcopy(card)
             return deepcopy(card), True
 
+    # Identity operations
+    def get_identity(self, email: str) -> str | None:
+        return self._identities.get(email.strip().lower())
+
+    def save_identity(self, email: str, employee_id: str) -> None:
+        self._identities[email.strip().lower()] = employee_id
+
+    def try_transition_ask_consent(
+        self, ask_audit_id: str, agent_id: str, new_consent_state: str
+    ) -> tuple[Message | None, str]:
+        """Atomically verify and transition an ask message's consent_state."""
+        with self._consent_lock:
+            msg = self._messages_by_id.get(ask_audit_id)
+            if msg is None:
+                return None, "not_found"
+            if msg.to_entity != agent_id or msg.intent not in ("connect_ask", "connect_ask_private"):
+                return deepcopy(msg), "forbidden"
+            if msg.consent_state != "pending":
+                return deepcopy(msg), "conflict"
+            msg.consent_state = new_consent_state
+            return deepcopy(msg), "ok"
+
     def clear(self) -> None:
         """Clear all stored data."""
         self._agents.clear()
@@ -371,3 +426,4 @@ class InMemoryStore(Store):
         self._schedules.clear()
         self._mail_seeds.clear()
         self._cards.clear()
+        self._identities.clear()

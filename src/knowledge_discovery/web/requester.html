@@ -183,6 +183,26 @@
     }
     let pollInterval = null;
 
+    // -------------------------------------------------------------------------
+    // Principal resolution (§16.1, FR25-26): a "human" caller is pinned to
+    // their own employee_id and cannot switch personas via the demo dropdown.
+    // -------------------------------------------------------------------------
+
+    async function initPrincipal() {
+      try {
+        const res = await fetch(`/api/me`, { headers: { "X-API-Key": API_KEY } });
+        if (!res.ok) return;
+        const me = await res.json();
+        if (me.mode === "human" && me.employee_id) {
+          REQUESTER_ID = me.employee_id;
+          const sel = document.getElementById("requesterSelect");
+          if (sel) sel.style.display = "none";
+        }
+      } catch (err) {
+        console.error("me fetch error:", err);
+      }
+    }
+
     const DEMO_QUESTIONS = {
       1: "A hospital client of mine wants to relocate one of their clinics. Who in our group knows how to find sites that can actually host a medical facility — zoning, conversion, that kind of thing?",
       2: "The owner of a small clinic I work with mentioned she's thinking about retiring in a few years. Who has experience with practice succession conversations?",
@@ -557,8 +577,10 @@
     }
 
     // Initial load
-    fetchDigest();
-    fetchStatuses();
+    initPrincipal().then(() => {
+      fetchDigest();
+      fetchStatuses();
+    });
   </script>
 </body>
 </html>

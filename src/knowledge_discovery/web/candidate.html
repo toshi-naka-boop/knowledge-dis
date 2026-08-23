@@ -100,6 +100,34 @@
       return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     }
 
+    // -------------------------------------------------------------------------
+    // Principal resolution (§16.1, FR25-26): a "human" caller is pinned to the
+    // agent bound to their own employee_id and cannot switch via the dropdown.
+    // -------------------------------------------------------------------------
+
+    async function initPrincipal() {
+      try {
+        const meRes = await fetch(`/api/me`, { headers: { "X-API-Key": API_KEY } });
+        if (!meRes.ok) return;
+        const me = await meRes.json();
+        if (me.mode !== "human" || !me.employee_id) return;
+
+        const agentsRes = await fetch(`/api/agents`, { headers: { "X-API-Key": API_KEY } });
+        if (!agentsRes.ok) return;
+        const agentsData = await agentsRes.json();
+        const own = (agentsData.agents || []).find((a) => a.employee_id === me.employee_id);
+        if (!own) return;
+
+        const sel = document.getElementById("agentSelector");
+        if (sel) {
+          sel.value = own.agent_id;
+          sel.style.display = "none";
+        }
+      } catch (err) {
+        console.error("me fetch error:", err);
+      }
+    }
+
     async function loadAsksForAgent() {
       const agentId = document.getElementById("agentSelector").value;
       const container = document.getElementById("asksContainer");
@@ -251,7 +279,9 @@
     }
 
     // Initial load
-    window.addEventListener("DOMContentLoaded", loadAsksForAgent);
+    window.addEventListener("DOMContentLoaded", () => {
+      initPrincipal().then(loadAsksForAgent);
+    });
   </script>
 </body>
 </html>
