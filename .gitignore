@@ -38,3 +38,6 @@ temp/
 # Logs
 *.log
 logs/
+
+# B-stage agent env
+.venv-agent/

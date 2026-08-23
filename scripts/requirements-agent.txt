@@ -1,0 +1,7 @@
+# Pinned dependencies for the B-stage secretary Runtime environment
+# (.venv-agent). Independent of scripts/requirements.txt (design.md §14.7
+# "パッケージング": src/secretary_agent depends only on google-adk,
+# google-cloud-aiplatform[agent_engines,adk] and requests).
+google-adk==2.7.1
+google-cloud-aiplatform[agent_engines,adk]==1.165.1
+requests==2.34.2
