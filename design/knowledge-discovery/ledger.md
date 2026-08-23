@@ -1,5 +1,18 @@
 # ledger: knowledge-discovery
 
+## 批評round-12（design v12 接続部品）の帰結 — 2026-08-23
+
+原文: reviews/round-12.md（claude C-36〜C-40）＋ round-12-codex-raw.txt（codex Z-1〜Z-6）。11件・重複統合で実質8論点、**全件受理**し v13 に反映。ユーザー指示で批評は2巡（round-13 を続ける）。
+
+- **C-36 / Z-1（high・一致）**: require_self が employee_id 受けAPIに限定され、query（requester_id）と card_id 受け（confirm/dismiss/review）が iap で無防備 → 対象を列挙（card は所有者をロードして照合）、ゴール23に書き込み経路を追加
+- **Z-2（high）**: IAP 検証の audience 形式（Cloud Run IAP は `/projects/N/locations/R/services/S`）・iss・google-auth の依存契約 → 形式を固定し起動時検査、iss/exp/email 検証、google-auth を明示ピン留め。テストはフェイク検証器でなく**テスト鍵で署名した本物JWT**で実コードパスを通す
+- **C-38 / Z-3（mid/high・一致）**: 「到達不能」と「sweep全テナント」の矛盾、human が他テナント sweep を起動できる、Rules はサーバに効かない、identities 解決の穴 → 主体×エンドポイント権限表を導入（sweep は system のみ）、分離主張を「DB境界（プロセス境界ではない）」に訂正、Rules を防壁から除外、ドメイン一意の起動時検証・正規化・未登録403、static_counts をテナント文脈へ
+- **C-40 / Z-4（mid/high・一致）**: 機械主体が無く iap で Scheduler/Runtime が 401、Runtime にテナントが無い → `system` 主体（iap でも API キー）を定義、Runtime はテナントごとに1デプロイ＋`X-KD-Tenant` ヘッダ（B段 client.py へのヘッダ1点の変更を承認範囲に含める）
+- **C-37 / Z-5（high・一致）**: 未完了のみ取得で完了→done が観測不能、Calendar の取消/窓外が残る、着手なしが1になる → `showCompleted/showHidden` 取得＋取得結果から消えた gws タスクを done、Calendar 窓外/取消は削除、status_changed_at 初期値=Tasks.updated（着手なし構造的に0）
+- **C-39（mid）**: コネクタと秘書のフィールド所有規則・due正規化が未定義で reschedule が毎sweep増える → 所有規則を明文化（`last_seen_due` と異なるときだけ+1）、due正規化
+- **Z-6（前提/mid）**: ADC スコープの現実性・GWS_SELF の意味・Gmail 情報取扱い・撤退時の主張降格 → 一次/二次手段（二次は依存追加をユーザー承認）、self モードは他所有者 skipped、Gmail 既定OFF＋ラベル opt-in＋保持期限＋本文切り詰め、ゴール28は空ストアで偽陽性防止、撤退時は spec/README/ゴールを同時降格
+
+
 ## 反証round-11（B段実装）の帰結 — 2026-08-23
 
 原文: reviews/round-11.md（critic: claude design-critic = claude-opus-5[1m]、3レンズを1人で順に）。B-1〜B-5、全件受理。中核（LLM非介入の決定的sweep・ツール1本の読み取り専用対話・失敗の非無音化・secret最小権限）は実機とコードの双方で成立を確認済み。

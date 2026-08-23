@@ -1,20 +1,20 @@
 {
   "currentNode": "批評",
   "status": "in_progress",
-  "designVersion": "v12",
+  "designVersion": "v13",
   "approvedDesignVersion": null,
   "approvedDesignSha256": null,
   "approvedAt": null,
   "approvalEvidence": null,
-  "requiredApprovalFingerprint": "v12:5edc99fac72c",
+  "requiredApprovalFingerprint": "v13:bb814a461b83",
   "baseline": "360f2617999b9c9bb52147f44b4d436a63c36b15",
-  "criticRound": 12,
+  "criticRound": 13,
   "openIssueIds": [],
   "requiredReads": [
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "批評round-12（design v12 §16接続部品）→改訂v13→批評round-13→改訂→承認CP（ユーザー指示: 批評2巡）",
+  "nextAction": "批評round-13（2巡目、design v13）→改訂→承認CP",
   "delegation": {
     "批評": "claude-opus-5[1m] design-critic + codex/gpt-5.6-sol xhigh（round-7クロスベンダー）",
     "実装": "antigravity/gemini-3.7-flash-high（M1/M2/M3 A段）＋claude/sonnet（M3テスト補完・B段 secretary_agent）＋Claude Fable 5（B段インフラ・修正）",
