@@ -252,6 +252,9 @@ class GoogleWorkspaceConnector(SourceConnector):
         params = {
             "singleEvents": "true",
             "orderBy": "startTime",
+            # round-15 R-5: cancelled instances are only returned with showDeleted,
+            # otherwise the cancelled_ids reconciliation path is dead.
+            "showDeleted": "true",
             "timeMin": time_min.isoformat(),
             "timeMax": time_max.isoformat(),
             "maxResults": 250,

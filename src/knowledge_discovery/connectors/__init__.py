@@ -48,6 +48,8 @@ class _MisconfiguredGwsConnector(SourceConnector):
     whatever is already in `Store` -- fail-closed without a server crash.
     """
 
+    misconfigured = True  # round-15 R-4: lets the sweep record the error once
+
     def fetch(self, owner_employee_id: str, today: str) -> FetchResult:
         raise RuntimeError(
             "SOURCE_CONNECTOR=google_workspace requires GWS_SELF_EMPLOYEE_ID "

@@ -376,7 +376,16 @@ class SecretaryService:
             "sync_skipped_owners": len(skipped_owner_ids),
             "sync_skipped_mails": 0,
             "sync_errors": 0,
+            # round-15 R-3: in single-owner mode an unregistered employee_id is
+            # still synced (goal 28 runs against an empty store), but a typo must
+            # be visible rather than silently creating a ghost owner.
+            "sync_self_owner_registered": (self_only in registered_owner_ids) if self_only else None,
         }
+        # round-15 R-4: a misconfigured connector fails identically for every
+        # owner; record it once instead of once per owner (400x on a full seed).
+        if getattr(self.connector, "misconfigured", False):
+            stats["sync_errors"] = 1
+            return stats
         for owner_id in sorted(target_owners):
             try:
                 fetch_result = self.connector.fetch(owner_id, today_str)
