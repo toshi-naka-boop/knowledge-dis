@@ -106,6 +106,68 @@ gcloud scheduler jobs create http kd-secretary-sweep \
 gcloud scheduler jobs run kd-secretary-sweep --location=asia-northeast1   # manual fire
 ```
 
+## B-stage: secretary on GEAP Agent Runtime (design v11 §14.7)
+
+The secretary also runs as a first-class agent on **GEAP Agent Runtime** (Vertex AI
+Agent Engine, `reasoningEngines/4310793666370207744`, asia-northeast1). Two strictly
+separated entry points:
+
+- **Scheduled trigger = deterministic operation (no LLM).** `run_daily_sweep` is a
+  registered Agent Engine operation that calls Cloud Run `POST /api/secretary/sweep`
+  and returns its JSON. A non-2xx from Cloud Run raises, so the `:query` response is
+  non-2xx and Cloud Scheduler records a failure (failures are never silenced). The
+  A-stage job keeps running in parallel (sweep is idempotent) as a safety net.
+- **Dialogue = read-only LLM agent.** `LlmAgent` (Gemini 3.7 Flash, model endpoint
+  pinned to `global`) with a single tool `get_my_digest` that is scoped to the
+  session's own `user_id` (no employee_id argument). `run_daily_sweep` and every
+  write operation (confirm / dismiss / review) are deliberately **not** LLM tools, so
+  the Runtime secretary has no delivery authority.
+
+Detection, state machine, preview search and confirm all stay on Cloud Run; the
+Runtime agent only orchestrates and converses. Package: `src/secretary_agent/`
+(independent of `knowledge_discovery`; deps pinned in `scripts/requirements-agent.txt`).
+
+```bash
+# B-stage env (pinned deps) and tests (skip-0 here; skipped in the main venv)
+python3 -m venv .venv-agent && .venv-agent/bin/pip install -r scripts/requirements-agent.txt
+.venv-agent/bin/python -m unittest tests.test_secretary_agent
+
+# deploy / update (ADC; Reasoning Engine service agent needs secretAccessor on demo-api-key)
+GOOGLE_CLOUD_PROJECT=<PROJECT_ID> .venv-agent/bin/python scripts/deploy_secretary_agent.py \
+  --project <PROJECT_ID> --location asia-northeast1 \
+  --staging-bucket gs://<PROJECT_ID>-agent-staging \
+  --api-base-url https://<SERVICE_URL> [--update projects/<N>/locations/asia-northeast1/reasoningEngines/<ID>]
+
+# scheduled trigger (OAuth as kd-scheduler-sa with roles/aiplatform.user; JSON body)
+gcloud scheduler jobs create http kd-secretary-sweep-runtime --location=asia-northeast1 \
+  --schedule="55 7 * * *" --time-zone=Asia/Tokyo --http-method=POST \
+  --uri="https://asia-northeast1-aiplatform.googleapis.com/v1/projects/<PROJECT_ID>/locations/asia-northeast1/reasoningEngines/<ID>:query" \
+  --headers="Content-Type=application/json" --message-body='{"class_method":"run_daily_sweep","input":{}}' \
+  --oauth-service-account-email=kd-scheduler-sa@<PROJECT_ID>.iam.gserviceaccount.com \
+  --attempt-deadline=180s --max-retry-attempts=3
+
+# talk to the secretary as an employee (SDK)
+#   agent_engines.get(<resource>).stream_query(user_id="emp_jordan_lee", session_id=..., message="What's on my plate today?")
+```
+
+**Agent Registry.** The five Cloud Run agents (4 personal agents + A-stage secretary)
+and the Runtime secretary are registered in Agent Registry (asia-northeast1) as
+`no-spec` / `http-json` services with capability descriptions
+(`gcloud alpha agent-registry services create ...`, listed via
+`gcloud alpha agent-registry agents list --location=asia-northeast1`).
+
+Operational note (verified 2026-08-23): with default Runtime limits the replica restarted its
+workers on every request and Vertex answered `400 FAILED_PRECONDITION / Service Unavailable`
+to Cloud Scheduler even though the sweep had completed on Cloud Run. Two changes fixed it:
+`run_daily_sweep` is an async operation that runs the blocking HTTP call in a thread, and the
+deployment pins `resource_limits cpu=4/memory=8Gi`, `min_instances=1/max_instances=2`,
+`container_concurrency=4` (all set by `scripts/deploy_secretary_agent.py`). After that a
+Scheduler fire succeeds in one attempt (HTTP 200, one sweep). Avoid hammering the Runtime
+concurrently in tests; the production schedule fires once a day.
+
+Demo-mode note: Runtime Sessions keep each employee's own digest summaries under
+their own `user_id` (owner-scoped); tracing is left disabled.
+
 ## Demo reset & recording-day procedure
 
 Seed dates are relative to a base date; the server evaluates "today" from
