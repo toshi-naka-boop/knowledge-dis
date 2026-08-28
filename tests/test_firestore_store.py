@@ -65,6 +65,11 @@ class MockCollectionReference:
             snapshots.append(snap)
         return snapshots
 
+    def limit(self, n: int) -> Any:
+        mock_query = MagicMock()
+        mock_query.get.side_effect = lambda: self.stream()[:n]
+        return mock_query
+
     def where(self, field_path: str, op_string: str, value: Any) -> Any:
         mock_query = MagicMock()
 

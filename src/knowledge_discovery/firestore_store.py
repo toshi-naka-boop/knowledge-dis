@@ -439,6 +439,13 @@ class FirestoreStore(Store):
             "identities",
         ):
             col = self.db.collection(col_name)
-            docs = col.stream()
-            for doc in docs:
-                doc.reference.delete()
+            # Unbounded streams over large collections (400 profiles with
+            # 3072-dim embeddings) hit Firestore's query timeout, and batched
+            # deletes of those docs exceed the per-commit index-entry limit;
+            # page the query and delete documents individually.
+            while True:
+                docs = list(col.limit(300).get())
+                if not docs:
+                    break
+                for doc in docs:
+                    doc.reference.delete()
