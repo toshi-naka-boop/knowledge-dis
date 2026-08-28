@@ -384,7 +384,7 @@ class MatchingEngine:
                     DroppedCandidate(
                         agent=agent,
                         profile=profile,
-                        reason_text=f"ベクトル類似度({vector_sim:.3f})が下限({self.vector_floor:.3f})を下回ったため落選",
+                        reason_text=f"Vector similarity ({vector_sim:.3f}) fell below the floor ({self.vector_floor:.3f}) — dropped before inference",
                         cited_item_keys=[],
                         score=vector_sim,
                         drop_stage="vector_floor",

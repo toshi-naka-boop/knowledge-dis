@@ -305,8 +305,9 @@ async function loadAgentDirectory() {
 
 function requesterDisplayName(ask) {
   const raw = ask.requester_display_name || ask.requester_name || ask.requester_id || ask.from || "";
-  if (!raw) return (ask.requester_id ? formatId(ask.requester_id) : "A colleague");
-  return AGENT_DIRECTORY[raw] || raw;
+  if (!raw) return "A colleague";
+  if (AGENT_DIRECTORY[raw]) return AGENT_DIRECTORY[raw];
+  return /^(emp|agent)_/.test(String(raw)) ? formatId(raw) : raw;
 }
 
 // -------------------------------------------------------------------------
@@ -401,7 +402,7 @@ function renderAskCard(ask) {
   const relevance = relevanceLabel(ask.score);
   const bullets = reasonBullets(ask.reason_text);
   const name = requesterDisplayName(ask);
-  const avatarText = (name === (ask.requester_id ? formatId(ask.requester_id) : "A colleague")) ? "?" : initials(name);
+  const avatarText = (name === "A colleague") ? "?" : initials(name);
 
   if (!isPending) {
     return `

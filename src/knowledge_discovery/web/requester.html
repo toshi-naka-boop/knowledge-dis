@@ -540,7 +540,7 @@ async function triggerSweep() {
 }
 
 function renderDigest(data) {
-  document.getElementById("digestDateBadge").innerText = data.date || "Today";
+  document.getElementById("digestDateBadge").innerText = data.date ? ("Today \u00b7 " + data.date) : "Today";
 
   // Reminders
   const reminderList = document.getElementById("reminderList");
@@ -637,11 +637,16 @@ function renderNeedCard(card) {
     <div class="card need-card" id="card_box_${esc(card.card_id)}" data-state="initial">
       <span class="need-evidence">${esc(p.evidence_line || "This is stalling.")}</span>
       <div class="need-task-title">${esc(p.task_title || p.task_id)}</div>
+      ${card.tier === "request_draft" ? `
       <div class="need-copy">It looks like this is stalling. I can look across your organization for someone who has relevant experience.</div>
       <div class="btn-row">
         <button class="btn-primary" onclick="findSomeone('${esc(card.card_id)}')">Find someone who can help</button>
         <button class="btn-text" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
-      </div>
+      </div>` : `
+      <div class="need-copy">Your agent is keeping an eye on this task. If it keeps stalling, it will look for someone who can help.</div>
+      <div class="btn-row">
+        <button class="btn-text" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
+      </div>`}
     </div>`;
 }
 

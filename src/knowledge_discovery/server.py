@@ -491,6 +491,7 @@ def create_app(
                     "status_id": f"status_{idx}",
                     "state": "pending",
                     "display_state": "Waiting for response",
+                    "respondent_name": s.candidate_name,
                 })
             elif s.state == "matched":
                 formatted_statuses.append({
