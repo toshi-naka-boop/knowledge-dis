@@ -424,8 +424,8 @@ class TestServerEndpoints(unittest.TestCase):
         """Verify web UI HTML endpoints and presence of required visual elements."""
         res_req = self.client.get("/requester")
         self.assertEqual(res_req.status_code, 200)
-        self.assertIn("Requester Portal", res_req.text)
-        self.assertIn("Waiting for response", res_req.text)
+        self.assertIn("My Agent", res_req.text)
+        self.assertIn("Find someone who can help", res_req.text)
 
         res_cand = self.client.get("/candidate")
         self.assertEqual(res_cand.status_code, 200)
