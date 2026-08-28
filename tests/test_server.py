@@ -429,7 +429,7 @@ class TestServerEndpoints(unittest.TestCase):
 
         res_cand = self.client.get("/candidate")
         self.assertEqual(res_cand.status_code, 200)
-        self.assertIn("Your agent screened a request", res_cand.text)
+        self.assertIn("Your agent screened this request and thinks your experience is relevant.", res_cand.text)
         self.assertIn("🔒 Relates to something only your agent knows about you", res_cand.text)
 
         res_audit = self.client.get("/audit")

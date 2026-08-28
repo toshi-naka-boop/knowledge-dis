@@ -86,7 +86,6 @@ button.btn-text:hover { color: var(--primary); }
 .sidebar-nav a:hover { background: var(--bg); color: var(--text); }
 .sidebar-nav a.active { background: var(--primary-tint); color: var(--primary); }
 .sidebar-spacer { flex: 1; }
-.sidebar-footer { font-size: 11px; color: var(--text-faint); line-height: 1.5; font-style: italic; }
 
 .main { flex: 1; min-width: 0; padding: 36px 40px 60px; }
 .main-inner { max-width: 1180px; margin: 0 auto; }
@@ -110,25 +109,19 @@ button.btn-text:hover { color: var(--primary); }
 .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); display: inline-block; animation: dot-pulse 2.2s infinite; }
 @keyframes dot-pulse { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
 
-/* ---------------- Funnel summary (small, real numbers) ---------------- */
+/* ---------------- Funnel summary (secondary, one-line, small) ---------------- */
 
 .trace-funnel {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 10px 16px;
-  margin-bottom: 20px;
-  font-size: 12.5px;
-  color: var(--text-muted);
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: -4px 0 22px;
 }
-.trace-funnel .tf-num { font-weight: 700; color: var(--primary); }
-.trace-funnel .tf-arrow { color: var(--text-faint); }
+.trace-funnel .tf-num { font-weight: 600; color: var(--text-muted); }
 
 /* ---------------- Two-column layout ---------------- */
 
-.trace-columns { display: flex; gap: 20px; align-items: flex-start; }
-.trace-network-col { flex: 0 0 55%; max-width: 55%; }
+.trace-columns { display: flex; gap: 24px; align-items: flex-start; }
+.trace-network-col { flex: 0 0 63%; max-width: 63%; }
 .trace-timeline-col { flex: 1; min-width: 0; }
 
 .section-title {
@@ -138,6 +131,11 @@ button.btn-text:hover { color: var(--primary); }
   color: var(--text-faint);
   text-transform: uppercase;
   margin-bottom: 10px;
+}
+.section-title-primary {
+  font-size: 14px;
+  color: var(--text);
+  letter-spacing: 0.02em;
 }
 
 /* ---------------- Agent Network (SVG) ---------------- */
@@ -172,6 +170,43 @@ button.btn-text:hover { color: var(--primary); }
 .trace-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--text-muted); }
 .trace-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend-swatch { width: 14px; height: 2px; display: inline-block; }
+
+/* ---------------- Match Found card (below the network) ---------------- */
+
+.match-found-wrap { margin-top: 16px; }
+.match-found-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.match-found-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--accent-tint);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.match-found-avatar {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--card-bg);
+  border: 2px solid var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.match-found-name { font-size: 19px; font-weight: 700; color: var(--text); }
+.match-found-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
 
 /* ---------------- Trace Timeline ---------------- */
 
@@ -233,7 +268,6 @@ button.btn-text:hover { color: var(--primary); }
         <a href="/audit" class="active">Bridge Trace</a>
       </nav>
       <div class="sidebar-spacer"></div>
-      <div class="sidebar-footer">AI shouldn't replace human connections. It should create them.</div>
     </aside>
 
     <main class="main">
@@ -246,16 +280,16 @@ button.btn-text:hover { color: var(--primary); }
           <span class="live-indicator"><span class="pulse-dot"></span> Live (3s)</span>
         </div>
 
-        <div class="card trace-funnel" id="traceFunnel">
+        <div class="trace-funnel" id="traceFunnel">
           <span class="empty-note" style="padding: 0;">Loading funnel…</span>
         </div>
 
         <div class="trace-columns">
           <div class="trace-network-col">
-            <div class="section-title">Agent Network</div>
+            <div class="section-title section-title-primary">Agent Network</div>
             <div class="card trace-network-card">
-              <svg id="networkSvg" viewBox="0 0 620 520" xmlns="http://www.w3.org/2000/svg">
-                <text x="310" y="260" text-anchor="middle" class="na-agent-label">Loading…</text>
+              <svg id="networkSvg" viewBox="0 0 640 580" xmlns="http://www.w3.org/2000/svg">
+                <text x="320" y="280" text-anchor="middle" class="na-agent-label">Loading…</text>
               </svg>
               <div class="trace-legend">
                 <span><span class="legend-swatch" style="background: var(--primary);"></span> Asked</span>
@@ -263,10 +297,11 @@ button.btn-text:hover { color: var(--primary); }
                 <span><span class="legend-swatch" style="background: var(--accent);"></span> Connection made</span>
               </div>
             </div>
+            <div class="match-found-wrap" id="matchFoundCard" style="display: none;"></div>
           </div>
 
           <div class="trace-timeline-col">
-            <div class="section-title">Trace Timeline</div>
+            <div class="section-title">Trace Timeline · latest session</div>
             <div class="trace-timeline" id="traceTimeline">
               <div class="empty-note">Loading trace events…</div>
             </div>
@@ -350,15 +385,41 @@ async function fetchAgents() {
 let PREV_RECORD_COUNT = 0;
 let PREV_AGENT_STATE = {};
 
+// -------------------------------------------------------------------------
+// Session splitting: a "discovery session" starts at a query record and
+// runs up to (not including) the next query record. Single-tenant timeline,
+// so a simple linear split by intent === "query" boundaries is sufficient.
+// -------------------------------------------------------------------------
+
+function splitIntoSessions(records) {
+  const sessions = [];
+  let current = null;
+  for (const r of records) {
+    if (r.intent === "query") {
+      current = [];
+      sessions.push(current);
+    }
+    if (current) current.push(r);
+  }
+  return sessions;
+}
+
+function latestSession(records) {
+  const sessions = splitIntoSessions(records);
+  return sessions.length ? sessions[sessions.length - 1] : [];
+}
+
 async function fetchTrace() {
   try {
     const res = await fetch("/api/audit/messages", { headers: { "X-API-Key": API_KEY } });
     if (!res.ok) return;
     const data = await res.json();
     const records = (data.records || []).slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+    const session = latestSession(records);
     renderFunnel(data.funnel_stats || {});
     renderNetwork(records);
-    renderTimeline(records, data.funnel_stats || {});
+    renderMatchCard(session);
+    renderTimeline(session, data.funnel_stats || {});
     PREV_RECORD_COUNT = records.length;
   } catch (err) {
     console.error("Trace fetch error:", err);
@@ -367,16 +428,33 @@ async function fetchTrace() {
 
 function renderFunnel(stats) {
   const el = document.getElementById("traceFunnel");
-  el.innerHTML = `
-    <span class="tf-num">${esc(stats.total_profiles ?? "0")}</span><span>profiles</span>
-    <span class="tf-arrow">→</span>
-    <span class="tf-num">${esc(stats.funnel_limit ?? "0")}</span><span>shortlisted</span>
-    <span class="tf-arrow">→</span>
-    <span class="tf-num">${esc(stats.registered_agents_count ?? "0")}</span><span>candidate agents</span>
-    <span class="tf-arrow">→</span>
-    <span class="tf-num">${esc(stats.dispatched_count ?? "0")}</span><span>asked</span>
-    <span class="tf-arrow">→</span>
-    <span class="tf-num">${esc(stats.dropped_count ?? "0")}</span><span>no connection</span>`;
+  el.innerHTML = `Explored <span class="tf-num">${esc(stats.total_profiles ?? "0")}</span> profiles ` +
+    `&middot; shortlisted <span class="tf-num">${esc(stats.funnel_limit ?? "0")}</span> ` +
+    `&middot; asked <span class="tf-num">${esc(stats.dispatched_count ?? "0")}</span> agents`;
+}
+
+function renderMatchCard(sessionRecords) {
+  const container = document.getElementById("matchFoundCard");
+  const rec = sessionRecords.find(r => r.intent === "match_proposal");
+  if (!rec) {
+    container.style.display = "none";
+    container.innerHTML = "";
+    return;
+  }
+  const payload = rec.display_payload || {};
+  const participants = payload.participants || [];
+  const requesterName = resolveName(participants[0]);
+  const candidateName = resolveName(participants[1]);
+  container.style.display = "";
+  container.innerHTML = `
+    <div class="match-found-label">Match Found</div>
+    <div class="match-found-card">
+      <div class="match-found-avatar">${esc(initials(candidateName))}</div>
+      <div>
+        <div class="match-found-name">${esc(candidateName)}</div>
+        <div class="match-found-sub">Connected with ${esc(requesterName)} &middot; ${esc(payload.meeting_duration ?? 15)} min</div>
+      </div>
+    </div>`;
 }
 
 // -------------------------------------------------------------------------
@@ -415,7 +493,7 @@ function deriveAgentState(records) {
 
 function renderNetwork(records) {
   const svg = document.getElementById("networkSvg");
-  const cx = 310, cy = 260, radius = 190;
+  const cx = 320, cy = 280, radius = 205;
   const n = AGENTS.length;
   const agentState = deriveAgentState(records);
 
@@ -526,11 +604,6 @@ function recordToEvent(r, funnelStats) {
   } else if (r.intent === "connect_ask_private") {
     action = `Asked ${esc(owner)} privately`;
     sublines.push({ label: "POLICY", text: "🔒 based on a private item — content masked", cls: "trace-policy" });
-  } else if (r.intent === "no_connection") {
-    action = `${esc(owner)}'s agent found no meaningful link`;
-    if (!payload.masked && payload.reason_text) {
-      sublines.push({ label: "EVIDENCE", text: esc(truncate(payload.reason_text, 90)), cls: "trace-evidence" });
-    }
   } else if (r.intent === "consent_reply") {
     action = payload.decision === "granted" ? `${esc(fromName)} accepted` : `${esc(fromName)} passed`;
   } else if (r.intent === "decline_with_reason") {
@@ -566,10 +639,57 @@ function recordToEvent(r, funnelStats) {
   return { action, sublines, rowClass, timestamp: r.timestamp, auditId: r.audit_id };
 }
 
-function renderTimeline(records, funnelStats) {
-  const container = document.getElementById("traceTimeline");
+// Collapse every no_connection record in the session into a single event
+// (real data only: one representative reason, the rest counted not repeated).
+function buildSessionEvents(sessionRecords, funnelStats) {
   MATCH_PROPOSAL_SEEN.clear();
-  const events = records.map(r => recordToEvent(r, funnelStats)).filter(Boolean);
+  const noConnectionRecords = sessionRecords.filter(r => r.intent === "no_connection");
+  let noConnectionAdded = false;
+  const events = [];
+
+  for (const r of sessionRecords) {
+    if (r.intent === "no_connection") {
+      if (noConnectionAdded) continue;
+      noConnectionAdded = true;
+      const rep = noConnectionRecords.find(nr => !nr.display_payload?.masked && nr.display_payload?.reason_text);
+      const sublines = [];
+      if (rep) {
+        const repOwner = resolveName(rep.to);
+        const others = noConnectionRecords.length - 1;
+        const prefix = noConnectionRecords.length > 1 ? `${esc(repOwner)}: ` : "";
+        const suffix = others > 0 ? ` (+${others} more)` : "";
+        sublines.push({
+          label: "EVIDENCE",
+          text: `${prefix}${esc(truncate(rep.display_payload.reason_text, 90))}${suffix}`,
+          cls: "trace-evidence",
+        });
+      }
+      events.push({
+        action: noConnectionRecords.length === 1
+          ? `${esc(resolveName(r.to))}'s agent found no meaningful link`
+          : `${noConnectionRecords.length} agents found no meaningful link`,
+        sublines,
+        rowClass: "",
+        timestamp: r.timestamp,
+        auditId: r.audit_id,
+      });
+      continue;
+    }
+    const ev = recordToEvent(r, funnelStats);
+    if (ev) events.push(ev);
+  }
+  return events;
+}
+
+function renderTimeline(sessionRecords, funnelStats) {
+  const container = document.getElementById("traceTimeline");
+
+  if (sessionRecords.length === 0) {
+    container.innerHTML = '<div class="empty-note">No discovery session yet.</div>';
+    return;
+  }
+
+  const events = buildSessionEvents(sessionRecords, funnelStats);
 
   if (events.length === 0) {
     container.innerHTML = '<div class="empty-note">No trace events recorded yet.</div>';

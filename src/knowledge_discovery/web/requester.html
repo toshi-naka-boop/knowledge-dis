@@ -103,7 +103,6 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
 .sidebar-nav a:hover { background: var(--bg); color: var(--text); }
 .sidebar-nav a.active { background: var(--primary-tint); color: var(--primary); }
 .sidebar-spacer { flex: 1; }
-.sidebar-footer { font-size: 11px; color: var(--text-faint); line-height: 1.5; font-style: italic; }
 
 .main { flex: 1; min-width: 0; padding: 36px 40px 60px; }
 .main-inner { max-width: 880px; margin: 0 auto; }
@@ -153,21 +152,22 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
 
 /* ---------------- Today: reminders ---------------- */
 
-.reminder-list { display: flex; flex-direction: column; gap: 6px; }
+.reminder-list { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--border); }
 .reminder-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 11px 14px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
+  padding: 9px 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  font-size: 12px;
 }
 .reminder-row .reminder-title { font-weight: 500; color: var(--text); }
 .empty-note { font-size: 13px; color: var(--text-faint); padding: 10px 2px; }
 
-.tag { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.tag { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
 .tag-overdue { background: var(--warn-tint); color: var(--warn); }
 .tag-today { background: var(--today-bg); color: var(--today-text); }
 .tag-tomorrow, .tag-upcoming { background: var(--muted-tag-bg); color: var(--muted-tag-text); }
@@ -196,6 +196,18 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
 .need-evidence { font-size: 12px; color: var(--warn); background: var(--warn-tint); display: inline-block; padding: 4px 10px; border-radius: var(--radius-sm); width: fit-content; }
 .need-task-title { font-size: 15px; font-weight: 600; color: var(--text); }
 .need-copy { font-size: 13px; color: var(--text-muted); line-height: 1.55; max-width: 60ch; }
+
+/* Primary Card: the request_draft-tier stagnation card is the page's focal point */
+.need-primary { padding: 24px 26px; gap: 12px; }
+.need-blocker-label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--warn); }
+.need-primary .need-task-title { font-size: 20px; }
+.need-evidence-secondary { font-size: 11.5px; color: var(--text-faint); }
+
+/* Compact card: notice-tier stagnation cards are quieter than the Primary Card */
+.need-compact { padding: 10px 14px; gap: 6px; border-color: var(--border); box-shadow: none; }
+.need-compact .need-evidence { font-size: 10.5px; padding: 2px 8px; }
+.need-compact .need-task-title { font-size: 13px; }
+.need-compact .need-copy { font-size: 12px; }
 
 .explore-transition { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
 .explore-spark { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); animation: dot-pulse 0.9s infinite; }
@@ -265,6 +277,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
 @keyframes line-grow { from { width: 0; } to { width: 90px; } }
 .connection-caption { font-size: 14px; font-weight: 600; color: var(--accent); }
 .connection-sub { font-size: 12.5px; color: var(--text-muted); }
+.connection-tagline { font-size: 19px; font-weight: 600; color: var(--accent); text-align: center; max-width: 38ch; margin-top: 6px; }
 
 /* ---------------- Manual ask (de-emphasized) ---------------- */
 
@@ -291,7 +304,6 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
         <a id="navAudit" href="/audit">Bridge Trace</a>
       </nav>
       <div class="sidebar-spacer"></div>
-      <div class="sidebar-footer">AI shouldn't replace human connections. It should create them.</div>
     </aside>
 
     <main class="main">
@@ -369,6 +381,11 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
    inlined here. Keep in sync with web/ui.js. */
 
 const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
+// Demo/screenshot device: with ?reveal=1, the first request_draft stagnation
+// card skips the "Looking across your organization…" animation and renders
+// its PersonCard immediately. Normal URLs (no reveal=1) are unaffected.
+const REVEAL_PARAM = (new URLSearchParams(location.search)).get("reveal") === "1";
+let revealedOnce = false;
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -576,6 +593,14 @@ function renderDigest(data) {
   } else {
     needContainer.innerHTML = stagCards.map(renderNeedCard).join("");
   }
+
+  if (REVEAL_PARAM && !revealedOnce) {
+    const target = stagCards.find(c => c.tier === "request_draft");
+    if (target) {
+      revealedOnce = true;
+      revealCandidates(target.card_id);
+    }
+  }
 }
 
 function renderSuggestCard(card) {
@@ -631,22 +656,36 @@ async function submitEditDiff(cardId) {
 // Need Detection: "It looks like this is stalling" -> Find someone -> reveal
 // -------------------------------------------------------------------------
 
+// Comma-split evidence_line into short "· "-joined muted fragments
+// (e.g. "Rescheduled 2 times · No updates for 5 days"), for the Primary
+// Card where the full sentence is demoted to secondary evidence.
+function splitEvidence(line) {
+  return String(line || "").split(",").map(s => s.trim()).filter(Boolean).join(" · ");
+}
+
 function renderNeedCard(card) {
   const p = card.payload || {};
-  return `
-    <div class="card need-card" id="card_box_${esc(card.card_id)}" data-state="initial">
-      <span class="need-evidence">${esc(p.evidence_line || "This is stalling.")}</span>
+  if (card.tier === "request_draft") {
+    return `
+    <div class="card need-card need-primary" id="card_box_${esc(card.card_id)}" data-state="initial">
+      <div class="need-blocker-label"><span class="pulse-dot"></span> Your agent noticed a blocker</div>
       <div class="need-task-title">${esc(p.task_title || p.task_id)}</div>
-      ${card.tier === "request_draft" ? `
+      <div class="need-evidence-secondary">${esc(splitEvidence(p.evidence_line) || "This is stalling.")}</div>
       <div class="need-copy">It looks like this is stalling. I can look across your organization for someone who has relevant experience.</div>
       <div class="btn-row">
         <button class="btn-primary" onclick="findSomeone('${esc(card.card_id)}')">Find someone who can help</button>
         <button class="btn-text" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
-      </div>` : `
+      </div>
+    </div>`;
+  }
+  return `
+    <div class="card need-card need-compact" id="card_box_${esc(card.card_id)}" data-state="initial">
+      <span class="need-evidence">${esc(p.evidence_line || "This is stalling.")}</span>
+      <div class="need-task-title">${esc(p.task_title || p.task_id)}</div>
       <div class="need-copy">Your agent is keeping an eye on this task. If it keeps stalling, it will look for someone who can help.</div>
       <div class="btn-row">
         <button class="btn-text" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
-      </div>`}
+      </div>
     </div>`;
 }
 
@@ -788,10 +827,10 @@ function renderStatuses(statuses) {
       return `
         <div class="card status-card">
           <div class="status-head">
-            <span class="status-name">Waiting for ${name}'s agent</span>
+            <span class="status-name">Request sent to ${name}</span>
             <span class="status-tag waiting">Pending</span>
           </div>
-          <div class="status-body">Their personal agent is reviewing the request.</div>
+          <div class="status-body">Their agent is reviewing it.</div>
         </div>`;
     }
     if (item.state === "matched") {
@@ -807,6 +846,7 @@ function renderStatuses(statuses) {
             </div>
             <div class="connection-caption">A new connection was made.</div>
             <div class="connection-sub">15 min · time to be coordinated</div>
+            <div class="connection-tagline">AI shouldn't replace human connections. It should create them.</div>
           </div>
         </div>`;
     }

@@ -105,7 +105,6 @@ textarea:focus, input[type="text"]:focus, select:focus { outline: none; border-c
 .sidebar-nav a:hover { background: var(--bg); color: var(--text); }
 .sidebar-nav a.active { background: var(--primary-tint); color: var(--primary); }
 .sidebar-spacer { flex: 1; }
-.sidebar-footer { font-size: 11px; color: var(--text-faint); line-height: 1.5; font-style: italic; }
 
 .main { flex: 1; min-width: 0; padding: 36px 40px 60px; }
 .main-inner { max-width: 880px; margin: 0 auto; }
@@ -114,10 +113,11 @@ textarea:focus, input[type="text"]:focus, select:focus { outline: none; border-c
 
 /* ---------------- Header ---------------- */
 
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px 16px; margin-bottom: 28px; }
 .greeting { font-size: 22px; font-weight: 600; color: var(--text); }
-.agent-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+.page-subtitle { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; max-width: 480px; }
 .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); display: inline-block; animation: dot-pulse 2.2s infinite; }
+.pulse-dot.sm { width: 5px; height: 5px; }
 @keyframes dot-pulse { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
 
 .persona-select {
@@ -127,6 +127,11 @@ textarea:focus, input[type="text"]:focus, select:focus { outline: none; border-c
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 5px 12px;
+  max-width: 320px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------------- Section / cards ---------------- */
@@ -160,25 +165,33 @@ textarea:focus, input[type="text"]:focus, select:focus { outline: none; border-c
   font-weight: 600;
   font-size: 14px;
 }
-.requester-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-.requester-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.avatar.avatar-lg { width: 56px; height: 56px; font-size: 20px; }
+.requester-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.requester-name { font-size: 18px; font-weight: 600; color: var(--text); }
 .requester-label { font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
 
 /* ---------------- Ask card body ---------------- */
 
 .field-block { margin-bottom: 14px; }
 .field-label { font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
-.field-value { font-size: 14px; color: var(--text); line-height: 1.5; }
+.field-quote {
+  border-left: 3px solid var(--border-strong);
+  padding: 8px 16px;
+  font-size: 15px;
+  color: var(--text);
+  line-height: 1.6;
+}
 
 .reason-list { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
 .reason-list li { font-size: 13px; color: var(--text); padding-left: 14px; position: relative; line-height: 1.5; }
 .reason-list li::before { content: "–"; position: absolute; left: 0; color: var(--text-faint); }
-.ai-disclosure { font-size: 10.5px; color: var(--text-faint); margin-top: 2px; }
+.ai-disclosure { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-faint); margin-top: 2px; }
 .private-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; display: flex; align-items: flex-start; gap: 6px; }
 
-.assessment-list { display: flex; flex-direction: column; gap: 4px; }
-.assessment-row { font-size: 13px; color: var(--text); }
-.assessment-row strong { color: var(--text-muted); font-weight: 500; }
+.assessment-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tag.match-tag { background: var(--muted-tag-bg); color: var(--muted-tag-text); }
+.tag.match-tag.strong { background: var(--primary-tint); color: var(--primary); }
+.assessment-meta { font-size: 12.5px; color: var(--text-muted); }
 
 .privacy-summary {
   background: var(--bg);
@@ -217,15 +230,14 @@ textarea:focus, input[type="text"]:focus, select:focus { outline: none; border-c
         <a id="navAudit" href="/audit">Bridge Trace</a>
       </nav>
       <div class="sidebar-spacer"></div>
-      <div class="sidebar-footer">AI shouldn't replace human connections. It should create them.</div>
     </aside>
 
     <main class="main">
       <div class="main-inner">
         <div class="page-header">
           <div>
-            <div class="greeting">Connection Requests</div>
-            <div class="agent-badge"><span class="pulse-dot"></span> <span id="screenedLabel">Your agent screened a request</span></div>
+            <div class="greeting" id="pageHeading">Connection Requests</div>
+            <div class="page-subtitle" id="screenedLabel">Your agent screened this request and thinks your experience is relevant.</div>
           </div>
           <!-- Demo device: one-person-plays-all dropdown (README: demo simplification). Hidden for a "human" principal. -->
           <select id="agentSelector" class="persona-select" onchange="loadAsksForAgent()" title="Demo: switch which agent's inbox you are viewing">
@@ -358,18 +370,19 @@ async function loadAsksForAgent() {
   }
 }
 
-function relevanceLabel(score) {
-  if (score === undefined || score === null) return "";
-  return score >= 0.75 ? "High" : "Moderate";
+function matchLabel(score) {
+  return (score !== undefined && score !== null && score >= 0.75) ? "Strong match" : "Possible match";
 }
 
 function reasonBullets(reasonText) {
   const text = String(reasonText || "").trim();
   if (!text) return [];
   return text
-    .split(/(?<=[.;])\s+/)
+    .split(/(?<=[.;!?])\s+/)
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((s) => (s.length > 90 ? s.slice(0, 90).trim() + "…" : s));
 }
 
 // Local memory of how a request was just answered in this session (decision +
@@ -382,15 +395,22 @@ const LOCAL_OUTCOME = {};
 
 function renderAsks(asks) {
   const container = document.getElementById("asksContainer");
-  const label = document.getElementById("screenedLabel");
-  label.innerText = asks.length > 1
-    ? `Your agent screened ${asks.length} requests`
-    : "Your agent screened a request";
+  const heading = document.getElementById("pageHeading");
+  const subtitle = document.getElementById("screenedLabel");
 
   if (!asks || asks.length === 0) {
+    heading.innerText = "Connection Requests";
+    subtitle.innerText = "";
     container.innerHTML = `<div class="empty-note">No incoming requests for this agent.</div>`;
     return;
   }
+
+  const firstRequesterName = requesterDisplayName(asks[0]);
+  const firstName = (firstRequesterName === "A colleague") ? "Someone" : firstRequesterName.split(/\s+/)[0];
+  heading.innerText = `${firstName} needs your perspective`;
+  subtitle.innerText = asks.length > 1
+    ? "Your agent screened these requests and thinks your experience is relevant."
+    : "Your agent screened this request and thinks your experience is relevant.";
 
   container.innerHTML = asks.map((ask) => renderAskCard(ask)).join("");
 }
@@ -399,7 +419,7 @@ function renderAskCard(ask) {
   const auditId = ask.ask_audit_id;
   const isPrivate = ask.is_private || ask.intent === "connect_ask_private";
   const isPending = (ask.consent_state === "pending" || ask.consent_state === "n/a");
-  const relevance = relevanceLabel(ask.score);
+  const match = matchLabel(ask.score);
   const bullets = reasonBullets(ask.reason_text);
   const name = requesterDisplayName(ask);
   const avatarText = (name === "A colleague") ? "?" : initials(name);
@@ -415,7 +435,7 @@ function renderAskCard(ask) {
   return `
     <div class="card" id="ask_card_${esc(auditId)}">
       <div class="requester-row">
-        <div class="avatar">${esc(avatarText)}</div>
+        <div class="avatar avatar-lg">${esc(avatarText)}</div>
         <div>
           <div class="requester-label">Requester</div>
           <div class="requester-name">${esc(name)}</div>
@@ -424,22 +444,21 @@ function renderAskCard(ask) {
 
       <div class="field-block">
         <div class="field-label">What they need help with</div>
-        <div class="field-value">${esc(ask.question_summary) || "A colleague inquiry"}</div>
+        <div class="field-quote">${esc(ask.question_summary) || "A colleague inquiry"}</div>
       </div>
 
       <div class="field-block">
         <div class="field-label">Why you?</div>
         <ul class="reason-list">${bullets.map((b) => `<li>${esc(b)}</li>`).join("") || `<li>${esc(ask.reason_text) || "Relevant experience detected."}</li>`}</ul>
-        <div class="ai-disclosure">🤖 AI-generated</div>
+        <div class="ai-disclosure"><span class="pulse-dot sm"></span> Suggested by your agent</div>
         ${isPrivate ? `<div class="private-note">🔒 Relates to something only your agent knows about you — nothing has been shared.</div>` : ""}
       </div>
 
       <div class="field-block">
         <div class="field-label">Agent assessment</div>
-        <div class="assessment-list">
-          ${relevance ? `<div class="assessment-row"><strong>Relevance:</strong> ${relevance}</div>` : ""}
-          <div class="assessment-row"><strong>Time:</strong> 15 min</div>
-          <div class="assessment-row"><strong>Shared with you:</strong> question summary + why-you note</div>
+        <div class="assessment-line">
+          <span class="tag match-tag ${match === "Strong match" ? "strong" : ""}">${match}</span>
+          <span class="assessment-meta">15 min · Limited context shared</span>
         </div>
       </div>
 
