@@ -157,12 +157,12 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 9px 4px;
+  padding: 6px 4px;
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 .reminder-row .reminder-title { font-weight: 500; color: var(--text); }
 .empty-note { font-size: 13px; color: var(--text-faint); padding: 10px 2px; }
@@ -199,15 +199,16 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
 
 /* Primary Card: the request_draft-tier stagnation card is the page's focal point */
 .need-primary { padding: 24px 26px; gap: 12px; }
-.need-blocker-label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--warn); }
+.need-blocker-label { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: var(--warn); letter-spacing: 0.07em; }
 .need-primary .need-task-title { font-size: 20px; }
 .need-evidence-secondary { font-size: 11.5px; color: var(--text-faint); }
+.need-context { font-size: 12.5px; color: var(--text-muted); margin-top: -4px; }
 
-/* Compact card: notice-tier stagnation cards are quieter than the Primary Card */
-.need-compact { padding: 10px 14px; gap: 6px; border-color: var(--border); box-shadow: none; }
-.need-compact .need-evidence { font-size: 10.5px; padding: 2px 8px; }
-.need-compact .need-task-title { font-size: 13px; }
-.need-compact .need-copy { font-size: 12px; }
+/* Compact card: notice-tier stagnation cards are a single quiet line */
+.need-compact { flex-direction: row; align-items: center; gap: 12px; padding: 8px 14px; border-color: var(--border); box-shadow: none; }
+.need-compact .need-task-title { font-size: 12.5px; font-weight: 500; color: var(--text-muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.need-monitor { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+.need-compact .btn-text { font-size: 11px; }
 
 .explore-transition { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
 .explore-spark { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); animation: dot-pulse 0.9s infinite; }
@@ -231,14 +232,14 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
 }
 .avatar.avatar-sm { width: 30px; height: 30px; font-size: 12px; }
 .person-main { flex: 1; min-width: 0; }
-.person-name { font-size: 18px; font-weight: 600; color: var(--text); }
+.person-name { font-size: 22px; font-weight: 700; color: var(--text); }
 .person-role { font-size: 13px; color: var(--text-muted); margin-top: 1px; margin-bottom: 10px; }
 .person-why { font-size: 12px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
 .person-reasons { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .person-reasons li { font-size: 13px; color: var(--text); padding-left: 14px; position: relative; line-height: 1.5; }
 .person-reasons li::before { content: "–"; position: absolute; left: 0; color: var(--text-faint); }
 .ai-disclosure { font-size: 10.5px; color: var(--text-faint); margin-bottom: 10px; }
-.person-timing { font-size: 13px; color: var(--text); font-weight: 500; margin-bottom: 10px; }
+.person-timing { font-size: 13.5px; color: var(--text); font-weight: 600; margin-bottom: 10px; }
 .question-label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; display: block; }
 .question-box { height: 68px; margin-bottom: 6px; }
 .fixed-notice { font-size: 11px; color: var(--text-faint); font-style: italic; margin-bottom: 12px; }
@@ -267,8 +268,12 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
 /* ---------------- Connection Created ---------------- */
 
 .connection-created { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0 4px; }
-.connection-pair { display: flex; align-items: center; gap: 0; }
+.connection-pair { display: flex; align-items: flex-start; gap: 0; margin-bottom: 22px; }
+.connection-person { position: relative; width: 52px; }
+.connection-name { position: absolute; top: 59px; left: 50%; transform: translateX(-50%); font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; }
 .connection-line {
+  align-self: flex-start;
+  margin-top: 25px;
   height: 2px;
   width: 0;
   background: var(--accent);
@@ -323,6 +328,9 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
           </select>
         </div>
 
+        <!-- Need Detection (protagonist: shown before TODAY) -->
+        <div class="section" id="needDetectionSection"></div>
+
         <!-- TODAY -->
         <div class="section">
           <div class="section-title">
@@ -337,9 +345,6 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
           </div>
           <div id="todaySuggestions" style="margin-top: 10px;"></div>
         </div>
-
-        <!-- Need Detection -->
-        <div class="section" id="needDetectionSection"></div>
 
         <!-- Connection Requests -->
         <div class="section">
@@ -591,7 +596,10 @@ function renderDigest(data) {
   if (stagCards.length === 0) {
     needContainer.innerHTML = "";
   } else {
-    needContainer.innerHTML = stagCards.map(renderNeedCard).join("");
+    const ordered = [...stagCards].sort(
+      (a, b) => (a.tier === "request_draft" ? 0 : 1) - (b.tier === "request_draft" ? 0 : 1)
+    );
+    needContainer.innerHTML = ordered.map(renderNeedCard).join("");
   }
 
   if (REVEAL_PARAM && !revealedOnce) {
@@ -668,7 +676,7 @@ function renderNeedCard(card) {
   if (card.tier === "request_draft") {
     return `
     <div class="card need-card need-primary" id="card_box_${esc(card.card_id)}" data-state="initial">
-      <div class="need-blocker-label"><span class="pulse-dot"></span> Your agent noticed a blocker</div>
+      <div class="need-blocker-label"><span class="pulse-dot"></span> NEED DETECTED</div>
       <div class="need-task-title">${esc(p.task_title || p.task_id)}</div>
       <div class="need-evidence-secondary">${esc(splitEvidence(p.evidence_line) || "This is stalling.")}</div>
       <div class="need-copy">It looks like this is stalling. I can look across your organization for someone who has relevant experience.</div>
@@ -678,14 +686,12 @@ function renderNeedCard(card) {
       </div>
     </div>`;
   }
+  const shortEvidence = String(p.evidence_line || "").split(",")[0].trim().replace(/\.$/, "");
   return `
     <div class="card need-card need-compact" id="card_box_${esc(card.card_id)}" data-state="initial">
-      <span class="need-evidence">${esc(p.evidence_line || "This is stalling.")}</span>
-      <div class="need-task-title">${esc(p.task_title || p.task_id)}</div>
-      <div class="need-copy">Your agent is keeping an eye on this task. If it keeps stalling, it will look for someone who can help.</div>
-      <div class="btn-row">
-        <button class="btn-text" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
-      </div>
+      <span class="need-task-title">${esc(p.task_title || p.task_id)}</span>
+      <span class="need-monitor">${esc(shortEvidence || "Stalling")} · Monitoring</span>
+      <button class="btn-text" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
     </div>`;
 }
 
@@ -721,6 +727,8 @@ function revealCandidates(cardId) {
   const rest = cands.slice(1);
 
   box.innerHTML = `
+    <div class="need-blocker-label"><span class="pulse-dot"></span> NEED DETECTED</div>
+    <div class="need-context">${esc(p.task_title || p.task_id)}</div>
     <div class="person-card">
       <div class="avatar">${esc(initials(top.name || top.employee_id))}</div>
       <div class="person-main">
@@ -834,15 +842,21 @@ function renderStatuses(statuses) {
         </div>`;
     }
     if (item.state === "matched") {
-      const you = firstName(REQUESTER_ID);
+      const you = displayName(REQUESTER_ID);
       const them = displayName(item.respondent_name || "");
       return `
         <div class="card status-card">
           <div class="connection-created">
             <div class="connection-pair">
-              <div class="avatar">${esc(initials(you))}</div>
+              <div class="connection-person">
+                <div class="avatar">${esc(initials(you))}</div>
+                <div class="connection-name">${esc(you)}</div>
+              </div>
               <div class="connection-line"></div>
-              <div class="avatar">${esc(initials(them))}</div>
+              <div class="connection-person">
+                <div class="avatar">${esc(initials(them))}</div>
+                <div class="connection-name">${esc(them)}</div>
+              </div>
             </div>
             <div class="connection-caption">A new connection was made.</div>
             <div class="connection-sub">15 min · time to be coordinated</div>

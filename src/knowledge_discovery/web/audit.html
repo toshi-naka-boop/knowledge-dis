@@ -288,7 +288,7 @@ button.btn-text:hover { color: var(--primary); }
           <div class="trace-network-col">
             <div class="section-title section-title-primary">Agent Network</div>
             <div class="card trace-network-card">
-              <svg id="networkSvg" viewBox="0 0 640 580" xmlns="http://www.w3.org/2000/svg">
+              <svg id="networkSvg" viewBox="0 0 640 470" xmlns="http://www.w3.org/2000/svg">
                 <text x="320" y="280" text-anchor="middle" class="na-agent-label">Loading…</text>
               </svg>
               <div class="trace-legend">
@@ -493,7 +493,7 @@ function deriveAgentState(records) {
 
 function renderNetwork(records) {
   const svg = document.getElementById("networkSvg");
-  const cx = 320, cy = 280, radius = 205;
+  const cx = 320, cy = 235, radius = 160;
   const n = AGENTS.length;
   const agentState = deriveAgentState(records);
 
@@ -531,7 +531,11 @@ function renderNetwork(records) {
     const labelDx = Math.cos(angle) >= 0 ? 14 : -14;
     const anchor = Math.cos(angle) >= 0 ? "start" : "end";
     const lockPrefix = st.private ? "🔒 " : "○ ";
-    svgParts.push(`<text x="${nx + labelDx}" y="${ny + 4}" text-anchor="${anchor}" class="na-agent-label">${lockPrefix}${esc(agent.display_name)}</text>`);
+    if (st.stage !== "matched") {
+      // Matched agents are labeled by the Person—Person pair caption instead;
+      // the person avatar would otherwise overlap this label.
+      svgParts.push(`<text x="${nx + labelDx}" y="${ny + 4}" text-anchor="${anchor}" class="na-agent-label">${lockPrefix}${esc(agent.display_name)}</text>`);
+    }
 
     if (st.stage === "matched") {
       // Humans large, agents small: overlay a person avatar just outside
@@ -600,9 +604,10 @@ function recordToEvent(r, funnelStats) {
     action = "Profile addition proposed to owner";
     sublines.push({ label: "POLICY", text: "content hidden (fail-closed)", cls: "trace-policy" });
   } else if (r.intent === "connect_ask") {
-    action = `Asked ${esc(owner)}'s agent — would they connect?`;
+    action = `Request sent to ${esc(owner)}`;
+    sublines.push({ label: "EVIDENCE", text: "Their agent reviewed the request.", cls: "trace-evidence" });
   } else if (r.intent === "connect_ask_private") {
-    action = `Asked ${esc(owner)} privately`;
+    action = `Request sent to ${esc(owner)} — privately`;
     sublines.push({ label: "POLICY", text: "🔒 based on a private item — content masked", cls: "trace-policy" });
   } else if (r.intent === "consent_reply") {
     action = payload.decision === "granted" ? `${esc(fromName)} accepted` : `${esc(fromName)} passed`;
@@ -664,10 +669,17 @@ function buildSessionEvents(sessionRecords, funnelStats) {
           cls: "trace-evidence",
         });
       }
+      const firstNames = noConnectionRecords.map(nr => {
+        const full = String(resolveName(nr.to) || "").trim();
+        return full.split(/\s+/)[0] || full;
+      });
+      const nameList = firstNames.length <= 1
+        ? firstNames.join("")
+        : firstNames.length === 2
+          ? `${firstNames[0]} or ${firstNames[1]}`
+          : `${firstNames.slice(0, -1).join(", ")}, or ${firstNames[firstNames.length - 1]}`;
       events.push({
-        action: noConnectionRecords.length === 1
-          ? `${esc(resolveName(r.to))}'s agent found no meaningful link`
-          : `${noConnectionRecords.length} agents found no meaningful link`,
+        action: `No strong match found with ${esc(nameList)}`,
         sublines,
         rowClass: "",
         timestamp: r.timestamp,
