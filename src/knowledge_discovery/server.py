@@ -544,6 +544,7 @@ def create_app(
                         if m.intent == "connect_ask_private"
                         else ""
                     ),
+                    "requester_id": m.payload.get("requester_id", ""),
                     "question_summary": m.payload.get("question_summary", ""),
                     "reason_text": m.payload.get("reason_text", ""),
                     "score": m.payload.get("score", 0.0),

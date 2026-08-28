@@ -429,15 +429,15 @@ class TestServerEndpoints(unittest.TestCase):
 
         res_cand = self.client.get("/candidate")
         self.assertEqual(res_cand.status_code, 200)
-        self.assertIn("Candidate Agent Inbox", res_cand.text)
-        self.assertIn("🔒 Related to your private profile item", res_cand.text)
+        self.assertIn("Your agent screened a request", res_cand.text)
+        self.assertIn("🔒 Relates to something only your agent knows about you", res_cand.text)
 
         res_audit = self.client.get("/audit")
         self.assertEqual(res_audit.status_code, 200)
-        self.assertIn("chat-container", res_audit.text)
-        self.assertIn("red-alert", res_audit.text)
-        self.assertIn("funnel-bar", res_audit.text)
-        self.assertIn("🔒 Private-Item-Based Ask (Content Masked", res_audit.text)
+        self.assertIn("trace-timeline", res_audit.text)
+        self.assertIn("policy-blocked", res_audit.text)
+        self.assertIn("trace-funnel", res_audit.text)
+        self.assertIn("🔒 based on a private item — content masked", res_audit.text)
 
 
 if __name__ == "__main__":

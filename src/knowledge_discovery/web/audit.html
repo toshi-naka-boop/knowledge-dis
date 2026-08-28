@@ -3,345 +3,604 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Knowledge Discovery — Agent Group Chat & Audit Trail</title>
+  <title>Knowledge Discovery — Bridge Trace</title>
   <style>
-    :root {
-      --bg: #0b0f19;
-      --panel-bg: #111827;
-      --card-bg: #1f2937;
-      --border: #374151;
-      --text: #f9fafb;
-      --text-muted: #9ca3af;
-      --primary: #3b82f6;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --danger-bg: rgba(239, 68, 68, 0.15);
-      --bubble-system: #1e293b;
-      --bubble-requester: #1e3a5f;
-      --bubble-agent: #1e293b;
-      --bubble-agent-border: #38bdf8;
-      --bubble-masked: #2d1f4d;
-      --bubble-gray: #1f2937;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background: var(--bg); color: var(--text); padding: 20px; min-height: 100vh; }
-    .container { max-width: 960px; margin: 0 auto; }
-    header { margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
-    h1 { font-size: 18px; font-weight: 600; color: #f3f4f6; }
-    .nav-links a { color: var(--text-muted); text-decoration: none; margin-left: 16px; font-size: 13px; }
-    .nav-links a.active, .nav-links a:hover { color: var(--primary); }
-    
-    /* Top Funnel Bar */
-    .funnel-bar {
-      background: linear-gradient(90deg, #1e293b 0%, #1e1b4b 50%, #0f172a 100%);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px 20px;
-      margin-bottom: 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-    .funnel-step { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-    .funnel-num { font-size: 16px; font-weight: 700; color: #60a5fa; }
-    .funnel-arrow { color: #64748b; font-size: 16px; }
+/* Knowledge Discovery — Bridge Trace (Phase 2 redesign)
+   Same design tokens / app-shell as requester.html (Phase 1), inlined here
+   because server.py serves this file as a raw HTML shell (no static mount).
+   Light theme; this screen is allowed to feel a little more technical than
+   requester/candidate, but no black background, neon, or cyberpunk styling. */
 
-    /* Chat Log Container */
-    .chat-container {
-      background: var(--panel-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      min-height: 520px;
-      max-height: 720px;
-      overflow-y: auto;
-    }
+:root {
+  --bg: #F7F5F1;
+  --card-bg: #FFFFFF;
+  --border: #E4DFD3;
+  --border-strong: #D4CDBC;
+  --text: #232323;
+  --text-muted: #6B6659;
+  --text-faint: #948E7D;
+  --primary: #1F3A5F;
+  --primary-hover: #16304F;
+  --primary-tint: #EAF0F6;
+  --accent: #C96F4A;      /* used only when a connection is made */
+  --accent-tint: #FBEEE7;
+  --warn: #B5560C;        /* overdue: warm, but distinct from the connection accent */
+  --warn-tint: #FBEFE3;
+  --danger: #B3261E;
+  --danger-tint: #FBEAE8;
+  --muted-tag-bg: #EFEBE1;
+  --muted-tag-text: #6B6659;
+  --today-bg: #EAF0F6;
+  --today-text: #1F3A5F;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --shadow-card: 0 1px 2px rgba(35, 35, 35, 0.05);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
 
-    /* Message Bubbles */
-    .msg-row { display: flex; flex-direction: column; width: 100%; }
-    .msg-bubble {
-      max-width: 82%;
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 13px;
-      line-height: 1.45;
-      position: relative;
-      border: 1px solid transparent;
-    }
-    .msg-bubble.from-requester {
-      align-self: flex-start;
-      background: var(--bubble-requester);
-      border-color: #2563eb;
-      border-bottom-left-radius: 2px;
-    }
-    .msg-bubble.from-agent {
-      align-self: flex-end;
-      background: var(--bubble-agent);
-      border-color: #0284c7;
-      border-bottom-right-radius: 2px;
-    }
-    .msg-bubble.system-ask {
-      align-self: center;
-      background: #182234;
-      border-color: #334155;
-      max-width: 90%;
-    }
-    .msg-bubble.red-alert {
-      align-self: center;
-      background: var(--danger-bg);
-      border: 1px solid var(--danger);
-      color: #fecaca;
-      max-width: 90%;
-    }
-    .msg-bubble.masked-ask {
-      align-self: center;
-      background: var(--bubble-masked);
-      border: 1px solid #8b5cf6;
-      color: #ddd6fe;
-      max-width: 90%;
-    }
-    .msg-bubble.no-connection {
-      align-self: center;
-      background: var(--bubble-gray);
-      border: 1px dashed #64748b;
-      color: #94a3b8;
-      max-width: 90%;
-    }
-    .msg-bubble.match-proposal {
-      align-self: center;
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid #10b981;
-      color: #d1fae5;
-      max-width: 90%;
-    }
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
 
-    .msg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 11px; }
-    .msg-sender { font-weight: 700; letter-spacing: 0.3px; }
-    .msg-intent-tag { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
-    
-    .tag-query { background: #1d4ed8; color: white; }
-    .tag-connect_ask { background: #0284c7; color: white; }
-    .tag-connect_ask_private { background: #7c3aed; color: white; }
-    .tag-no_connection { background: #475569; color: #cbd5e1; }
-    .tag-consent_reply { background: #059669; color: white; }
-    .tag-match_proposal { background: #047857; color: white; }
-    .tag-decline_with_reason { background: #64748b; color: white; }
-    .tag-reject { background: #b91c1c; color: white; }
+html, body { background: var(--bg); color: var(--text); }
+body { min-height: 100vh; font-size: 14px; line-height: 1.5; }
 
-    .msg-payload { margin-top: 4px; word-break: break-word; }
-    .msg-time { font-size: 10px; color: var(--text-muted); margin-top: 6px; text-align: right; }
+a { color: inherit; }
 
-    .live-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--success); }
-    .dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; display: inline-block; animation: pulse 2s infinite; }
-    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+button {
+  font-family: var(--font);
+  cursor: pointer;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+button.btn-text { background: transparent; color: var(--text-muted); padding: 4px 8px; font-size: 12px; }
+button.btn-text:hover { color: var(--primary); }
+
+/* ---------------- App shell (shared with requester/candidate) ---------------- */
+
+.app-shell { display: flex; min-height: 100vh; align-items: stretch; }
+
+.sidebar {
+  width: 220px;
+  flex: 0 0 220px;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border);
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-logo { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: 0.01em; margin-bottom: 32px; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-nav a {
+  display: block;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+}
+.sidebar-nav a:hover { background: var(--bg); color: var(--text); }
+.sidebar-nav a.active { background: var(--primary-tint); color: var(--primary); }
+.sidebar-spacer { flex: 1; }
+.sidebar-footer { font-size: 11px; color: var(--text-faint); line-height: 1.5; font-style: italic; }
+
+.main { flex: 1; min-width: 0; padding: 36px 40px 60px; }
+.main-inner { max-width: 1180px; margin: 0 auto; }
+
+.api-key-warning { background: var(--warn); color: #fff; padding: 8px 16px; font-size: 13px; margin: -36px -40px 24px; }
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 18px 20px;
+}
+
+/* ---------------- Header ---------------- */
+
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+.greeting { font-size: 22px; font-weight: 600; color: var(--text); }
+.page-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; }
+.live-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--primary); }
+.pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); display: inline-block; animation: dot-pulse 2.2s infinite; }
+@keyframes dot-pulse { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
+
+/* ---------------- Funnel summary (small, real numbers) ---------------- */
+
+.trace-funnel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  margin-bottom: 20px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.trace-funnel .tf-num { font-weight: 700; color: var(--primary); }
+.trace-funnel .tf-arrow { color: var(--text-faint); }
+
+/* ---------------- Two-column layout ---------------- */
+
+.trace-columns { display: flex; gap: 20px; align-items: flex-start; }
+.trace-network-col { flex: 0 0 55%; max-width: 55%; }
+.trace-timeline-col { flex: 1; min-width: 0; }
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* ---------------- Agent Network (SVG) ---------------- */
+
+.trace-network-card { padding: 12px; }
+.trace-network-card svg { width: 100%; height: auto; display: block; }
+
+.na-agent-dot { fill: var(--card-bg); stroke-width: 2; transform-box: fill-box; transform-origin: 50% 50%; }
+.na-agent-label { font-size: 11px; fill: var(--text-muted); font-weight: 500; }
+.na-center-dot { fill: var(--primary); transform-box: fill-box; transform-origin: 50% 50%; }
+.na-center-label { font-size: 12px; fill: var(--text); font-weight: 600; }
+
+.na-edge { fill: none; }
+.na-edge-idle { stroke: var(--border-strong); stroke-width: 1.5; }
+.na-edge-asked { stroke: var(--primary); stroke-width: 2; }
+.na-edge-dropped { stroke: var(--text-faint); stroke-width: 1.5; stroke-dasharray: 3 5; }
+.na-edge-warm { stroke: var(--accent); stroke-width: 2.5; }
+
+.na-person { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.5; transform-box: fill-box; transform-origin: 50% 50%; }
+.na-person-label { font-size: 11px; font-weight: 700; fill: var(--accent); }
+.na-person-name { font-size: 11px; font-weight: 600; fill: var(--text); }
+
+.na-lock { font-size: 12px; }
+
+@keyframes nodePulse {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+.na-pulse { animation: nodePulse 0.9s ease-out 1; }
+
+.trace-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--text-muted); }
+.trace-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend-swatch { width: 14px; height: 2px; display: inline-block; }
+
+/* ---------------- Trace Timeline ---------------- */
+
+.trace-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 640px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.trace-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.trace-time {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  padding-top: 1px;
+  white-space: nowrap;
+}
+.trace-body { flex: 1; min-width: 0; }
+.trace-action { font-size: 13px; font-weight: 600; color: var(--text); word-break: break-word; }
+.trace-subline { font-size: 12px; margin-top: 4px; color: var(--text-muted); word-break: break-word; }
+.trace-subline .trace-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  margin-right: 6px;
+}
+.trace-row.policy-blocked { background: var(--danger-tint); border-color: var(--danger); }
+.trace-row.policy-blocked .trace-action { color: var(--danger); }
+.trace-row.policy-blocked .trace-subline.trace-policy .trace-label { color: var(--danger); }
+.trace-row.trace-outcome-match { background: var(--accent-tint); border-color: var(--accent); }
+.trace-row.trace-outcome-match .trace-action { color: var(--accent); }
+.trace-subline.trace-policy { color: var(--warn); }
+.trace-subline.trace-policy .trace-label { color: var(--warn); }
+.trace-subline.trace-outcome { color: var(--accent); font-weight: 600; }
+.trace-subline.trace-outcome .trace-label { color: var(--accent); }
+
+.empty-note { font-size: 13px; color: var(--text-faint); padding: 10px 2px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div>
-        <h1>Knowledge Discovery — Audit & Observability View</h1>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
-          Agent-to-Agent Group Chat Stream with Fail-Closed Privacy Policy Enforcement
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-logo">Knowledge Discovery</div>
+      <nav class="sidebar-nav">
+        <a id="navRequester" href="/requester">My Agent</a>
+        <a id="navCandidate" href="/candidate">Connection Requests</a>
+        <a href="/audit" class="active">Bridge Trace</a>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-footer">AI shouldn't replace human connections. It should create them.</div>
+    </aside>
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="page-header">
+          <div>
+            <div class="greeting">Bridge Trace</div>
+            <div class="page-sub">How your agent explored the organization and found a person.</div>
+          </div>
+          <span class="live-indicator"><span class="pulse-dot"></span> Live (3s)</span>
+        </div>
+
+        <div class="card trace-funnel" id="traceFunnel">
+          <span class="empty-note" style="padding: 0;">Loading funnel…</span>
+        </div>
+
+        <div class="trace-columns">
+          <div class="trace-network-col">
+            <div class="section-title">Agent Network</div>
+            <div class="card trace-network-card">
+              <svg id="networkSvg" viewBox="0 0 620 520" xmlns="http://www.w3.org/2000/svg">
+                <text x="310" y="260" text-anchor="middle" class="na-agent-label">Loading…</text>
+              </svg>
+              <div class="trace-legend">
+                <span><span class="legend-swatch" style="background: var(--primary);"></span> Asked</span>
+                <span><span class="legend-swatch" style="background: var(--text-faint); border-top: 2px dashed var(--text-faint); height:0;"></span> No connection</span>
+                <span><span class="legend-swatch" style="background: var(--accent);"></span> Connection made</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="trace-timeline-col">
+            <div class="section-title">Trace Timeline</div>
+            <div class="trace-timeline" id="traceTimeline">
+              <div class="empty-note">Loading trace events…</div>
+            </div>
+          </div>
         </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 16px;">
-        <span class="live-status"><span class="dot"></span> Live Polling (3s)</span>
-        <div class="nav-links">
-          <a href="/requester">Requester</a>
-          <a href="/candidate">Candidate</a>
-          <a href="/audit" class="active">Audit View</a>
-        </div>
-      </div>
-    </header>
-
-    <!-- Top Funnel Summary -->
-    <div class="funnel-bar" id="funnelBar">
-      <div class="funnel-step">
-        <span class="funnel-num" id="statProfiles">400</span>
-        <span>Profiles in Group</span>
-      </div>
-      <span class="funnel-arrow">➔</span>
-      <div class="funnel-step">
-        <span class="funnel-num" id="statFunnel">20</span>
-        <span>Screen Funnel (Scale)</span>
-      </div>
-      <span class="funnel-arrow">➔</span>
-      <div class="funnel-step">
-        <span class="funnel-num" id="statAgents">4</span>
-        <span>Active Agents</span>
-      </div>
-      <span class="funnel-arrow">➔</span>
-      <div class="funnel-step">
-        <span class="funnel-num" id="statDispatched">0</span>
-        <span>Dispatched (k≤3)</span>
-      </div>
-      <span class="funnel-arrow">➔</span>
-      <div class="funnel-step">
-        <span class="funnel-num" id="statDropped">0</span>
-        <span>Dropped (no_connection)</span>
-      </div>
-    </div>
-
-    <!-- Agent Group Chat Stream -->
-    <div class="chat-container" id="chatContainer">
-      <div style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 32px;">
-        Loading audit events and messages...
-      </div>
-    </div>
+    </main>
   </div>
 
   <script>
-    const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
-    if (!API_KEY) {
-      document.body.insertAdjacentHTML("afterbegin",
-        '<div style="background:#b91c1c;color:#fff;padding:8px 16px;font-size:13px;">Missing api_key: open this page as /PAGE?api_key=YOUR_KEY</div>');
-    }
-    // Escape server-derived strings before HTML interpolation (S-4)
-    function esc(v) {
-      return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-    }
+const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
 
-    const AGENT_NAMES = {
-      "emp_jordan_lee": "Jordan Lee (Requester)",
-      "agent_rachel_kim": "Rachel Kim's Agent",
-      "agent_marcus_delgado": "Marcus Delgado's Agent",
-      "agent_elena_vasquez": "Elena Vasquez's Agent",
-      "agent_tom_whitfield": "Tom Whitfield's Agent",
-      "system": "Discovery Coordinator"
-    };
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
 
-    function getSenderName(id) {
-      return AGENT_NAMES[id] || id;
-    }
+function withKey(path) {
+  return path + (path.includes("?") ? "&" : "?") + "api_key=" + encodeURIComponent(API_KEY);
+}
 
-    async function fetchAuditMessages() {
-      try {
-        const res = await fetch("/api/audit/messages", {
-          headers: { "X-API-Key": API_KEY }
-        });
-        if (!res.ok) return;
-        const data = await res.json();
+function setupChrome() {
+  if (!API_KEY) {
+    document.body.insertAdjacentHTML("afterbegin",
+      '<div class="api-key-warning">Missing api_key: open this page as /audit?api_key=YOUR_KEY</div>');
+  }
+  const reqLink = document.getElementById("navRequester");
+  const candLink = document.getElementById("navCandidate");
+  if (reqLink) reqLink.href = withKey("/requester");
+  if (candLink) candLink.href = withKey("/candidate");
+}
 
-        // Update Funnel Bar stats
-        if (data.funnel_stats) {
-          document.getElementById("statProfiles").innerText = data.funnel_stats.total_profiles || "400";
-          document.getElementById("statFunnel").innerText = data.funnel_stats.funnel_limit || "20";
-          document.getElementById("statDispatched").innerText = data.funnel_stats.dispatched_count || "0";
-          document.getElementById("statDropped").innerText = data.funnel_stats.dropped_count || "0";
-          document.getElementById("statAgents").innerText = data.funnel_stats.registered_agents_count || "4";
-        }
+// -------------------------------------------------------------------------
+// Display name resolution: /api/agents first, then formatted ID (no
+// hardcoded roster — this view must reflect exactly what the backend has
+// registered).
+// -------------------------------------------------------------------------
 
-        renderChat(data.records || []);
-      } catch (err) {
-        console.error("Audit fetch error:", err);
+let AGENTS = [];
+const AGENTS_BY_ID = {};
+const AGENTS_BY_EMPLOYEE = {};
+
+function formatId(id) {
+  const stripped = String(id || "").replace(/^emp_/, "").replace(/^agent_/, "");
+  return stripped.split("_").filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") || id;
+}
+
+function resolveName(id) {
+  if (!id) return "Unknown";
+  if (id === "system") return "System";
+  if (AGENTS_BY_ID[id]) return AGENTS_BY_ID[id].display_name;
+  if (AGENTS_BY_EMPLOYEE[id]) return AGENTS_BY_EMPLOYEE[id].display_name;
+  return formatId(id);
+}
+
+function initials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+async function fetchAgents() {
+  try {
+    const res = await fetch("/api/agents", { headers: { "X-API-Key": API_KEY } });
+    if (!res.ok) return;
+    const data = await res.json();
+    AGENTS = data.agents || [];
+    AGENTS.forEach(a => {
+      AGENTS_BY_ID[a.agent_id] = a;
+      AGENTS_BY_EMPLOYEE[a.employee_id] = a;
+    });
+  } catch (err) {
+    console.error("Agents fetch error:", err);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Fetch + render loop
+// -------------------------------------------------------------------------
+
+let PREV_RECORD_COUNT = 0;
+let PREV_AGENT_STATE = {};
+
+async function fetchTrace() {
+  try {
+    const res = await fetch("/api/audit/messages", { headers: { "X-API-Key": API_KEY } });
+    if (!res.ok) return;
+    const data = await res.json();
+    const records = (data.records || []).slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+    renderFunnel(data.funnel_stats || {});
+    renderNetwork(records);
+    renderTimeline(records, data.funnel_stats || {});
+    PREV_RECORD_COUNT = records.length;
+  } catch (err) {
+    console.error("Trace fetch error:", err);
+  }
+}
+
+function renderFunnel(stats) {
+  const el = document.getElementById("traceFunnel");
+  el.innerHTML = `
+    <span class="tf-num">${esc(stats.total_profiles ?? "0")}</span><span>profiles</span>
+    <span class="tf-arrow">→</span>
+    <span class="tf-num">${esc(stats.funnel_limit ?? "0")}</span><span>shortlisted</span>
+    <span class="tf-arrow">→</span>
+    <span class="tf-num">${esc(stats.registered_agents_count ?? "0")}</span><span>candidate agents</span>
+    <span class="tf-arrow">→</span>
+    <span class="tf-num">${esc(stats.dispatched_count ?? "0")}</span><span>asked</span>
+    <span class="tf-arrow">→</span>
+    <span class="tf-num">${esc(stats.dropped_count ?? "0")}</span><span>no connection</span>`;
+}
+
+// -------------------------------------------------------------------------
+// Agent Network (SVG): derive per-candidate state from the message stream.
+// -------------------------------------------------------------------------
+
+function deriveAgentState(records) {
+  const state = {}; // agent_id -> { stage, private, requesterName }
+  for (const r of records) {
+    const payload = r.display_payload || {};
+    if (r.intent === "no_connection") {
+      state[r.to] = { stage: "dropped" };
+    } else if (r.intent === "connect_ask") {
+      state[r.to] = { stage: "asked", private: false };
+    } else if (r.intent === "connect_ask_private") {
+      state[r.to] = { stage: "asked", private: true };
+    } else if (r.intent === "consent_reply" && payload.decision === "granted") {
+      const prev = state[r.from] || {};
+      state[r.from] = { ...prev, stage: "consent_granted" };
+    } else if (r.intent === "consent_reply" && payload.decision === "declined") {
+      const prev = state[r.from] || {};
+      if (prev.stage !== "matched") state[r.from] = { ...prev, stage: "dropped" };
+    } else if (r.intent === "match_proposal") {
+      const participants = payload.participants || [];
+      const requesterId = participants[0];
+      const candidateEmployeeId = participants[1];
+      const candAgent = AGENTS_BY_EMPLOYEE[candidateEmployeeId];
+      if (candAgent) {
+        const prev = state[candAgent.agent_id] || {};
+        state[candAgent.agent_id] = { ...prev, stage: "matched", requesterName: resolveName(requesterId) };
       }
     }
+  }
+  return state;
+}
 
-    function renderChat(records) {
-      const container = document.getElementById("chatContainer");
-      if (!records || records.length === 0) {
-        container.innerHTML = `
-          <div style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 40px;">
-            No messages recorded in audit log yet.
-          </div>`;
-        return;
-      }
+function renderNetwork(records) {
+  const svg = document.getElementById("networkSvg");
+  const cx = 310, cy = 260, radius = 190;
+  const n = AGENTS.length;
+  const agentState = deriveAgentState(records);
 
-      container.innerHTML = records.map((r) => {
-        let bubbleClass = "msg-bubble";
-        let tagClass = `msg-intent-tag tag-${r.intent}`;
-        let contentHtml = "";
+  const newQueryCount = records.filter(r => r.intent === "query").length;
+  const centerPulse = (newQueryCount > 0 && records.length > PREV_RECORD_COUNT && PREV_RECORD_COUNT > 0) ? "na-pulse" : "";
 
-        const payload = r.display_payload || {};
+  let svgParts = [];
 
-        if (r.rejected || r.is_red_alert || r.intent.startsWith("reject_")) {
-          bubbleClass += " red-alert";
-          tagClass = "msg-intent-tag tag-reject";
-          contentHtml = `
-            <div><strong>⚠️ TRANSMISSION REJECTED (Policy Failure)</strong></div>
-            <div>Reason: ${esc(payload.reason) || "Unauthorized transmission or unregistered schema"}</div>
-            ${payload.attempted_intent ? `<div>Attempted Intent: <code>${esc(payload.attempted_intent)}</code></div>` : ""}
-            ${payload.raw_payload_type ? `<div>Unregistered Type: <code>${esc(payload.raw_payload_type)}</code></div>` : ""}`;
-        } else if (payload.masked || r.intent === "connect_ask_private") {
-          bubbleClass += " masked-ask";
-          tagClass = "msg-intent-tag tag-connect_ask_private";
-          contentHtml = `
-            <div><strong>🔒 Private-Item-Based Ask (Content Masked by Transmission Layer)</strong></div>
-            <div style="margin-top: 4px; font-style: italic;">"${esc(payload.note) || "非公開項目に基づく打診（内容非表示）"}"</div>
-            <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Cited private items: ${payload.cited_count || 1} | Confidence: ${payload.score || "N/A"}</div>`;
-        } else if (r.intent === "no_connection" || r.is_no_connection) {
-          bubbleClass += " no-connection";
-          tagClass = "msg-intent-tag tag-no_connection";
-          contentHtml = `
-            <div><strong>Candidate Dropped:</strong> No verbalized synergy connection found.</div>
-            <div style="margin-top: 4px; font-size: 12px;">Rationale: ${esc(payload.reason_text) || "Below threshold or no domain overlap"}</div>`;
-        } else if (r.intent === "query") {
-          bubbleClass += " from-requester";
-          tagClass = "msg-intent-tag tag-query";
-          contentHtml = `
-            <div><strong>Inquiry:</strong> "${esc(payload.question_text)}"</div>
-            <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Requester: ${esc(payload.requester_id || r.from)}</div>`;
-        } else if (r.intent === "connect_ask") {
-          bubbleClass += " system-ask";
-          tagClass = "msg-intent-tag tag-connect_ask";
-          contentHtml = `
-            <div><strong>Synergy Ask Dispatched to Candidate Agent:</strong></div>
-            <div style="margin-top: 4px;">"${esc(payload.question_summary)}"</div>
-            <div style="margin-top: 6px; background: rgba(0,0,0,0.25); padding: 8px; border-radius: 4px;">
-              🤖 <strong>AI Matching Reason:</strong> ${esc(payload.reason_text)}
-            </div>`;
-        } else if (r.intent === "match_proposal") {
-          bubbleClass += " match-proposal";
-          tagClass = "msg-intent-tag tag-match_proposal";
-          contentHtml = `
-            <div><strong>🎉 Synergy Match Confirmed!</strong></div>
-            <div>Proposed 15-Minute Meeting between: <code>${esc((payload.participants || []).join(" & "))}</code></div>
-            <div style="font-size: 11px; opacity: 0.8; margin-top: 2px;">(Candidate background details withheld from match proposal per C-19)</div>`;
-        } else if (r.intent === "decline_with_reason") {
-          bubbleClass += " from-agent";
-          tagClass = "msg-intent-tag tag-decline_with_reason";
-          let attText = "";
-          if (payload.attachment) {
-            attText = `<div style="margin-top: 4px; padding: 6px; background: rgba(0,0,0,0.2); border-radius: 4px;">📎 Attachment [${esc(payload.attachment.type)}]: ${esc(payload.attachment.content)}</div>`;
-          }
-          contentHtml = `
-            <div><strong>Candidate Declined:</strong> "${esc(payload.reason_text) || "Unavailable"}"</div>
-            ${attText}`;
-        } else if (r.intent === "consent_reply") {
-          bubbleClass += " from-agent";
-          tagClass = "msg-intent-tag tag-consent_reply";
-          contentHtml = `<div>Consent Decision: <strong>${esc((payload.decision || "").toUpperCase())}</strong> for ask <code>${esc(payload.ask_audit_id)}</code></div>`;
-        } else {
-          bubbleClass += " system-ask";
-          contentHtml = `<pre style="font-size: 11px;">${esc(JSON.stringify(payload, null, 2))}</pre>`;
-        }
+  // Center: "Your agent"
+  svgParts.push(`<circle cx="${cx}" cy="${cy}" r="7" class="na-center-dot ${centerPulse}"></circle>`);
+  svgParts.push(`<text x="${cx}" y="${cy + 24}" text-anchor="middle" class="na-center-label">Your agent</text>`);
 
-        const timeStr = r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : "";
+  if (n === 0) {
+    svgParts.push(`<text x="${cx}" y="${cy - 24}" text-anchor="middle" class="na-agent-label">No registered agents yet.</text>`);
+  }
 
-        return `
-          <div class="msg-row">
-            <div class="${bubbleClass}">
-              <div class="msg-header">
-                <span class="msg-sender">${esc(getSenderName(r.from))} ➔ ${esc(getSenderName(r.to))}</span>
-                <span class="${tagClass}">${r.intent}</span>
-              </div>
-              <div class="msg-payload">${contentHtml}</div>
-              <div class="msg-time">${timeStr} · id: ${esc(r.audit_id)}</div>
-            </div>
-          </div>`;
-      }).join("");
+  AGENTS.forEach((agent, i) => {
+    const angle = (-90 + (360 / n) * i) * (Math.PI / 180);
+    const nx = cx + radius * Math.cos(angle);
+    const ny = cy + radius * Math.sin(angle);
+    const st = agentState[agent.agent_id] || { stage: "idle" };
+
+    let edgeClass = "na-edge-idle";
+    if (st.stage === "asked") edgeClass = "na-edge-asked";
+    else if (st.stage === "dropped") edgeClass = "na-edge-dropped";
+    else if (st.stage === "consent_granted" || st.stage === "matched") edgeClass = "na-edge-warm";
+
+    const prevSt = PREV_AGENT_STATE[agent.agent_id];
+    const changed = PREV_RECORD_COUNT > 0 && (!prevSt || prevSt.stage !== st.stage);
+    const nodePulse = changed ? "na-pulse" : "";
+
+    svgParts.push(`<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" class="na-edge ${edgeClass}"></line>`);
+    svgParts.push(`<circle cx="${nx}" cy="${ny}" r="9" class="na-agent-dot ${nodePulse}" style="stroke: ${edgeClass === 'na-edge-idle' ? 'var(--border-strong)' : (edgeClass === 'na-edge-warm' ? 'var(--accent)' : (edgeClass === 'na-edge-dropped' ? 'var(--text-faint)' : 'var(--primary)'))};"></circle>`);
+
+    const labelDx = Math.cos(angle) >= 0 ? 14 : -14;
+    const anchor = Math.cos(angle) >= 0 ? "start" : "end";
+    const lockPrefix = st.private ? "🔒 " : "○ ";
+    svgParts.push(`<text x="${nx + labelDx}" y="${ny + 4}" text-anchor="${anchor}" class="na-agent-label">${lockPrefix}${esc(agent.display_name)}</text>`);
+
+    if (st.stage === "matched") {
+      // Humans large, agents small: overlay a person avatar just outside
+      // this agent's node, and one just outside the center, joined by a
+      // warm Person—Person line.
+      const px = cx + (radius + 46) * Math.cos(angle);
+      const py = cy + (radius + 46) * Math.sin(angle);
+      const hx = cx + 46 * Math.cos(angle);
+      const hy = cy + 46 * Math.sin(angle);
+      const candInitials = initials(agent.display_name);
+      const reqName = st.requesterName || "Your agent";
+      const reqInitials = initials(reqName);
+
+      svgParts.push(`<line x1="${hx}" y1="${hy}" x2="${px}" y2="${py}" class="na-edge na-edge-warm" stroke-width="3"></line>`);
+      svgParts.push(`<circle cx="${hx}" cy="${hy}" r="20" class="na-person"></circle>`);
+      svgParts.push(`<text x="${hx}" y="${hy + 4}" text-anchor="middle" class="na-person-label">${esc(reqInitials)}</text>`);
+      svgParts.push(`<circle cx="${px}" cy="${py}" r="20" class="na-person"></circle>`);
+      svgParts.push(`<text x="${px}" y="${py + 4}" text-anchor="middle" class="na-person-label">${esc(candInitials)}</text>`);
+      svgParts.push(`<text x="${(hx + px) / 2}" y="${(hy + py) / 2 - 26}" text-anchor="middle" class="na-person-name">${esc(reqName)} ↔ ${esc(agent.display_name)}</text>`);
     }
+  });
 
-    // Initial fetch and start 3s polling
-    fetchAuditMessages();
-    setInterval(fetchAuditMessages, 3000);
+  svg.innerHTML = svgParts.join("");
+  PREV_AGENT_STATE = agentState;
+}
+
+// -------------------------------------------------------------------------
+// Trace Timeline: convert each raw audit record into a human-readable event.
+// -------------------------------------------------------------------------
+
+function truncate(s, max) {
+  const str = String(s || "");
+  return str.length > max ? str.slice(0, max).trim() + "…" : str;
+}
+
+const MATCH_PROPOSAL_SEEN = new Set();
+
+function recordToEvent(r, funnelStats) {
+  const payload = r.display_payload || {};
+  const owner = resolveName(r.to);
+  const fromName = resolveName(r.from);
+  let action = "";
+  let sublines = [];
+  let rowClass = "";
+
+  if (r.rejected || r.intent === "reject_unregistered_type" || r.intent === "reject_unsupported_intent") {
+    action = r.intent === "reject_unregistered_type"
+      ? "Transmission rejected — unregistered payload type"
+      : "Transmission rejected — unsupported intent";
+    sublines.push({ label: "POLICY", text: "Blocked at the transmission layer", cls: "trace-policy" });
+    rowClass = "policy-blocked";
+  } else if (r.intent === "query") {
+    action = "Need received — your agent starts searching";
+    sublines.push({
+      label: "EVIDENCE",
+      text: `${esc(funnelStats.total_profiles ?? "?")} profiles → ${esc(funnelStats.funnel_limit ?? "?")} shortlisted → ${esc(funnelStats.registered_agents_count ?? "?")} candidate agents`,
+      cls: "trace-evidence",
+    });
+  } else if (r.intent === "preview_search") {
+    action = "Secretary previewed candidates — nothing delivered";
+    sublines.push({ label: "POLICY", text: "content hidden (fail-closed)", cls: "trace-policy" });
+  } else if (r.intent === "stagnation_detected") {
+    action = "Stagnation detected by the secretary";
+    sublines.push({ label: "POLICY", text: "content hidden (fail-closed)", cls: "trace-policy" });
+  } else if (r.intent === "profile_diff_proposed") {
+    action = "Profile addition proposed to owner";
+    sublines.push({ label: "POLICY", text: "content hidden (fail-closed)", cls: "trace-policy" });
+  } else if (r.intent === "connect_ask") {
+    action = `Asked ${esc(owner)}'s agent — would they connect?`;
+  } else if (r.intent === "connect_ask_private") {
+    action = `Asked ${esc(owner)} privately`;
+    sublines.push({ label: "POLICY", text: "🔒 based on a private item — content masked", cls: "trace-policy" });
+  } else if (r.intent === "no_connection") {
+    action = `${esc(owner)}'s agent found no meaningful link`;
+    if (!payload.masked && payload.reason_text) {
+      sublines.push({ label: "EVIDENCE", text: esc(truncate(payload.reason_text, 90)), cls: "trace-evidence" });
+    }
+  } else if (r.intent === "consent_reply") {
+    action = payload.decision === "granted" ? `${esc(fromName)} accepted` : `${esc(fromName)} passed`;
+  } else if (r.intent === "decline_with_reason") {
+    if (payload.attachment) {
+      action = `${esc(fromName)} shared a resource instead`;
+    } else {
+      action = `${esc(fromName)} passed`;
+      if (payload.reason_text) {
+        sublines.push({ label: "EVIDENCE", text: esc(truncate(payload.reason_text, 90)), cls: "trace-evidence" });
+      }
+    }
+  } else if (r.intent === "match_proposal") {
+    const askId = payload.ask_audit_id || r.audit_id;
+    if (MATCH_PROPOSAL_SEEN.has(askId)) return null;
+    MATCH_PROPOSAL_SEEN.add(askId);
+    const participants = payload.participants || [];
+    const requesterName = resolveName(participants[0]);
+    const candidateName = resolveName(participants[1]);
+    action = "Connection made";
+    sublines.push({
+      label: "OUTCOME",
+      text: `Connection made: ${esc(requesterName)} ↔ ${esc(candidateName)} (${esc(payload.meeting_duration ?? 15)} min)`,
+      cls: "trace-outcome",
+    });
+    rowClass = "trace-outcome-match";
+  } else {
+    action = r.intent;
+    if (payload.masked && payload.note) {
+      sublines.push({ label: "POLICY", text: esc(payload.note), cls: "trace-policy" });
+    }
+  }
+
+  return { action, sublines, rowClass, timestamp: r.timestamp, auditId: r.audit_id };
+}
+
+function renderTimeline(records, funnelStats) {
+  const container = document.getElementById("traceTimeline");
+  MATCH_PROPOSAL_SEEN.clear();
+  const events = records.map(r => recordToEvent(r, funnelStats)).filter(Boolean);
+
+  if (events.length === 0) {
+    container.innerHTML = '<div class="empty-note">No trace events recorded yet.</div>';
+    return;
+  }
+
+  container.innerHTML = events.map(ev => {
+    const timeStr = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : "";
+    const sublinesHtml = ev.sublines.map(s =>
+      `<div class="trace-subline ${s.cls}"><span class="trace-label">${s.label}</span>${s.text}</div>`
+    ).join("");
+    return `
+      <div class="trace-row ${ev.rowClass}">
+        <div class="trace-time">${esc(timeStr)}</div>
+        <div class="trace-body">
+          <div class="trace-action">${ev.action}</div>
+          ${sublinesHtml}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// -------------------------------------------------------------------------
+// Boot
+// -------------------------------------------------------------------------
+
+setupChrome();
+fetchAgents().then(() => {
+  fetchTrace();
+  setInterval(fetchTrace, 3000);
+});
   </script>
 </body>
 </html>
