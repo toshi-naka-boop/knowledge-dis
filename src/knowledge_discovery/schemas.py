@@ -31,12 +31,17 @@ class SchemaRegistry:
             "stagnation_detected",
             "preview_search",
             "profile_diff_proposed",
+            "sweep_run",
+            "policy_limited",
         }
     )
 
     # Whitelist of payload types allowed for unmasked display when audit_payload is None.
     # Note: connect_ask_private, stagnation_detected, preview_search, and profile_diff_proposed
     # are intentionally excluded so they are fail-closed masked in audit view (§14.6, C-21).
+    # sweep_run and policy_limited ARE whitelisted (their payload is counts/enum-only by
+    # construction, autonomous-agent design §6) but get_audit_view() still projects them
+    # to their exact allowed key set as a second, independent line of defense (C-16/C-21).
     AUDIT_WHITELIST: frozenset[str] = frozenset(
         {
             "query",
@@ -47,8 +52,43 @@ class SchemaRegistry:
             "decline_with_reason",
             "reject_unregistered_type",
             "reject_unsupported_intent",
+            "sweep_run",
+            "policy_limited",
         }
     )
+
+    # Exact allowed-key sets for the 2 autonomous-agent intents (autonomous-agent
+    # design §6, Z-5). validate_payload() rejects any payload with extra/missing
+    # keys; get_audit_view() re-projects to these keys as defense-in-depth.
+    SWEEP_RUN_KEYS: frozenset[str] = frozenset(
+        {
+            "origin",
+            "run_key",
+            "date",
+            "tasks_evaluated",
+            "cards_created",
+            "cards_promoted",
+            "cards_resolved",
+            "needs_detected",
+            "candidates_explored",
+            "policy_held",
+            "schema_version",
+        }
+    )
+    SWEEP_RUN_NUMERIC_KEYS: frozenset[str] = frozenset(
+        {
+            "tasks_evaluated",
+            "cards_created",
+            "cards_promoted",
+            "cards_resolved",
+            "needs_detected",
+            "candidates_explored",
+            "policy_held",
+            "schema_version",
+        }
+    )
+    POLICY_LIMITED_KEYS: frozenset[str] = frozenset({"stage", "run_key", "task_count"})
+    POLICY_LIMITED_STAGES: frozenset[str] = frozenset({"search", "ask", "prepare"})
 
     @classmethod
     def is_registered_type(cls, payload_type: str) -> bool:
@@ -167,6 +207,37 @@ class SchemaRegistry:
                 return False, "profile_diff_proposed requires non-empty string 'item_key'"
             return True, None
 
+        elif payload_type == "sweep_run":
+            # Fail-closed whitelist: exact key match (no unknown keys, none missing).
+            if set(payload.keys()) != cls.SWEEP_RUN_KEYS:
+                return False, "sweep_run requires exactly the counts-only key set (no unknown/missing keys)"
+            if not payload.get("origin") or not isinstance(payload["origin"], str):
+                return False, "sweep_run requires non-empty string 'origin'"
+            if not payload.get("run_key") or not isinstance(payload["run_key"], str):
+                return False, "sweep_run requires non-empty string 'run_key'"
+            if not payload.get("date") or not isinstance(payload["date"], str):
+                return False, "sweep_run requires non-empty string 'date'"
+            for key in cls.SWEEP_RUN_NUMERIC_KEYS:
+                value = payload[key]
+                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    return False, f"sweep_run requires non-negative int '{key}'"
+            if payload["schema_version"] != 1:
+                return False, "sweep_run requires 'schema_version' == 1"
+            return True, None
+
+        elif payload_type == "policy_limited":
+            # Fail-closed whitelist: exact key match, stage enum, no free-text note (Z-5).
+            if set(payload.keys()) != cls.POLICY_LIMITED_KEYS:
+                return False, "policy_limited requires exactly {stage, run_key, task_count} (no unknown/missing keys)"
+            if payload.get("stage") not in cls.POLICY_LIMITED_STAGES:
+                return False, "policy_limited requires 'stage' in {'search', 'ask', 'prepare'}"
+            if not payload.get("run_key") or not isinstance(payload["run_key"], str):
+                return False, "policy_limited requires non-empty string 'run_key'"
+            task_count = payload.get("task_count")
+            if isinstance(task_count, bool) or not isinstance(task_count, int) or task_count < 1:
+                return False, "policy_limited requires positive int 'task_count'"
+            return True, None
+
         return True, None
 
     # Fact-line notes for fail-closed masked rows (content never shown). UI language is English.
@@ -188,6 +259,12 @@ class SchemaRegistry:
         """
         if message.audit_payload is not None:
             return dict(message.audit_payload)
+
+        if message.payload_type == "sweep_run":
+            return {k: v for k, v in message.payload.items() if k in cls.SWEEP_RUN_KEYS}
+
+        if message.payload_type == "policy_limited":
+            return {k: v for k, v in message.payload.items() if k in cls.POLICY_LIMITED_KEYS}
 
         if message.payload_type in cls.AUDIT_WHITELIST:
             return dict(message.payload)

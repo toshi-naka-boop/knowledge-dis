@@ -528,6 +528,91 @@ class Card:
 
 
 @dataclass
+class AutonomyPolicy:
+    """Per-employee standing permission for autonomous secretary behavior (autonomous-agent design §5.1).
+
+    Attributes:
+        employee_id: Identifier of the employee this policy governs (doc id).
+        monitor_stalled_work: Root permission — observe tasks and detect stagnation.
+        search_organization: Permission to explore candidates (requires monitor).
+        ask_candidate_agents: Permission to evaluate candidate fit (requires search).
+        prepare_introduction: Permission to prepare a request draft (requires ask).
+        contact_mode: Always 'always_ask' in this phase (enum, no auto-contact).
+        updated_at: ISO8601 timestamp of the last save (used as the CAS token by
+            upsert_card_gated's expected_policy_updated_at, autonomous-agent design §3).
+    """
+
+    employee_id: str
+    monitor_stalled_work: bool = True
+    search_organization: bool = False
+    ask_candidate_agents: bool = False
+    prepare_introduction: bool = False
+    contact_mode: str = "always_ask"
+    updated_at: str = field(default_factory=utc_now_iso)
+
+    def effective(self) -> dict[str, bool]:
+        """Derive effective (dependency-enforced) permission booleans.
+
+        Hierarchy (autonomous-agent design §5.2): search &= monitor;
+        ask &= search; prepare &= ask. Does not mutate self.
+        """
+        monitor = self.monitor_stalled_work
+        search = self.search_organization and monitor
+        ask = self.ask_candidate_agents and search
+        prepare = self.prepare_introduction and ask
+        return {
+            "monitor_stalled_work": monitor,
+            "search_organization": search,
+            "ask_candidate_agents": ask,
+            "prepare_introduction": prepare,
+        }
+
+    def normalized(self) -> AutonomyPolicy:
+        """Return a copy with the raw booleans replaced by their effective values (§5.2 save-time normalization)."""
+        eff = self.effective()
+        return AutonomyPolicy(
+            employee_id=self.employee_id,
+            monitor_stalled_work=eff["monitor_stalled_work"],
+            search_organization=eff["search_organization"],
+            ask_candidate_agents=eff["ask_candidate_agents"],
+            prepare_introduction=eff["prepare_introduction"],
+            contact_mode=self.contact_mode,
+            updated_at=self.updated_at,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "employee_id": self.employee_id,
+            "monitor_stalled_work": self.monitor_stalled_work,
+            "search_organization": self.search_organization,
+            "ask_candidate_agents": self.ask_candidate_agents,
+            "prepare_introduction": self.prepare_introduction,
+            "contact_mode": self.contact_mode,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AutonomyPolicy:
+        return cls(
+            employee_id=data["employee_id"],
+            monitor_stalled_work=bool(data.get("monitor_stalled_work", True)),
+            search_organization=bool(data.get("search_organization", False)),
+            ask_candidate_agents=bool(data.get("ask_candidate_agents", False)),
+            prepare_introduction=bool(data.get("prepare_introduction", False)),
+            contact_mode=data.get("contact_mode", "always_ask"),
+            updated_at=data.get("updated_at", utc_now_iso()),
+        )
+
+
+def default_autonomy_policy(employee_id: str) -> AutonomyPolicy:
+    """Construct the code-defined default policy for an employee with no persisted doc (§5.4).
+
+    Monitor ON / Search OFF / Ask OFF / Prepare OFF / always_ask.
+    """
+    return AutonomyPolicy(employee_id=employee_id)
+
+
+@dataclass
 class PreviewCandidate:
     """Candidate identified during secretary preview search (§14.4).
 

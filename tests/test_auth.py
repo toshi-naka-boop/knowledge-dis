@@ -645,6 +645,48 @@ class TestPermissionTable(unittest.TestCase):
         res = self.client.post("/api/probe/unregistered-intent")
         self.assertEqual(res.status_code, 200)
 
+    # -- /api/secretary/autonomy (autonomous-agent design §5.5) ------------------
+
+    def test_autonomy_get_human_self_allowed(self) -> None:
+        self._as("human", "emp_marcus_delgado")
+        res = self.client.get("/api/secretary/autonomy", params={"employee_id": "emp_marcus_delgado"})
+        self.assertEqual(res.status_code, 200)
+
+    def test_autonomy_get_human_other_forbidden(self) -> None:
+        self._as("human", "emp_rachel_kim")
+        res = self.client.get("/api/secretary/autonomy", params={"employee_id": "emp_marcus_delgado"})
+        self.assertEqual(res.status_code, 403)
+
+    def test_autonomy_get_system_forbidden(self) -> None:
+        self._as("system")
+        res = self.client.get("/api/secretary/autonomy", params={"employee_id": "emp_marcus_delgado"})
+        self.assertEqual(res.status_code, 403)
+
+    def _autonomy_payload(self, employee_id: str) -> dict:
+        return {
+            "employee_id": employee_id,
+            "monitor_stalled_work": True,
+            "search_organization": False,
+            "ask_candidate_agents": False,
+            "prepare_introduction": False,
+            "contact_mode": "always_ask",
+        }
+
+    def test_autonomy_put_human_self_allowed(self) -> None:
+        self._as("human", "emp_marcus_delgado")
+        res = self.client.put("/api/secretary/autonomy", json=self._autonomy_payload("emp_marcus_delgado"))
+        self.assertEqual(res.status_code, 200)
+
+    def test_autonomy_put_human_other_forbidden(self) -> None:
+        self._as("human", "emp_rachel_kim")
+        res = self.client.put("/api/secretary/autonomy", json=self._autonomy_payload("emp_marcus_delgado"))
+        self.assertEqual(res.status_code, 403)
+
+    def test_autonomy_put_system_forbidden(self) -> None:
+        self._as("system")
+        res = self.client.put("/api/secretary/autonomy", json=self._autonomy_payload("emp_marcus_delgado"))
+        self.assertEqual(res.status_code, 403)
+
     # -- /attachments and static pages stay unauthenticated -----------------------
 
     def test_attachments_and_static_pages_need_no_principal(self) -> None:

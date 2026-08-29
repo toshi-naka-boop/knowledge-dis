@@ -29,6 +29,7 @@ from typing import Any
 from knowledge_discovery.matching import DeterministicEmbedder, Embedder
 from knowledge_discovery.models import (
     Agent,
+    AutonomyPolicy,
     MailSeed,
     Profile,
     ProfileItem,
@@ -632,6 +633,28 @@ def build_m3_mail_seeds(today_str: str | None = None) -> list[MailSeed]:
     ]
 
 
+def build_autonomy_policies() -> list[AutonomyPolicy]:
+    """Build a full-ON AutonomyPolicy doc for every seeded identity (autonomous-agent design §5.4/§10).
+
+    All 4 permissions ON keeps the existing (pre-autonomous-agent) demo UX
+    unchanged after a reseed: a scheduled sweep behaves exactly like a manual
+    one for these employees, since the gate table only restricts behavior
+    when a permission is OFF. Covers all 5 IDENTITY_SEEDS employees, including
+    requester persona Jordan Lee — the stalled-task owner in the demo script —
+    who has no agent/profile but does own tasks the sweep evaluates.
+    """
+    return [
+        AutonomyPolicy(
+            employee_id=employee_id,
+            monitor_stalled_work=True,
+            search_organization=True,
+            ask_candidate_agents=True,
+            prepare_introduction=True,
+        )
+        for employee_id in IDENTITY_SEEDS.values()
+    ]
+
+
 def populate_store(
     store: Store,
     embedder: Embedder | None = None,
@@ -647,6 +670,7 @@ def populate_store(
     m3_tasks = build_m3_tasks(today_str=today)
     m3_schedules = build_m3_schedules(today_str=today)
     m3_mail_seeds = build_m3_mail_seeds(today_str=today)
+    autonomy_policies = build_autonomy_policies()
 
     if dry_run:
         print(f"=== DRY RUN: Seed Data Summary ===")
@@ -656,6 +680,7 @@ def populate_store(
         print(f"Total M3 Schedules to store:{len(m3_schedules)}")
         print(f"Total M3 MailSeeds to store:{len(m3_mail_seeds)}")
         print(f"Total Identities to store:  {len(IDENTITY_SEEDS)}")
+        print(f"Total Autonomy Policies:    {len(autonomy_policies)} (all 4 permissions ON)")
         print("\n--- Registered Agents (4) ---")
         for a in agents:
             print(f"  • {a.agent_id}: {a.display_name} (employee_id={a.employee_id}, active={a.active})")
@@ -690,10 +715,15 @@ def populate_store(
     for email, employee_id in IDENTITY_SEEDS.items():
         store.save_identity(email, employee_id)
 
+    # Save autonomy policies (autonomous-agent design §5.4/§10): full ON for
+    # every seeded identity so a reseed keeps existing demo UX unchanged.
+    for policy in autonomy_policies:
+        store.save_autonomy_policy(policy)
+
     print(
         f"Successfully populated store with {len(agents)} agents, {len(profiles)} profiles, "
         f"{len(m3_tasks)} tasks, {len(m3_schedules)} schedules, {len(m3_mail_seeds)} mail seeds, "
-        f"and {len(IDENTITY_SEEDS)} identities."
+        f"{len(IDENTITY_SEEDS)} identities, and {len(autonomy_policies)} autonomy policies."
     )
     return len(agents), len(profiles)
 
@@ -714,8 +744,9 @@ def main() -> None:
     parser.add_argument(
         "--clear",
         action="store_true",
-        help="Delete all collections (agents/profiles/messages/tasks/schedules/mail_seeds/cards) "
-        "before seeding. Use for a demo reset (requires --use-firestore).",
+        help="Delete all collections (agents/profiles/messages/tasks/schedules/mail_seeds/cards/"
+        "identities/autonomy_policies/sweep_runs) before seeding. Use for a demo reset "
+        "(requires --use-firestore).",
     )
     parser.add_argument(
         "--embedder",

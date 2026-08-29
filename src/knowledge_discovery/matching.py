@@ -232,21 +232,24 @@ class MatchingEngine:
 
         return emb
 
-    def preview_search(
+    def preview_shortlist(
         self,
         question: str,
         registered_agents: list[Agent],
         profiles: dict[str, Profile],
-        max_candidates: int = 3,
         exclude_employee_id: str | None = None,
-    ) -> list[PreviewCandidate]:
-        """Execute pure, candidate-isolated preview search (public only, no side effects, §14.4).
+    ) -> list[tuple[Agent, Profile]]:
+        """Stage 1 of preview search: rank active agents by embedding_public similarity (§14.4).
 
-        Strict Rules:
-        1. 1st stage vector ranking strictly targets embedding_public.
+        Strict Rules (unchanged from the former single-method preview_search):
+        1. Vector ranking strictly targets embedding_public.
         2. VECTOR_FLOOR is NOT applied to preview.
-        3. 2nd stage inference receives ONLY a public-items view of the profile.
-        4. Completely pure: zero message dispatch, zero notifications, zero candidate trace.
+        3. Completely pure: zero message dispatch, zero notifications, zero candidate trace.
+
+        Returns the FULL ranked list (not capped to any max_candidates) — capping
+        and Stage-2 candidate-isolated inference both happen in preview_evaluate().
+        Used standalone (autonomous-agent design §5.3 held path) for counts-only
+        exploration: the caller may discard the result entirely, only keeping len().
         """
         q_emb = self.embedder.embed(question)
         active_agents = [
@@ -254,7 +257,6 @@ class MatchingEngine:
             if a.active and (exclude_employee_id is None or a.employee_id != exclude_employee_id)
         ]
 
-        # 1st stage: rank by embedding_public
         ranked: list[tuple[Agent, Profile, float]] = []
         for agent in active_agents:
             prof = profiles.get(agent.employee_id)
@@ -267,9 +269,22 @@ class MatchingEngine:
 
         # Sort descending by vector similarity
         ranked.sort(key=lambda x: x[2], reverse=True)
+        return [(agent, prof) for agent, prof, _sim in ranked]
 
+    def preview_evaluate(
+        self,
+        question: str,
+        shortlist: list[tuple[Agent, Profile]],
+        max_candidates: int = 3,
+    ) -> list[PreviewCandidate]:
+        """Stage 2 of preview search: candidate-isolated inference over a shortlist (§14.4).
+
+        Each candidate's Stage-2 inference receives ONLY a public-items view of
+        its own profile (C-26/X-1 process/data isolation) — never the whole
+        shortlist or any other candidate's data. Pure: no side effects.
+        """
         candidates: list[PreviewCandidate] = []
-        for agent, prof, sim in ranked:
+        for agent, prof in shortlist:
             # Build strictly public-only profile context for isolated Stage-2 inference (C-26/X-1)
             public_items = [
                 ProfileItem(
@@ -308,6 +323,24 @@ class MatchingEngine:
                     break
 
         return candidates
+
+    def preview_search(
+        self,
+        question: str,
+        registered_agents: list[Agent],
+        profiles: dict[str, Profile],
+        max_candidates: int = 3,
+        exclude_employee_id: str | None = None,
+    ) -> list[PreviewCandidate]:
+        """Execute pure, candidate-isolated preview search (public only, no side effects, §14.4).
+
+        Composition of preview_shortlist() + preview_evaluate() (autonomous-agent
+        design §5.3): signature and behavior are unchanged from before the split.
+        """
+        shortlist = self.preview_shortlist(
+            question, registered_agents, profiles, exclude_employee_id=exclude_employee_id
+        )
+        return self.preview_evaluate(question, shortlist, max_candidates=max_candidates)
 
     def screen_funnel(self, question: str, all_profiles: list[Profile]) -> list[FunnelCandidate]:
         """Track 1: Screen funnel ranking top 20 across all profiles for scale display (C-16)."""

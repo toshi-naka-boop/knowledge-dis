@@ -19,13 +19,23 @@ Follows design.md §3 - §7, §16.1, §16.2:
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from knowledge_discovery.auth import Principal, PrincipalResolver, build_principal_resolver
+from knowledge_discovery.auth import (
+    Principal,
+    PrincipalResolver,
+    _CachingCertsRequest,
+    build_principal_resolver,
+    verify_autonomous_sweep_token,
+)
 from knowledge_discovery.matching import DeterministicEmbedder, FakeConnectionInferencer, MatchingEngine
-from knowledge_discovery.models import Attachment
+from knowledge_discovery.models import Attachment, AutonomyPolicy, default_autonomy_policy, utc_now_iso
 from knowledge_discovery.secretary import SecretaryService
 from knowledge_discovery.connectors import build_connector_from_env
 from knowledge_discovery.service import (
@@ -44,9 +54,15 @@ from knowledge_discovery.tenancy import (
     TenantRegistry,
 )
 
+logger = logging.getLogger(__name__)
+
+# round-5 ledger E5: format gate for the autonomy policy API's employee_id
+# (both GET and PUT) -- a mismatch is rejected with 400 before it reaches Store.
+EMPLOYEE_ID_FORMAT_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
 try:
-    from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-    from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+    from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
+    from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
     from pydantic import BaseModel, Field
 except ImportError as exc:
     # This module is meaningless without fastapi/pydantic. Fail with a clean
@@ -131,6 +147,50 @@ class ProfileDiffReviewRequest(BaseModel):  # type: ignore[misc]
     action: str = Field(..., description="'apply' | 'edit_apply' | 'private_apply' | 'dismiss'")
     edited_body: str | None = Field(default=None, description="Optional edited body text for edit_apply")
 
+
+class SweepRequest(BaseModel):  # type: ignore[misc]
+    origin: str | None = Field(
+        default=None,
+        description="'manual' (UI override) or 'scheduled' (unattended trigger). "
+        "Missing body/field defaults to 'scheduled' (autonomous-agent design §1).",
+    )
+
+
+class AutonomyPolicyRequest(BaseModel):  # type: ignore[misc]
+    employee_id: str = Field(..., description="Employee this policy governs")
+    monitor_stalled_work: bool = Field(..., description="Root permission: observe tasks / detect stagnation")
+    search_organization: bool = Field(..., description="Permission to explore candidates (requires monitor)")
+    ask_candidate_agents: bool = Field(..., description="Permission to evaluate candidate fit (requires search)")
+    prepare_introduction: bool = Field(..., description="Permission to prepare a request draft (requires ask)")
+    contact_mode: str = Field(default="always_ask", description="Always 'always_ask' in this phase")
+
+
+
+# -----------------------------------------------------------------------------
+# Scheduled run_key derivation (autonomous-agent design §2/§3)
+# -----------------------------------------------------------------------------
+
+def _scheduled_run_key(tenant_id: str, request: Request) -> str:
+    """Derive the deterministic run_key for an origin='scheduled' sweep.
+
+    With Cloud Scheduler's `X-CloudScheduler-JobName` / `X-CloudScheduler-ScheduleTime`
+    headers present: `tenant_id + "-" + sha256(job + ":" + scheduleTime).hexdigest()[:16]`
+    -- identical headers (e.g. a Scheduler retry of the same tick) always produce the
+    same run_key, so the domain-layer claim/dedup logic collapses retries into one run.
+    Without those headers (a caller that doesn't forward them): the current time is
+    rounded down to a 30-minute boundary and fed through the same job/scheduleTime
+    shape, so repeated calls within the same 30-minute window also collapse.
+    """
+    job = request.headers.get("x-cloudscheduler-jobname")
+    schedule_time = request.headers.get("x-cloudscheduler-scheduletime")
+    if not job or not schedule_time:
+        now = datetime.now(timezone.utc)
+        rounded_minute = 0 if now.minute < 30 else 30
+        rounded = now.replace(minute=rounded_minute, second=0, microsecond=0)
+        job = "no-scheduler-headers"
+        schedule_time = rounded.isoformat()
+    digest = hashlib.sha256(f"{job}:{schedule_time}".encode("utf-8")).hexdigest()[:16]
+    return f"{tenant_id}-{digest}"
 
 
 # -----------------------------------------------------------------------------
@@ -341,6 +401,15 @@ def create_app(
         """human must act only as themselves; demo/system are unaffected here."""
         if principal.mode == "human" and principal.employee_id != employee_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee_id.")
+
+    def _require_valid_employee_id_format(employee_id: str) -> None:
+        """round-5 ledger E5: reject a malformed employee_id with 400 before it
+        ever reaches Store (both GET and PUT /api/secretary/autonomy)."""
+        if not EMPLOYEE_ID_FORMAT_PATTERN.fullmatch(employee_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="employee_id must match ^[A-Za-z0-9_-]{1,64}$.",
+            )
 
     def _require_self_agent(principal: Principal, agent_id: str, tenant_store: Store) -> None:
         """human may only act through the agent bound to their own employee_id."""
@@ -630,12 +699,31 @@ def create_app(
 
     @app.post("/api/secretary/sweep")
     def run_secretary_sweep(
-        principal: Principal = Depends(get_principal), ctx: TenantContext = Depends(get_context)
+        request: Request,
+        req: SweepRequest | None = Body(default=None),
+        principal: Principal = Depends(get_principal),
+        ctx: TenantContext = Depends(get_context),
     ) -> dict[str, Any]:
         """Execute proactive secretary sweep across the caller's own tenant only
-        (§16.2: no all-tenant sweep exists)."""
+        (§16.2: no all-tenant sweep exists).
+
+        origin (autonomous-agent design §1): a missing body, an empty body, or a
+        body without an 'origin' field all default to "scheduled" -- every
+        unattended automatic trigger (A段/B段 Scheduler jobs) is gated by autonomy
+        policy unless it explicitly declares itself. Only the UI's manual "Run
+        sweep" click sends {"origin":"manual"} (the human override, C-22).
+        """
         _deny_human(principal)
-        return ctx.secretary.run_sweep()
+        origin = (req.origin if req is not None else None) or "scheduled"
+        if origin not in ("manual", "scheduled"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="origin must be 'manual' or 'scheduled'.",
+            )
+        if origin == "scheduled":
+            run_key = _scheduled_run_key(ctx.tenant.tenant_id, request)
+            return ctx.secretary.run_sweep(origin="scheduled", run_key=run_key)
+        return ctx.secretary.run_sweep(origin="manual")
 
     @app.get("/api/secretary/digest")
     def get_morning_digest(
@@ -644,8 +732,68 @@ def create_app(
         ctx: TenantContext = Depends(get_context),
     ) -> dict[str, Any]:
         """Retrieve dynamic morning digest for employee (§14.2, §14.8)."""
+        _require_valid_employee_id_format(employee_id)  # round-6 ledger C-30
         _require_self_employee(principal, employee_id)
         return ctx.secretary.get_morning_digest(employee_id=employee_id)
+
+    # -------------------------------------------------------------------------
+    # Autonomy Policy API (autonomous-agent design §5.1/§5.5)
+    # -------------------------------------------------------------------------
+
+    @app.get("/api/secretary/autonomy")
+    def get_autonomy_policy(
+        employee_id: str = Query(..., description="Employee ID"),
+        principal: Principal = Depends(get_principal),
+        ctx: TenantContext = Depends(get_context),
+    ) -> dict[str, Any]:
+        """Return the employee's persisted autonomy policy, or the code-defined
+        default (Monitor ON / rest OFF) with persisted=False when no doc exists
+        (design §5.4/§5.5)."""
+        _deny_system(principal)
+        _require_valid_employee_id_format(employee_id)
+        _require_self_employee(principal, employee_id)
+        policy = ctx.store.get_autonomy_policy(employee_id)
+        persisted = policy is not None
+        effective_policy = policy or default_autonomy_policy(employee_id)
+        body = effective_policy.to_dict()
+        body["persisted"] = persisted
+        body["effective"] = effective_policy.effective()
+        return body
+
+    @app.put("/api/secretary/autonomy")
+    def put_autonomy_policy(
+        req: AutonomyPolicyRequest,
+        principal: Principal = Depends(get_principal),
+        ctx: TenantContext = Depends(get_context),
+    ) -> dict[str, Any]:
+        """Normalize and persist an employee's autonomy policy (design §5.2/§5.5).
+
+        contact_mode is a fixed enum (only "always_ask" in this phase) -- any
+        other value is rejected before normalization/save.
+        """
+        _deny_system(principal)
+        _require_valid_employee_id_format(req.employee_id)
+        _require_self_employee(principal, req.employee_id)
+        if req.contact_mode != "always_ask":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="contact_mode must be 'always_ask'.",
+            )
+        raw_policy = AutonomyPolicy(
+            employee_id=req.employee_id,
+            monitor_stalled_work=req.monitor_stalled_work,
+            search_organization=req.search_organization,
+            ask_candidate_agents=req.ask_candidate_agents,
+            prepare_introduction=req.prepare_introduction,
+            contact_mode=req.contact_mode,
+            updated_at=utc_now_iso(),
+        )
+        normalized_policy = raw_policy.normalized()
+        ctx.store.save_autonomy_policy(normalized_policy)
+        body = normalized_policy.to_dict()
+        body["persisted"] = True
+        body["effective"] = normalized_policy.effective()
+        return body
 
     @app.post("/api/secretary/confirm")
     def confirm_stagnation_card(
@@ -703,6 +851,78 @@ def create_app(
             return ctx.secretary.dismiss_card(card_id=card_id)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    # -------------------------------------------------------------------------
+    # Internal Autonomous Sweep Trigger (autonomous-agent design §2)
+    # -------------------------------------------------------------------------
+    # Dedicated OIDC certs cache: never shared with IapResolver's (auth.py's
+    # own cache, if AUTH_MODE=iap is also configured). Built once per app so
+    # repeated ticks actually benefit from the in-process cache.
+    _autonomous_sweep_cert_cache = _CachingCertsRequest()
+
+    @app.post("/internal/autonomous-sweep")
+    def run_autonomous_sweep(request: Request) -> Any:
+        """Unattended trigger for `kd-autonomous-sweep` (Cloud Scheduler, OIDC).
+
+        Not part of the §16.1 demo/human/system principal table -- this route
+        authenticates by verifying a Google-signed OIDC ID token directly
+        (verify_autonomous_sweep_token), never by API key or query param.
+        Fail-closed: either env var unset -> 404 (route exists but is inert
+        rather than reachable-but-misconfigured).
+
+        Iterates every tenant in the registry (caller cannot select a tenant),
+        running each tenant's origin='scheduled' sweep with a run_key derived
+        the same way as /api/secretary/sweep. A single tenant's exception is
+        caught so the rest still run; the domain layer's run_sweep already
+        transitions that tenant's claim to 'failed' before re-raising, so the
+        run remains immediately re-claimable (design §3, C-14/Z-1).
+
+        Response contract (design §2, Y-4): every tenant done/deduplicated ->
+        200. Any tenant failed/in_progress/lost_claim, or raised -> 500, so
+        Cloud Scheduler retries (successful tenants dedup on retry; only the
+        failed tenant(s) redo work).
+        """
+        audience = os.environ.get("AUTONOMOUS_SWEEP_AUDIENCE", "")
+        invoker_email = os.environ.get("AUTONOMOUS_SWEEP_INVOKER", "")
+        if not audience or not invoker_email:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+        verify_autonomous_sweep_token(
+            request,
+            audience=audience,
+            invoker_email=invoker_email,
+            cert_cache=_autonomous_sweep_cert_cache,
+        )
+
+        tenants_result: dict[str, dict[str, Any]] = {}
+        all_succeeded = True
+        for tenant in registry.tenants:
+            run_key = _scheduled_run_key(tenant.tenant_id, request)
+            try:
+                tenant_ctx = router.for_tenant(tenant.tenant_id)
+                result = tenant_ctx.secretary.run_sweep(origin="scheduled", run_key=run_key)
+                sweep_status = result.get("status")
+                tenants_result[tenant.tenant_id] = {"status": sweep_status, "run_key": run_key}
+                if sweep_status not in ("ok", "deduplicated"):
+                    all_succeeded = False
+            except Exception:
+                all_succeeded = False
+                # round-5 ledger E4: the response body carries only a generic
+                # per-tenant status + message -- no exception string, no stack,
+                # no path. The real exception is logged server-side only.
+                logger.exception(
+                    "autonomous-sweep failed for tenant=%s run_key=%s", tenant.tenant_id, run_key
+                )
+                tenants_result[tenant.tenant_id] = {
+                    "status": "error",
+                    "run_key": run_key,
+                    "error": "Sweep failed. See server logs for details.",
+                }
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK if all_succeeded else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"tenants": tenants_result},
+        )
 
     @app.post("/api/probe/unregistered-intent")
     def probe_unregistered_intent(

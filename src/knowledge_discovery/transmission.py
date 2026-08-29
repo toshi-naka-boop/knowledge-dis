@@ -102,6 +102,7 @@ class TransmissionLayer:
         consent_state: str = "n/a",
         audit_id: str | None = None,
         candidate_profile: Profile | None = None,
+        create_only: bool = False,
     ) -> Message:
         """Process and send a message through the transmission pipeline.
 
@@ -116,6 +117,15 @@ class TransmissionLayer:
            - generate audit_payload for masked audit view
         4. Save final message to store audit log.
         5. Return the dispatched Message.
+
+        create_only (autonomous-agent design §3 Z-4): when True, the final
+        message is saved via Store.save_message_if_absent() instead of the
+        unconditional save_message(). A doc already present at `audit_id` is
+        left untouched and its stored content is returned instead — the first
+        writer wins, so a retried/duplicate send can never rewind a summary
+        or forge a fresher timestamp. Intended only for deterministic,
+        decision-content-free audit_ids (sweep_run / policy_limited) supplied
+        by the caller; do not combine with server-generated random audit_ids.
         """
         msg_id = audit_id or f"msg_{uuid.uuid4().hex[:12]}"
 
@@ -211,5 +221,12 @@ class TransmissionLayer:
             consent_state=consent_state,
             rejected=False,
         )
+        if create_only:
+            created = self.store.save_message_if_absent(message)
+            if not created:
+                existing = self.store.get_message(msg_id)
+                return existing if existing is not None else message
+            return message
+
         self.store.save_message(message)
         return message

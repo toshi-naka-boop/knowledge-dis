@@ -18,12 +18,15 @@ credential is bound to a tenant. All server.py routes depend on
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import threading
 import time
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     from fastapi import HTTPException, Request, status
@@ -224,6 +227,73 @@ class IapResolver(PrincipalResolver):
             raise _forbidden("No employee identity is registered for this email.")
 
         return Principal(mode="human", tenant_id=tenant.tenant_id, employee_id=employee_id, email=email)
+
+
+GOOGLE_OIDC_ISSUERS = ("https://accounts.google.com", "accounts.google.com")
+AUTONOMOUS_SWEEP_CLOCK_SKEW_SECONDS = 30
+
+
+def verify_autonomous_sweep_token(
+    request: Request,
+    audience: str,
+    invoker_email: str,
+    cert_cache: "_CachingCertsRequest",
+) -> None:
+    """Verify the OIDC ID token on `POST /internal/autonomous-sweep` (autonomous-agent
+    design v4 §2). `cert_cache` must be a `_CachingCertsRequest` instance dedicated to
+    this route (not shared with `IapResolver`'s IAP-certs cache -- separate cache,
+    separate certs endpoint). Uses `google.oauth2.id_token.verify_token`'s default
+    certs_url (Google's general OIDC certs, not IAP's).
+
+    Conditions (all required): Authorization: Bearer <id_token> present / signature
+    and aud verify via google-auth / iss in {accounts.google.com,
+    https://accounts.google.com} / email == invoker_email / email_verified is True.
+    No token -> 401. Any verification failure (bad signature, aud/iss/email mismatch,
+    expired, unverified email) -> 403. Never inspects API keys or query params.
+
+    round-5 ledger E3: every 401/403 detail is one of two fixed generic strings
+    ("authentication required" / "invalid token") — the specific failure reason
+    (bad signature, which claim mismatched, google-auth's own exception text)
+    is never put in the response body, only logged server-side, so the caller
+    can never use the response to distinguish *why* a token was rejected.
+    """
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise _unauthorized("authentication required")
+    token = auth_header[len("Bearer "):].strip()
+    if not token:
+        raise _unauthorized("authentication required")
+
+    try:
+        from google.oauth2 import id_token as google_id_token
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "google-auth is required for /internal/autonomous-sweep (see scripts/requirements.txt)"
+        ) from exc
+
+    try:
+        payload = google_id_token.verify_token(
+            token,
+            request=cert_cache,
+            audience=audience,
+            clock_skew_in_seconds=AUTONOMOUS_SWEEP_CLOCK_SKEW_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning("autonomous-sweep OIDC token verification failed: %s", exc)
+        raise _forbidden("invalid token") from exc
+
+    if payload.get("iss") not in GOOGLE_OIDC_ISSUERS:
+        logger.warning("autonomous-sweep OIDC token has an unexpected issuer: %r", payload.get("iss"))
+        raise _forbidden("invalid token")
+
+    email = str(payload.get("email") or "").strip().lower()
+    if email != invoker_email.strip().lower():
+        logger.warning("autonomous-sweep OIDC token email does not match the configured invoker identity")
+        raise _forbidden("invalid token")
+
+    if payload.get("email_verified") is not True:
+        logger.warning("autonomous-sweep OIDC token email is not verified")
+        raise _forbidden("invalid token")
 
 
 def validate_iap_audience_format(audience: str) -> None:

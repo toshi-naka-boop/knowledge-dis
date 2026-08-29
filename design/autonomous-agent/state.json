@@ -1,0 +1,17 @@
+{
+  "currentNode": "完了報告",
+  "status": "awaiting_user",
+  "designVersion": "v4",
+  "approvedDesignVersion": "v4",
+  "approvedDesignSha256": "32c0ea35c097e5c45c9c039196e3c6a374ec4b9882f9825f4c2663279799a27e",
+  "approvedAt": "2026-08-28",
+  "approvalEvidence": "「Phase 1設計を確認しました。fingerprint: v4:32c0ea35c097 設計方針は承認します。…Q-1について：counts-only案を採用します。…round-4確認 → Phase 2 domain/state implementation → tests へ進んでください。」",
+  "requiredApprovalFingerprint": "v4:32c0ea35c097",
+  "baseline": "95fd55b",
+  "criticRound": 7,
+  "openIssueIds": [],
+  "requiredReads": ["design/autonomous-agent/design.md", "design/autonomous-agent/ledger.md"],
+  "nextAction": "ユーザー確認待ち: ①Phase 6 検品5枚の承認 ②コミット承認 ③Phase 7 デプロイ構成（kd-autonomous-sweep job・env 2件・Cloud Run 再デプロイ）の適用承認",
+  "delegation": {"調査": "claude/explore-subagent", "批評": "claude design-critic + codex cross-vendor", "実装": "claude/sonnet general-purpose subagent（round-7 残4件と最終UI調整はメインが直接修正）", "反証": "claude design-critic ×2 + codex（round-7 は codex 上限で claude 単独）"},
+  "lastUpdated": "2026-08-29"
+}

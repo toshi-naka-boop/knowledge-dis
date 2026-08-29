@@ -8,8 +8,14 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
+try:
+    from google.api_core.exceptions import AlreadyExists
+except ImportError:  # pragma: no cover - mirrors firestore_store.py's own fallback
+    class AlreadyExists(Exception):  # type: ignore[no-redef]
+        pass
+
 from knowledge_discovery.firestore_store import FirestoreStore
-from knowledge_discovery.models import Agent, Message, Profile, ProfileItem
+from knowledge_discovery.models import Agent, AutonomyPolicy, Card, Message, Profile, ProfileItem
 
 
 class MockDocumentSnapshot:
@@ -50,9 +56,17 @@ class MockCollectionReference:
         def _delete() -> None:
             col_storage.pop(doc_id, None)
 
+        def _create(data: dict[str, Any]) -> None:
+            # Mirrors real Firestore create(): atomic create-only, raises
+            # AlreadyExists (never overwrites) if the doc is already present.
+            if doc_id in col_storage:
+                raise AlreadyExists(f"Document already exists: {doc_id}")
+            col_storage[doc_id] = dict(data)
+
         mock_doc.set.side_effect = _set
         mock_doc.get.side_effect = _get
         mock_doc.delete.side_effect = _delete
+        mock_doc.create.side_effect = _create
         return mock_doc
 
     def stream(self) -> list[MockDocumentSnapshot]:
@@ -209,11 +223,83 @@ class TestFirestoreStore(unittest.TestCase):
         self.store.save_agent(Agent(agent_id="a1", employee_id="e1", display_name="A1"))
         self.store.save_profile(Profile(employee_id="e1", name="E1", role="Role"))
         self.store.save_message(Message(audit_id="m1", from_entity="u1", to_entity="u2", intent="query", payload_type="query"))
+        self.store.save_autonomy_policy(AutonomyPolicy(employee_id="e1"))
 
         self.store.clear()
         self.assertEqual(len(self.store.list_agents()), 0)
         self.assertEqual(len(self.store.list_profiles()), 0)
         self.assertEqual(len(self.store.list_messages()), 0)
+        self.assertIsNone(self.store.get_autonomy_policy("e1"))
+
+    # --- autonomous-agent Phase 2 additions -----------------------------
+
+    def test_save_and_get_autonomy_policy(self) -> None:
+        self.assertIsNone(self.store.get_autonomy_policy("emp_x"))
+
+        policy = AutonomyPolicy(
+            employee_id="emp_x",
+            monitor_stalled_work=True,
+            search_organization=True,
+            ask_candidate_agents=False,
+            prepare_introduction=False,
+            updated_at="2026-08-01T00:00:00+00:00",
+        )
+        self.store.save_autonomy_policy(policy)
+
+        fetched = self.store.get_autonomy_policy("emp_x")
+        self.assertIsNotNone(fetched)
+        self.assertTrue(fetched.search_organization)
+        self.assertFalse(fetched.ask_candidate_agents)
+        self.assertEqual(fetched.updated_at, "2026-08-01T00:00:00+00:00")
+
+    def test_save_message_if_absent_create_only(self) -> None:
+        msg = Message(
+            audit_id="msg_fixed_1",
+            from_entity="system",
+            to_entity="system",
+            intent="sweep_run",
+            payload_type="sweep_run",
+            payload={"n": 1},
+            timestamp="2026-08-01T00:00:00Z",
+        )
+        created_first = self.store.save_message_if_absent(msg)
+        self.assertTrue(created_first)
+
+        # A second attempt with different content at the SAME audit_id must
+        # be a no-op: first writer wins, timestamp/content unchanged (Z-4).
+        rewrite_attempt = Message(
+            audit_id="msg_fixed_1",
+            from_entity="system",
+            to_entity="system",
+            intent="sweep_run",
+            payload_type="sweep_run",
+            payload={"n": 999},
+            timestamp="2026-08-02T00:00:00Z",
+        )
+        created_second = self.store.save_message_if_absent(rewrite_attempt)
+        self.assertFalse(created_second)
+
+        stored = self.store.get_message("msg_fixed_1")
+        self.assertEqual(stored.payload["n"], 1)
+        self.assertEqual(stored.timestamp, "2026-08-01T00:00:00Z")
+
+    def test_find_card_by_domain_key(self) -> None:
+        card = Card(
+            card_id="card_stag_legacyrand1",
+            owner_employee_id="emp_owner",
+            type="stagnation",
+            tier="notice",
+            payload={"task_id": "task_1"},
+            status="open",
+        )
+        self.store.save_card(card)
+
+        found = self.store.find_card_by_domain_key("emp_owner", "stagnation", "task_1")
+        self.assertIsNotNone(found)
+        self.assertEqual(found.card_id, "card_stag_legacyrand1")
+
+        self.assertIsNone(self.store.find_card_by_domain_key("emp_owner", "stagnation", "task_missing"))
+        self.assertIsNone(self.store.find_card_by_domain_key("emp_other", "stagnation", "task_1"))
 
 
 if __name__ == "__main__":
