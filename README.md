@@ -251,6 +251,36 @@ gcloud scheduler jobs create http kd-secretary-sweep \
 gcloud scheduler jobs run kd-secretary-sweep --location=asia-northeast1   # manual fire
 ```
 
+## Autonomous sweep (design/autonomous-agent v4)
+
+A third job, `kd-autonomous-sweep`, fires `POST /internal/autonomous-sweep` every
+30 minutes with an **OIDC identity token** (no API key accepted on this route):
+
+```bash
+gcloud scheduler jobs create http kd-autonomous-sweep \
+  --location=asia-northeast1 --schedule="*/30 * * * *" --time-zone=Asia/Tokyo \
+  --uri="https://<SERVICE_URL>/internal/autonomous-sweep" --http-method=POST \
+  --oidc-service-account-email=kd-scheduler-sa@<PROJECT_ID>.iam.gserviceaccount.com \
+  --oidc-token-audience="https://<SERVICE_URL>" --attempt-deadline=180s
+```
+
+The endpoint requires env `AUTONOMOUS_SWEEP_AUDIENCE` (= service URL) and
+`AUTONOMOUS_SWEEP_INVOKER` (= scheduler SA email) on the Cloud Run service; when
+unset it fail-closes with 404. All HTTP-triggered sweeps default to
+`origin="scheduled"` and are gated per-user by the Autonomy Policy (the UI's
+"Run sweep" button alone sends `origin="manual"`, the ungated override). Run-level
+idempotency is keyed on the Cloud Scheduler schedule slot, so duplicate deliveries
+— and forced `jobs run` inside an already-claimed slot — return `deduplicated:true`
+without re-executing.
+
+**Reseed vs scheduler:** pause the job around a reseed to keep the trace clean
+(cards are idempotent either way):
+
+```bash
+gcloud scheduler jobs pause  kd-autonomous-sweep --location=asia-northeast1   # before reseed
+gcloud scheduler jobs resume kd-autonomous-sweep --location=asia-northeast1   # after reseed
+```
+
 ## B-stage: secretary on GEAP Agent Runtime (design v11 §14.7)
 
 The secretary also runs as a first-class agent on **GEAP Agent Runtime** (Vertex AI
@@ -320,6 +350,7 @@ tracing is left disabled. (3) `kd-scheduler-sa` holds only a custom role with
 Teardown after the demo (stops all Runtime cost):
 
 ```bash
+gcloud scheduler jobs delete kd-autonomous-sweep --location=asia-northeast1 --quiet
 gcloud scheduler jobs delete kd-secretary-sweep-runtime --location=asia-northeast1 --quiet
 curl -X DELETE -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   "https://asia-northeast1-aiplatform.googleapis.com/v1/projects/<PROJECT_ID>/locations/asia-northeast1/reasoningEngines/<ID>"
