@@ -297,6 +297,17 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
 .manual-ask textarea { height: 84px; margin-bottom: 10px; }
 .info-bar { font-size: 12px; color: var(--text-faint); margin-top: 8px; }
 .live-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--primary); margin-left: 4px; }
+
+/* ---------------- Agent autonomy (de-emphasized, same pattern as Ask your agent) ---------------- */
+
+#autonomyDisclosure summary:before { content: "Agent autonomy  ›"; }
+#autonomyDisclosure[open] summary:before { content: "Agent autonomy  ⌄"; }
+.autonomy-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); padding: 4px 0; }
+.autonomy-row input[type="checkbox"] { width: 13px; height: 13px; }
+.autonomy-row input[type="checkbox"]:disabled { opacity: 0.4; }
+.autonomy-contact { font-size: 12.5px; color: var(--text); margin-top: 8px; }
+.autonomy-contact-note { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+.autonomy-error { font-size: 12px; color: var(--text-faint); margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -316,7 +327,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
         <div class="page-header">
           <div>
             <div class="greeting" id="greeting">Good morning</div>
-            <div class="agent-badge"><span class="pulse-dot"></span> Your agent</div>
+            <div class="agent-badge"><span class="pulse-dot"></span> <span id="agentBadgeText">Your agent</span></div>
           </div>
           <!-- Demo device: same one-person-plays-all dropdown as candidate.html (README: demo simplification). R-1 -->
           <select id="requesterSelect" class="persona-select" onchange="switchRequester(this.value)" title="Demo: switch whose screen you are viewing">
@@ -375,6 +386,35 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--pr
             <div id="queryMeta" class="info-bar"></div>
           </div>
         </details>
+
+        <!-- Agent autonomy (de-emphasized, same disclosure pattern as Ask your agent) -->
+        <details class="manual-ask" id="autonomyDisclosure" style="margin-top: 14px;" ontoggle="onAutonomyToggle()">
+          <summary></summary>
+          <div class="manual-ask-body">
+            <div class="empty-note" id="autonomyLoading">Loading autonomy settings…</div>
+            <div id="autonomyControls" style="display: none;">
+              <label class="autonomy-row">
+                <input type="checkbox" id="autonomyMonitor" onchange="updateAutonomyFlag('monitor_stalled_work', this.checked)">
+                Monitor stalled work automatically
+              </label>
+              <label class="autonomy-row">
+                <input type="checkbox" id="autonomySearch" onchange="updateAutonomyFlag('search_organization', this.checked)">
+                Search the organization automatically
+              </label>
+              <label class="autonomy-row">
+                <input type="checkbox" id="autonomyAsk" onchange="updateAutonomyFlag('ask_candidate_agents', this.checked)">
+                Ask candidate agents for fit automatically
+              </label>
+              <label class="autonomy-row">
+                <input type="checkbox" id="autonomyPrepare" onchange="updateAutonomyFlag('prepare_introduction', this.checked)">
+                Prepare introduction drafts automatically
+              </label>
+              <div class="autonomy-contact">Contacting a person: <strong>&#9679; Always ask me first</strong></div>
+              <div class="autonomy-contact-note">Your agent will never message a colleague without your review.</div>
+              <div id="autonomyError" class="autonomy-error" style="display: none;"></div>
+            </div>
+          </div>
+        </details>
       </div>
     </main>
   </div>
@@ -390,6 +430,14 @@ const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
 // card skips the "Looking across your organization…" animation and renders
 // its PersonCard immediately. Normal URLs (no reveal=1) are unaffected.
 const REVEAL_PARAM = (new URLSearchParams(location.search)).get("reveal") === "1";
+// Demo staging (same pattern as ?reveal=1): ?autonomy=1 opens the Agent
+// autonomy disclosure on load, for recording without an on-camera click.
+if ((new URLSearchParams(location.search)).get("autonomy") === "1") {
+  window.addEventListener("DOMContentLoaded", () => {
+    const disclosure = document.getElementById("autonomyDisclosure");
+    if (disclosure) disclosure.open = true;
+  });
+}
 let revealedOnce = false;
 
 function esc(v) {
@@ -446,8 +494,14 @@ function setupChrome() {
 
 function switchRequester(id) {
   REQUESTER_ID = id;
+  autonomyLoaded = false;
   fetchDigest();
   fetchStatuses();
+  const autonomyDetails = document.getElementById("autonomyDisclosure");
+  if (autonomyDetails && autonomyDetails.open) {
+    loadAutonomyPolicy();
+    autonomyLoaded = true;
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -549,7 +603,7 @@ async function triggerSweep() {
     const res = await fetch("/api/secretary/sweep", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-      body: JSON.stringify({})
+      body: JSON.stringify({origin: "manual"})
     });
     if (!res.ok) {
       alert("Sweep failed: " + res.statusText);
@@ -561,8 +615,42 @@ async function triggerSweep() {
   }
 }
 
+// Autonomy status display (design \u00a78 A/C-17): "\u00b7 Monitoring automatically"
+// + relative last-sweep time when effective Monitor is on, "\u00b7 Monitoring
+// paused" when it is off. Naive Date-diff \u2014 fine even against DEMO_TODAY skew.
+function formatRelativeTime(iso) {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return "";
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} h ago`;
+  const d = new Date(iso);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[d.getMonth()]} ${d.getDate()}`;
+}
+
+function renderAgentBadge(data) {
+  const el = document.getElementById("agentBadgeText");
+  if (!el) return;
+  const effective = (data.autonomy && data.autonomy.effective) || {};
+  if (!effective.monitor_stalled_work) {
+    el.innerText = "Your agent \u00b7 Monitoring paused";
+    return;
+  }
+  let text = "Your agent \u00b7 Monitoring automatically";
+  if (data.last_sweep && data.last_sweep.at) {
+    text += ` \u00b7 Last sweep ${formatRelativeTime(data.last_sweep.at)}`;
+  }
+  el.innerText = text;
+}
+
 function renderDigest(data) {
   document.getElementById("digestDateBadge").innerText = data.date ? ("Today \u00b7 " + data.date) : "Today";
+  renderAgentBadge(data);
 
   // Reminders
   const reminderList = document.getElementById("reminderList");
@@ -593,13 +681,14 @@ function renderDigest(data) {
   const needContainer = document.getElementById("needDetectionSection");
   const stagCards = data.stagnation_cards || [];
   stagCards.forEach(c => { STAG_CARDS[c.card_id] = c; });
+  const monitorOn = !!((data.autonomy && data.autonomy.effective || {}).monitor_stalled_work);
   if (stagCards.length === 0) {
     needContainer.innerHTML = "";
   } else {
     const ordered = [...stagCards].sort(
       (a, b) => (a.tier === "request_draft" ? 0 : 1) - (b.tier === "request_draft" ? 0 : 1)
     );
-    needContainer.innerHTML = ordered.map(renderNeedCard).join("");
+    needContainer.innerHTML = ordered.map(c => renderNeedCard(c, monitorOn)).join("");
   }
 
   if (REVEAL_PARAM && !revealedOnce) {
@@ -671,7 +760,7 @@ function splitEvidence(line) {
   return String(line || "").split(",").map(s => s.trim()).filter(Boolean).join(" · ");
 }
 
-function renderNeedCard(card) {
+function renderNeedCard(card, monitorOn) {
   const p = card.payload || {};
   if (card.tier === "request_draft") {
     return `
@@ -687,10 +776,11 @@ function renderNeedCard(card) {
     </div>`;
   }
   const shortEvidence = String(p.evidence_line || "").split(",")[0].trim().replace(/\.$/, "");
+  const monitorLabel = monitorOn ? "Monitoring" : "Paused";
   return `
     <div class="card need-card need-compact" id="card_box_${esc(card.card_id)}" data-state="initial">
       <span class="need-task-title">${esc(p.task_title || p.task_id)}</span>
-      <span class="need-monitor">${esc(shortEvidence || "Stalling")} · Monitoring</span>
+      <span class="need-monitor">${esc(shortEvidence || "Stalling")} · ${monitorLabel}</span>
       <button class="btn-text" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
     </div>`;
 }
@@ -802,6 +892,89 @@ async function dismissCard(cardId) {
     await fetchDigest();
   } catch (err) {
     alert("Dismiss error: " + err.message);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Agent autonomy (design §8 B): secondary control, loaded on first open,
+// checkbox changes PUT immediately and re-render from the normalized
+// response (server-side normalization is authoritative, §5.2).
+// -------------------------------------------------------------------------
+
+let autonomyLoaded = false;
+
+function onAutonomyToggle() {
+  const details = document.getElementById("autonomyDisclosure");
+  if (details && details.open && !autonomyLoaded) {
+    autonomyLoaded = true;
+    loadAutonomyPolicy();
+  }
+}
+
+function showAutonomyError(msg) {
+  const errEl = document.getElementById("autonomyError");
+  if (!errEl) return;
+  errEl.innerText = msg;
+  errEl.style.display = "block";
+}
+
+async function loadAutonomyPolicy() {
+  try {
+    const res = await fetch(`/api/secretary/autonomy?employee_id=${REQUESTER_ID}`, {
+      headers: { "X-API-Key": API_KEY }
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAutonomyError("Could not load autonomy settings.");
+      return;
+    }
+    document.getElementById("autonomyLoading").style.display = "none";
+    document.getElementById("autonomyControls").style.display = "block";
+    renderAutonomyPolicy(data);
+  } catch (err) {
+    showAutonomyError("Could not load autonomy settings.");
+  }
+}
+
+function renderAutonomyPolicy(data) {
+  const eff = data.effective || {};
+  document.getElementById("autonomyMonitor").checked = !!eff.monitor_stalled_work;
+  document.getElementById("autonomySearch").checked = !!eff.search_organization;
+  document.getElementById("autonomyAsk").checked = !!eff.ask_candidate_agents;
+  document.getElementById("autonomyPrepare").checked = !!eff.prepare_introduction;
+
+  document.getElementById("autonomySearch").disabled = !eff.monitor_stalled_work;
+  document.getElementById("autonomyAsk").disabled = !eff.search_organization;
+  document.getElementById("autonomyPrepare").disabled = !eff.ask_candidate_agents;
+
+  document.getElementById("autonomyError").style.display = "none";
+}
+
+async function updateAutonomyFlag(field, value) {
+  const payload = {
+    employee_id: REQUESTER_ID,
+    monitor_stalled_work: document.getElementById("autonomyMonitor").checked,
+    search_organization: document.getElementById("autonomySearch").checked,
+    ask_candidate_agents: document.getElementById("autonomyAsk").checked,
+    prepare_introduction: document.getElementById("autonomyPrepare").checked,
+    contact_mode: "always_ask"
+  };
+  payload[field] = value;
+  try {
+    const res = await fetch("/api/secretary/autonomy", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAutonomyError("Could not save — please try again.");
+      return;
+    }
+    renderAutonomyPolicy(data);
+    fetchDigest();
+  } catch (err) {
+    showAutonomyError("Could not save — please try again.");
   }
 }
 

@@ -59,8 +59,14 @@ function setupChrome() {
 
 function switchRequester(id) {
   REQUESTER_ID = id;
+  autonomyLoaded = false;
   fetchDigest();
   fetchStatuses();
+  const autonomyDetails = document.getElementById("autonomyDisclosure");
+  if (autonomyDetails && autonomyDetails.open) {
+    loadAutonomyPolicy();
+    autonomyLoaded = true;
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -162,7 +168,7 @@ async function triggerSweep() {
     const res = await fetch("/api/secretary/sweep", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-      body: JSON.stringify({})
+      body: JSON.stringify({origin: "manual"})
     });
     if (!res.ok) {
       alert("Sweep failed: " + res.statusText);
@@ -174,8 +180,42 @@ async function triggerSweep() {
   }
 }
 
+// Autonomy status display (design §8 A/C-17): "· Monitoring automatically"
+// + relative last-sweep time when effective Monitor is on, "· Monitoring
+// paused" when it is off. Naive Date-diff — fine even against DEMO_TODAY skew.
+function formatRelativeTime(iso) {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return "";
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} h ago`;
+  const d = new Date(iso);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[d.getMonth()]} ${d.getDate()}`;
+}
+
+function renderAgentBadge(data) {
+  const el = document.getElementById("agentBadgeText");
+  if (!el) return;
+  const effective = (data.autonomy && data.autonomy.effective) || {};
+  if (!effective.monitor_stalled_work) {
+    el.innerText = "Your agent · Monitoring paused";
+    return;
+  }
+  let text = "Your agent · Monitoring automatically";
+  if (data.last_sweep && data.last_sweep.at) {
+    text += ` · Last sweep ${formatRelativeTime(data.last_sweep.at)}`;
+  }
+  el.innerText = text;
+}
+
 function renderDigest(data) {
   document.getElementById("digestDateBadge").innerText = data.date || "Today";
+  renderAgentBadge(data);
 
   // Reminders
   const reminderList = document.getElementById("reminderList");
@@ -385,6 +425,89 @@ async function dismissCard(cardId) {
     await fetchDigest();
   } catch (err) {
     alert("Dismiss error: " + err.message);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Agent autonomy (design §8 B): secondary control, loaded on first open,
+// checkbox changes PUT immediately and re-render from the normalized
+// response (server-side normalization is authoritative, §5.2).
+// -------------------------------------------------------------------------
+
+let autonomyLoaded = false;
+
+function onAutonomyToggle() {
+  const details = document.getElementById("autonomyDisclosure");
+  if (details && details.open && !autonomyLoaded) {
+    autonomyLoaded = true;
+    loadAutonomyPolicy();
+  }
+}
+
+function showAutonomyError(msg) {
+  const errEl = document.getElementById("autonomyError");
+  if (!errEl) return;
+  errEl.innerText = msg;
+  errEl.style.display = "block";
+}
+
+async function loadAutonomyPolicy() {
+  try {
+    const res = await fetch(`/api/secretary/autonomy?employee_id=${REQUESTER_ID}`, {
+      headers: { "X-API-Key": API_KEY }
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAutonomyError("Could not load autonomy settings.");
+      return;
+    }
+    document.getElementById("autonomyLoading").style.display = "none";
+    document.getElementById("autonomyControls").style.display = "block";
+    renderAutonomyPolicy(data);
+  } catch (err) {
+    showAutonomyError("Could not load autonomy settings.");
+  }
+}
+
+function renderAutonomyPolicy(data) {
+  const eff = data.effective || {};
+  document.getElementById("autonomyMonitor").checked = !!eff.monitor_stalled_work;
+  document.getElementById("autonomySearch").checked = !!eff.search_organization;
+  document.getElementById("autonomyAsk").checked = !!eff.ask_candidate_agents;
+  document.getElementById("autonomyPrepare").checked = !!eff.prepare_introduction;
+
+  document.getElementById("autonomySearch").disabled = !eff.monitor_stalled_work;
+  document.getElementById("autonomyAsk").disabled = !eff.search_organization;
+  document.getElementById("autonomyPrepare").disabled = !eff.ask_candidate_agents;
+
+  document.getElementById("autonomyError").style.display = "none";
+}
+
+async function updateAutonomyFlag(field, value) {
+  const payload = {
+    employee_id: REQUESTER_ID,
+    monitor_stalled_work: document.getElementById("autonomyMonitor").checked,
+    search_organization: document.getElementById("autonomySearch").checked,
+    ask_candidate_agents: document.getElementById("autonomyAsk").checked,
+    prepare_introduction: document.getElementById("autonomyPrepare").checked,
+    contact_mode: "always_ask"
+  };
+  payload[field] = value;
+  try {
+    const res = await fetch("/api/secretary/autonomy", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAutonomyError("Could not save — please try again.");
+      return;
+    }
+    renderAutonomyPolicy(data);
+    fetchDigest();
+  } catch (err) {
+    showAutonomyError("Could not save — please try again.");
   }
 }
 

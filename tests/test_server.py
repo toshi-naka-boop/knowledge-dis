@@ -426,6 +426,8 @@ class TestServerEndpoints(unittest.TestCase):
         self.assertEqual(res_req.status_code, 200)
         self.assertIn("My Agent", res_req.text)
         self.assertIn("Find someone who can help", res_req.text)
+        self.assertIn("Agent autonomy", res_req.text)
+        self.assertIn("Always ask me first", res_req.text)
 
         res_cand = self.client.get("/candidate")
         self.assertEqual(res_cand.status_code, 200)
@@ -438,6 +440,7 @@ class TestServerEndpoints(unittest.TestCase):
         self.assertIn("policy-blocked", res_audit.text)
         self.assertIn("trace-funnel", res_audit.text)
         self.assertIn("🔒 based on a private item — content masked", res_audit.text)
+        self.assertIn("Last sweep", res_audit.text)
 
 
 if __name__ == "__main__":

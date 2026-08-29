@@ -118,6 +118,21 @@ button.btn-text:hover { color: var(--primary); }
 }
 .trace-funnel .tf-num { font-weight: 600; color: var(--text-muted); }
 
+/* ---------------- Last sweep meta (autonomous-agent design §6, muted) ---------------- */
+
+.last-sweep-meta {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: -16px 0 22px;
+}
+
+/* Sweep summary block above the timeline — secondary, counts-only, never
+   red/warning styled even for the policy-limited line (fail-closed but not
+   an error). */
+.sweep-summary-block { margin-bottom: 10px; }
+.sweep-summary-line { font-size: 12.5px; color: var(--text-muted); }
+.sweep-policy-line { font-size: 12px; color: var(--text-faint); margin-top: 3px; }
+
 /* ---------------- Two-column layout ---------------- */
 
 .trace-columns { display: flex; gap: 24px; align-items: flex-start; }
@@ -283,6 +298,7 @@ button.btn-text:hover { color: var(--primary); }
         <div class="trace-funnel" id="traceFunnel">
           <span class="empty-note" style="padding: 0;">Loading funnel…</span>
         </div>
+        <div class="last-sweep-meta" id="lastSweepMeta" style="display: none;"></div>
 
         <div class="trace-columns">
           <div class="trace-network-col">
@@ -302,6 +318,7 @@ button.btn-text:hover { color: var(--primary); }
 
           <div class="trace-timeline-col">
             <div class="section-title">Trace Timeline · latest session</div>
+            <div class="sweep-summary-block" id="sweepSummaryBlock" style="display: none;"></div>
             <div class="trace-timeline" id="traceTimeline">
               <div class="empty-note">Loading trace events…</div>
             </div>
@@ -420,6 +437,7 @@ async function fetchTrace() {
     renderNetwork(records);
     renderMatchCard(session);
     renderTimeline(session, data.funnel_stats || {});
+    renderSweepMeta(records, data.funnel_stats || {});
     PREV_RECORD_COUNT = records.length;
   } catch (err) {
     console.error("Trace fetch error:", err);
@@ -455,6 +473,71 @@ function renderMatchCard(sessionRecords) {
         <div class="match-found-sub">Connected with ${esc(requesterName)} &middot; ${esc(payload.meeting_duration ?? 15)} min</div>
       </div>
     </div>`;
+}
+
+// -------------------------------------------------------------------------
+// Sweep meta (autonomous-agent design §6): the latest sweep_run, wherever it
+// falls in the record stream (it never belongs to a query-bounded session),
+// surfaces in exactly 2 places — a muted "Last sweep" header line and a
+// counts-only compact block above the timeline. No candidate/owner/task
+// names appear here, ever (counts only). Neither location uses error/warning
+// styling: a policy hold is a normal stopped state, not a failure.
+// -------------------------------------------------------------------------
+
+function formatHHMM(ts) {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+const POLICY_LIMITED_TEXT = {
+  search: "Search requires approval under current policy",
+  ask: "Asking candidate agents requires approval under current policy",
+  prepare: "Preparing introductions requires approval under current policy",
+};
+
+function renderSweepMeta(records, funnelStats) {
+  const metaEl = document.getElementById("lastSweepMeta");
+  const blockEl = document.getElementById("sweepSummaryBlock");
+
+  const sweepRecords = records.filter(r => r.intent === "sweep_run");
+  const latest = sweepRecords.length ? sweepRecords[sweepRecords.length - 1] : null;
+
+  if (!latest) {
+    metaEl.style.display = "none";
+    metaEl.innerHTML = "";
+    blockEl.style.display = "none";
+    blockEl.innerHTML = "";
+    return;
+  }
+
+  const payload = latest.display_payload || {};
+  const isManual = payload.origin === "manual";
+
+  metaEl.textContent = `Last sweep: ${isManual ? "Manual" : "Automatic"} · ${formatHHMM(latest.timestamp)}`;
+  metaEl.style.display = "";
+
+  // "profiles explored" mirrors the funnel's org-wide total (the demo's
+  // "400 profiles"); payload.candidates_explored counts shortlisted candidate
+  // agents and would read confusingly small next to the funnel line above.
+  const explored = funnelStats.total_profiles ?? payload.candidates_explored ?? 0;
+  const needs = typeof payload.needs_detected === "number" ? payload.needs_detected : 0;
+  const needsText = needs === 0
+    ? "no new needs"
+    : `${needs} need${needs === 1 ? "" : "s"} prepared, awaiting the owner's review`;
+  const prefix = isManual ? "Manual sweep" : "Automatic sweep";
+
+  let html = `<div class="sweep-summary-line">${esc(prefix)} — ${esc(explored)} profiles explored &middot; ${esc(needsText)}</div>`;
+
+  const runKey = payload.run_key;
+  const heldRecords = records.filter(r => r.intent === "policy_limited" && (r.display_payload || {}).run_key === runKey);
+  for (const hr of heldRecords) {
+    const text = POLICY_LIMITED_TEXT[(hr.display_payload || {}).stage];
+    if (text) html += `<div class="sweep-policy-line">${esc(text)}</div>`;
+  }
+
+  blockEl.innerHTML = html;
+  blockEl.style.display = "";
 }
 
 // -------------------------------------------------------------------------
@@ -574,6 +657,11 @@ function truncate(s, max) {
 const MATCH_PROPOSAL_SEEN = new Set();
 
 function recordToEvent(r, funnelStats) {
+  // autonomous-agent design §6 / ledger C-11: sweep_run and policy_limited are
+  // internal counts-only audits, never drawn into the session timeline. They
+  // surface only via renderSweepMeta's 2 dedicated locations.
+  if (r.intent === "sweep_run" || r.intent === "policy_limited") return null;
+
   const payload = r.display_payload || {};
   const owner = resolveName(r.to);
   const fromName = resolveName(r.from);
@@ -709,7 +797,12 @@ function renderTimeline(sessionRecords, funnelStats) {
   }
 
   container.innerHTML = events.map(ev => {
-    const timeStr = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : "";
+    // Stored timestamps are UTC ISO strings; render in the viewer's local
+    // timezone with a fixed 24h HH:MM:SS format so rows and the "Last sweep"
+    // meta line (formatHHMM, also local) stay consistent.
+    const timeStr = ev.timestamp
+      ? new Date(ev.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+      : "";
     const sublinesHtml = ev.sublines.map(s =>
       `<div class="trace-subline ${s.cls}"><span class="trace-label">${s.label}</span>${s.text}</div>`
     ).join("");
