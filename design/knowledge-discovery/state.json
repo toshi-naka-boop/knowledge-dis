@@ -14,11 +14,11 @@
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "接続部品A〜D: 実装・反証round-14/15クローズ・本番rev00006デプロイ済み（demo不変）・ゴール25実機合格。残: ゴール28（作者ADCログイン後に gws_probe→空InMemory sweep→digest 件数確認、Gmailはkd-secretaryラベル）、v15再確認（fingerprint v15:afab3db4b173。§16.3のR-5文言更新を含む）、CLAUDE.md追跡可否。その後: UI/UX整備・デモ台本・収録・アーキ図・write-up・Devpost（8/29凍結）",
+  "nextAction": "FEATURE FREEZE（2026-08-29 v1.0-autonomous-agent タグ・push済み）。以降は submission 準備のみ: ①デモ台本（7シーン・autonomous no-click含む、構造提案→承認→本文）②収録（reseed前に kd-autonomous-sweep pause／DEMO_TODAY更新／narration-tts でクローン音声）③アーキ図 ④英語write-up（Spark/MCPは先々の検討候補・Memory Bank・agent identity）⑤GitHub public化 ⑥Devpost提出（8/31 17:00 PDT）。任意残: ゴール28実機（ユーザーのOAuthログイン待ち・凍結対象外の検証）",
   "delegation": {
     "批評": "claude-opus-5[1m] design-critic + codex/gpt-5.6-sol xhigh（round-7クロスベンダー）",
     "実装": "antigravity/gemini-3.7-flash-high（M1/M2/M3 A段）＋claude/sonnet（M3テスト補完・B段 secretary_agent）＋Claude Fable 5（B段インフラ・修正）",
     "反証": "claude-opus-5[1m] design-critic ×3（round-8 正しさ/安全性、round-9）+ codex/gpt-5.6-sol xhigh（round-8 過剰実装）"
   },
-  "lastUpdated": "2026-08-24"
+  "lastUpdated": "2026-08-29"
 }
