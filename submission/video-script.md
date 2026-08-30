@@ -409,22 +409,22 @@ kd-secretary-sweep-runtime  ENABLED  55 7 * * *
 
 > **このカットが Scene 3-B の裏取りになる。** 「デモのために1回叩いた」のではなく、**30分ごとに認証付きで回り続けている**ことが時系列で見える。ナレーションはこの点だけを言う。
 
-## 4-D（3:44–3:50）Vertex AI / Firestore — 推論と状態
+## 4-D（3:44–3:50）GEAP / Firestore — 推論と状態
 
 **画面**: 2分割またはクイックカット。
 ```
-Vertex AI › Agent Engine : reasoningEngines/4310793666370207744  (kd-secretary-runtime)
-Vertex AI › Models       : gemini-3.7-flash / gemini-embedding-2
+GEAP › Agent Runtime    : reasoningEngines/4310793666370207744  (kd-secretary-runtime)
+GEAP › Models           : gemini-3.7-flash / gemini-embedding-2
 Firestore (native)       : agents / profiles / cards / messages / autonomy_policies / sweep_runs
 ```
 **カメラ**: Firestore の `autonomy_policies` と `sweep_runs` コレクションを一瞬見せる（今回追加した永続化の実物）。
 
 **ナレーション（EN, Scene 4 全体）**:
-> All of this runs on Google Cloud. The service is on Cloud Run, in Tokyo. Reasoning and embeddings come from Gemini on Vertex AI, and the secretary also runs as an agent on Vertex AI Agent Engine.
+> All of this runs on Google Cloud. The service is on Cloud Run, in Tokyo. Reasoning and embeddings come from Gemini on GEAP — formerly Vertex AI — and the secretary also runs as an agent on GEAP Agent Runtime.
 > The autonomous sweep you just saw is not a demo script. Cloud Scheduler calls it every thirty minutes with an authenticated identity token — and the logs show it has been running on its own, unattended.
 
 **日本語（参考訳）**:
-> これらはすべて Google Cloud 上で動いている。サービスは東京リージョンの Cloud Run。推論と埋め込みは Vertex AI 上の Gemini、秘書エージェント自体も Vertex AI Agent Engine 上で動いている。
+> これらはすべて Google Cloud 上で動いている。サービスは東京リージョンの Cloud Run。推論と埋め込みは GEAP（旧 Vertex AI）上の Gemini、秘書エージェント自体も GEAP Agent Runtime 上で動いている。
 > 先ほどの自律実行はデモ用のスクリプトではない。Cloud Scheduler が30分ごとに認証済み ID トークンで呼び出しており、ログはそれが無人で回り続けていることを示している。
 
 ---
@@ -459,6 +459,7 @@ Scheduler       https://console.cloud.google.com/cloudscheduler?project=knowledg
 Logs            https://console.cloud.google.com/logs/query?project=knowledge-discovery-2026
                 クエリ: resource.type="cloud_run_revision" httpRequest.requestUrl:"/internal/autonomous-sweep"
 Agent Engine    https://console.cloud.google.com/vertex-ai/agents/agent-engines?project=knowledge-discovery-2026
+                ※ Vertex AI は 2026-05 に GEAP（Gemini Enterprise Agent Platform）へ改称。旧URLはリダイレクトされる想定だが、収録直前に実際のコンソールURL・画面表記を確認する
 Firestore       https://console.cloud.google.com/firestore/databases/-default-/data?project=knowledge-discovery-2026
 ```
 
@@ -499,7 +500,7 @@ Knowledge Discovery gives every employee a personal AI agent. The agent does not
 # Scene 4–5 ナレーション canonical（TTS 用）
 
 ```
-All of this runs on Google Cloud. The service is on Cloud Run, in Tokyo. Reasoning and embeddings come from Gemini on Vertex AI, and the secretary also runs as an agent on Vertex AI Agent Engine.
+All of this runs on Google Cloud. The service is on Cloud Run, in Tokyo. Reasoning and embeddings come from Gemini on GEAP — formerly Vertex AI — and the secretary also runs as an agent on GEAP Agent Runtime.
 
 The autonomous sweep you just saw is not a demo script. Cloud Scheduler calls it every thirty minutes with an authenticated identity token, and the logs show it has been running on its own, unattended.
 

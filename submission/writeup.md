@@ -40,57 +40,60 @@ And the organization becomes a chart. The Company Atlas: departments are islands
 
 ## Try it
 
-The demo is live on Cloud Run: `/requester` is Jordan's side, `/candidate` is Marcus's letters, `/audit` is Bridge Trace. Every page takes an `api_key` in the URL; the full keyed link is provided in this submission's testing instructions, so you can drive the whole flow — request, approve, respond, audit — from one link. All data is synthetic; click anything.
+The demo is live on Cloud Run, right now. In the demo's world, "Jordan" is a healthcare-staffing manager; the out-of-field request is a clinic relocation — a real-estate question. The colleague who had done it twice sat on a different island entirely.
+
+`/requester` is Jordan's screen. `/candidate` is the letter that reaches Marcus. `/audit` is Bridge Trace. The keyed link is in this submission's testing instructions; the whole flow — request, approve, respond, audit — runs from that one link. The data is all synthetic; you can't break anything.
 
 ## How we built it
 
-In the demo, "Jordan" is a healthcare-staffing manager, and the out-of-field request is a clinic relocation — a real-estate question. The colleague who had done it twice sat on a different island entirely.
+**Gemini + Google Cloud end to end**, on the Gemini Enterprise Agent Platform (GEAP, formerly Vertex AI). Project `knowledge-discovery-2026`, Tokyo (asia-northeast1).
 
-**Gemini + Google Cloud end to end** (project `knowledge-discovery-2026`, asia-northeast1):
+- **Cloud Run** — the FastAPI service. Agent-to-agent messaging, the secretary pipeline, all three screens — everything lives here. Why not GKE or Cloud Functions? Because the whole service fits in one stateless container. No cluster to operate, and you still get an authenticated HTTPS endpoint, scale-to-zero idle cost, and native OIDC with Cloud Scheduler.
+- **Cloud Scheduler → OIDC → `/internal/autonomous-sweep`** — unattended, every thirty minutes. The route verifies signature, audience, issuer, and the exact invoker service account; it accepts no API key. Why not Pub/Sub or Cloud Tasks? Because what we need is cron, not a queue. The OIDC token proves the caller without a shared secret, and the schedule slot doubles as the idempotency key.
+- **Gemini 3.7 Flash** — question drafts and per-candidate relevance judgments. Why not a Pro-class model? Candidate isolation means up to twenty small, structured judgments per sweep. What matters is latency and unit cost — and safety comes from fail-closed score validation, not model depth.
+- **gemini-embedding-2 on GEAP** — profile search; the 0.62 similarity floor is calibrated for this model. Why not the direct Gemini API? ADC/IAM auth keeps API keys out of code and environment, and inference stays inside the same project, the same governance, as the data.
+- **Firestore (native)** — profiles ×400, agents, tasks, cards, autonomy policies, sweep-run claims. And `messages`, the append-only audit log. Why not Cloud SQL or AlloyDB? A profile is a per-person document — items and visibility differ person by person — so the document model iterates without schema migrations, transactions give the CAS the idempotency claims need, and tenants map to named databases.
+- **GEAP Agent Runtime (Agent Engine, ADK)** — the secretary also runs as a first-class managed agent. The scheduled operation hits the same sweep API deterministically; the dialogue agent is read-only; six agents sit in the GEAP Agent Registry. Why not hand-roll the loop on Cloud Run? Governance. Register the agent as a first-class platform citizen — and deliberately keep delivery authority out of its hands.
+- **323 offline tests** — every external service sits behind an interface. Deterministic fakes; the suite runs with no network and no credentials.
 
-- **Cloud Run** — FastAPI service: agent-to-agent messaging, the secretary pipeline, three UIs (My Agent / Connection Request / Bridge Trace).
-- **Cloud Scheduler → OIDC → `/internal/autonomous-sweep`** — the fleet runs unattended every 30 minutes. The endpoint verifies signature, audience, issuer, and the exact invoker service account; no API key is accepted on this route. Slot-keyed idempotency makes duplicate deliveries no-ops.
-- **Vertex AI — Gemini 3.7 Flash** (question drafts, per-candidate evaluation) and **gemini-embedding-2** (profile search, similarity floor 0.62).
-- **Firestore (native)** — profiles ×400, agents, tasks, cards, autonomy policies, sweep-run claims, and `messages` — the append-only audit log.
-- **Vertex AI Agent Engine (GEAP Agent Runtime)** — the secretary also runs as a first-class managed agent (ADK): a deterministic scheduled operation triggers the same sweep API, and a read-only LLM dialogue agent answers "what's on my plate today?" with a single self-scoped tool. Six agents are registered in the GEAP Agent Registry.
-- **323 offline tests** — every external service sits behind an interface with deterministic fakes; the suite runs with no network and no credentials.
-
-Other data sources: none. The company, its 401 employees, their profiles, tasks, and mail seeds are all synthetic, generated by a deterministic script (fictional Meridian Care Partners Group); profile embeddings are computed from that synthetic corpus via Vertex AI at seed time. No real or external data is used.
-
-Process: the system was designed with an adversarial **design-loop** (design → independent critique → revision → implementation → refutation rounds, 15 critique rounds across two vendors' models), then red-teamed by three independent auditors before submission.
+Other data sources: none. The company, the 401 people, the profiles, the tasks, the mail — all generated by a script (the fictional Meridian Care Partners Group). Embeddings are computed on GEAP at seed time. Not one byte of real data.
 
 ## The security story (why "Fortified")
 
-- **The human approval boundary is structural, not cosmetic.** `contact_mode` is fixed to `always_ask`, enforced server-side. The autonomous agent can observe, detect, explore, evaluate, prepare — and stop.
-- **Graduated, server-enforced autonomy**: Monitor ⊇ Search ⊇ Ask ⊇ Prepare. Turning off an upper permission structurally disables everything below it. Normalized on save; never trusted from the client.
-- **Privacy by type system, not by LLM self-report.** Private profile items are masked fail-closed keyed off the real `visibility` field; a model that lies about what it cited cannot unmask anything.
-- **Data boundary = process boundary.** Each candidate is evaluated in its own isolated inference call; cross-candidate leakage is structurally impossible.
-- **Audit that respects privacy**: before approval, the trail records counts only — no names, no free text. Names appear only after a human approves. Delivery is never authorized by an LLM score alone — a missing or malformed score fails closed to "no connection" (hardened after our own red team).
-- **Honest scoping**: the public demo uses a shared tenant-scoped key so judges can drive the whole flow from one URL. The production path (IAP, per-employee principals, horizontal-authorization guards) is implemented and tested; flipping the deployed mode is the one-line change that closes the demo relaxations.
+Approval is structural.
+
+- The human approval boundary. `contact_mode` is fixed to `always_ask`, enforced server-side. The agent observes, detects, explores, evaluates, prepares — and stops. The code path that doesn't stop was never written.
+- Autonomy comes in grades: Monitor ⊇ Search ⊇ Ask ⊇ Prepare. Switch off an upper permission and everything below it stops, structurally. Normalized on save. The client's word is never trusted.
+- Privacy is enforced by the type system, not by the model's self-report. Private items are masked fail-closed off the real `visibility` field. A model that lies about what it cited can unmask nothing.
+- Data boundary = process boundary. Candidates are evaluated one by one, each in its own isolated inference. Cross-candidate leakage isn't policed — it's impossible.
+- The audit respects privacy too. Before approval: counts only — no names, no free text. Names appear after a human says yes. And delivery is never authorized by an LLM score alone: missing, non-numeric, out of range — all fail closed to "no connection" (our own red team hit this spot; we hardened it).
+- Honestly: the demo runs on one shared key, so a judge can drive the whole flow from a single URL. The production path — IAP, per-employee principals, horizontal-authorization guards — is implemented and tested. What remains is one deployment flag.
 
 ## Challenges we ran into
 
-- Making autonomy *provable* rather than promised: idempotent scheduled sweeps (schedule-slot claims with CAS), OIDC verification that fails closed, and an audit trail that distinguishes counts-only from named records.
-- Letting an agent use private knowledge *without leaking it* — the consent flow where relevance is confirmed but content never moves.
-- Designing the UI so the power balance is legible: humans large, agents small, and "not sent" states that look unmistakably different from sent ones.
+Making autonomy provable, not promised: idempotent scheduled sweeps, fail-closed OIDC, an audit trail that separates counts from names — all of it serves that one goal.
+Letting an agent use private knowledge without leaking it. Relevance gets confirmed; content never moves. This consent flow was the hardest thing we built.
+A UI where the power balance is visible. Humans large, agents small — and a "not sent" that cannot be mistaken for "sent."
 
-## Accomplishments we're proud of
+## Accomplishments that we're proud of
 
-- A no-click demo: a stalled task becomes a prepared introduction with zero human input — and the system still cannot contact anyone.
-- The decline path is a first-class feature: quiet, invisible, and optionally generous (share a resource instead).
-- A fully offline test suite for a multi-agent LLM system.
+The no-click demo: a stalled task becomes a prepared introduction with zero human input — and the system still cannot contact anyone.
+Declining as a first-class feature: quiet, invisible, and generous if you want it to be — share a resource instead.
+A multi-agent LLM system whose entire test suite runs offline.
 
 ## What we learned
 
-The hard part of enterprise agents isn't capability — it's *where to stop*. Every valuable behavior in this system is defined by a boundary: what the sweep may touch, what the audit may record, what the candidate's agent may reveal, and the one click no machine is allowed to make.
+The hard part of enterprise agents wasn't capability. It was where to stop. Everything valuable in this system is made of boundaries: what the sweep may touch, what the audit may record, what a candidate's agent may reveal — and the one click no machine is ever allowed to make.
+
+That lesson is not theoretical. We hammered the design through fifteen adversarial critique rounds across two vendors' models, then had three independent auditors red-team the result before submission. They found a real hole — a path where a missing LLM score could authorize delivery. Fail-closed stopped being a philosophy and became a regression test.
 
 ## What's next
 
-- **Real data-source connectors** (calendar, mail, docs) behind the same visibility model — the interfaces already exist.
-- **Per-employee identity in production** (IAP mode; implemented, tested, one deployment flag away).
-- **Long-term agent memory** via Vertex AI Memory Bank, so the secretary's picture of your expertise deepens over time.
-- **Interop**: exposing the secretary via A2A/MCP so other enterprise agents can request introductions through the same consent and audit boundary — and exploring Agentspace/Spark integration as it matures.
+- Real data-source connectors — calendar, mail, docs — behind the same visibility model. The interfaces already exist.
+- Per-employee identity in production. IAP mode is implemented and tested; what remains is one deployment flag.
+- Long-term agent memory: with GEAP Memory Bank, the secretary's picture of your expertise deepens over time.
+- Interop: expose the secretary over A2A/MCP, so other agents can request introductions through the same consent and audit boundary. Agentspace/Spark as they mature.
 
 ---
 
-*Built with Gemini 3.7 Flash, gemini-embedding-2, Cloud Run, Cloud Scheduler, Firestore, and Vertex AI Agent Engine. Fictional company (Meridian Care Partners Group, 401 employees) — all data synthetic.*
+*Built with Gemini 3.7 Flash, gemini-embedding-2, Cloud Run, Cloud Scheduler, Firestore, and GEAP Agent Runtime. Fictional company (Meridian Care Partners Group, 401 employees) — all data synthetic.*
