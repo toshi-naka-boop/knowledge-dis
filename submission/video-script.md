@@ -279,7 +279,7 @@ AUTONOMY POLICY
 
 ## 3-F（2:57–3:15 / 18秒）監査 — 承認の前と後で見え方が変わる
 
-**操作**: `Bridge Trace`（/audit）へ。上部の `Last sweep: Automatic · HH:MM` と counts 行 → タイムライン → MATCH FOUND の順にゆっくりスクロール。（この画面は旧デザインのまま。技術的・分析的な画面として意匠を分けている）
+**操作**: `Bridge Trace`（/audit）へ。上部の `Last sweep: Automatic · HH:MM` と counts 行 → タイムライン → MATCH FOUND の順にゆっくりスクロール。
 **画面で見せるもの**:
 - ヘッダ: `Last sweep: Automatic · 10:00`
 - counts 行: `Automatic sweep — 400 profiles explored · 1 need prepared, awaiting the owner's review`
