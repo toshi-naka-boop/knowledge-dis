@@ -1,23 +1,38 @@
-/* Knowledge Discovery — My Agent (requester) UI logic, Phase 1 redesign.
+/* Knowledge Discovery — My Agent (requester) UI logic, Company Atlas redesign.
    NOTE: server.py does not statically serve this directory (only the raw
    HTML shells at /requester /candidate /audit), so this exact content is
-   inlined into requester.html's <script> tag. Keep both files in sync. */
+   inlined here. Keep in sync with web/ui.js. */
 
 const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
+// Demo/screenshot device: with ?reveal=1, the first request_draft stagnation
+// card skips the "Looking across your organization…" animation and renders
+// its PersonCard immediately. Normal URLs (no reveal=1) are unaffected.
+const REVEAL_PARAM = (new URLSearchParams(location.search)).get("reveal") === "1";
+// Demo staging: ?view=atlas opens the full-atlas Bridge Trace view on load,
+// for recording without an on-camera click. (?autonomy=1 is obsolete — the
+// Autonomy Policy card is now always visible — and is accepted as a no-op.)
+let revealedOnce = false;
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
 // Demo persona directory (README: one-person-plays-all demo device, R-1).
-// /api/me does not return a display name, so first names shown in the
-// greeting / connection graphics are looked up from this fixed demo roster.
+// /api/me does not return a display name, so names shown in the chart /
+// connection graphics are looked up from this fixed demo roster.
 const PERSONA_DIRECTORY = {
   emp_jordan_lee: "Jordan Lee",
   emp_marcus_delgado: "Marcus Delgado",
   emp_rachel_kim: "Rachel Kim",
   emp_elena_vasquez: "Elena Vasquez",
   emp_tom_whitfield: "Tom Whitfield",
+};
+const PERSONA_DEPT = {
+  emp_jordan_lee: "Healthcare Staffing",
+  emp_marcus_delgado: "Real Estate",
+  emp_rachel_kim: "Healthcare Staffing",
+  emp_elena_vasquez: "Transition Advisory",
+  emp_tom_whitfield: "Corporate Services",
 };
 
 function displayName(idOrName) {
@@ -31,16 +46,14 @@ function firstName(idOrName) {
   return full.split(" ")[0];
 }
 
-function initials(fullName) {
-  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
 let REQUESTER_ID = "emp_jordan_lee";
 let pollInterval = null;
 const STAG_CARDS = {}; // card_id -> latest card payload, for the reveal flow
+
+// The atlas view's introduction card: filled from the top candidate of the
+// first revealed request_draft stagnation card. Null when nothing is prepared.
+let ATLAS_INTRO = null; // { cardId, name, reason, questionDraft }
+let ATLAS_STATE = "discovered"; // discovered | asked | connected
 
 function withKey(path) {
   return path + (path.includes("?") ? "&" : "?") + "api_key=" + encodeURIComponent(API_KEY);
@@ -52,21 +65,79 @@ function setupChrome() {
       '<div class="api-key-warning">Missing api_key: open this page as /requester?api_key=YOUR_KEY</div>');
   }
   const candLink = document.getElementById("navCandidate");
-  const auditLink = document.getElementById("navAudit");
   if (candLink) candLink.href = withKey("/candidate");
-  if (auditLink) auditLink.href = withKey("/audit");
+  for (const id of ["navAudit", "footnoteTraceLink", "traceLink"]) {
+    const el = document.getElementById(id);
+    if (el) el.href = withKey("/audit");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// View + atlas-state machine (handoff: discovered → asked → connected)
+// ---------------------------------------------------------------------------
+
+function showView(which) {
+  document.getElementById("viewRail").hidden = which !== "rail";
+  document.getElementById("viewAtlas").hidden = which !== "atlas";
+  document.getElementById("topbarContext").innerText =
+    which === "atlas" ? "MERIDIAN CARE PARTNERS — ORGANIZATION ATLAS" : "MY AGENT";
+}
+
+function setAtlasState(state) {
+  if (ATLAS_STATE === state) return;
+  ATLAS_STATE = state;
+  const wrap = document.getElementById("atlasWrap");
+  wrap.className = "atlas-wrap atlas--" + state;
+  const intro = document.getElementById("introCard");
+  const asked = document.getElementById("askedCard");
+  intro.hidden = !(state === "discovered" && ATLAS_INTRO);
+  asked.hidden = state !== "asked";
+  if (state === "connected") {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mm = String(now.getMinutes()).padStart(2, "0");
+    document.getElementById("stampText").textContent = `INTRODUCED · ${hh}:${mm}`;
+    document.getElementById("traceLabel").innerText = "LEDGER";
+    document.getElementById("traceText").innerHTML =
+      "introduction asked&nbsp;&nbsp;·&nbsp;&nbsp;accepted — 15 min, time to be coordinated&nbsp;&nbsp;·&nbsp;&nbsp;crossing recorded in the atlas";
+  }
+}
+
+function renderIntroCard() {
+  const intro = document.getElementById("introCard");
+  if (!ATLAS_INTRO || ATLAS_STATE !== "discovered") {
+    intro.hidden = true;
+    return;
+  }
+  document.getElementById("introName").innerText = ATLAS_INTRO.name;
+  document.getElementById("introIsland").innerText =
+    (PERSONA_DEPT[ATLAS_INTRO.employeeId] || "CANDIDATE").toUpperCase() + " ISLAND";
+  document.getElementById("introEvidence").innerText = ATLAS_INTRO.reason;
+  document.getElementById("introQuestion").value = ATLAS_INTRO.questionDraft;
+  document.getElementById("introAskBtn").innerText = `Ask ${ATLAS_INTRO.name.split(" ")[0]} for 15 min`;
+  intro.hidden = false;
+}
+
+async function confirmFromIntroCard() {
+  if (!ATLAS_INTRO) return;
+  const edited = document.getElementById("introQuestion").value.trim();
+  if (!edited) { alert("Please enter a question to dispatch."); return; }
+  await confirmStagnation(ATLAS_INTRO.cardId, edited);
 }
 
 function switchRequester(id) {
   REQUESTER_ID = id;
-  autonomyLoaded = false;
+  ATLAS_INTRO = null;
+  setAtlasState("discovered");
+  renderIntroCard();
+  document.getElementById("topbarStatus").innerText =
+    `${displayName(id)} · ${PERSONA_DEPT[id] || ""}`;
+  document.getElementById("greeting").innerText = `Good morning, ${firstName(id)}`;
+  document.getElementById("atlasJordanName").textContent = displayName(id);
+  document.getElementById("cornerName").textContent = displayName(id);
   fetchDigest();
   fetchStatuses();
-  const autonomyDetails = document.getElementById("autonomyDisclosure");
-  if (autonomyDetails && autonomyDetails.open) {
-    loadAutonomyPolicy();
-    autonomyLoaded = true;
-  }
+  loadAutonomyPolicy();
 }
 
 // -------------------------------------------------------------------------
@@ -87,7 +158,11 @@ async function initPrincipal() {
   } catch (err) {
     console.error("me fetch error:", err);
   }
+  document.getElementById("topbarStatus").innerText =
+    `${displayName(REQUESTER_ID)} · ${PERSONA_DEPT[REQUESTER_ID] || ""}`;
   document.getElementById("greeting").innerText = `Good morning, ${firstName(REQUESTER_ID)}`;
+  document.getElementById("atlasJordanName").textContent = displayName(REQUESTER_ID);
+  document.getElementById("cornerName").textContent = displayName(REQUESTER_ID);
 }
 
 // -------------------------------------------------------------------------
@@ -180,9 +255,9 @@ async function triggerSweep() {
   }
 }
 
-// Autonomy status display (design §8 A/C-17): "· Monitoring automatically"
-// + relative last-sweep time when effective Monitor is on, "· Monitoring
-// paused" when it is off. Naive Date-diff — fine even against DEMO_TODAY skew.
+// Autonomy status display (design §8 A/C-17): "Automatic sweep · <relative>"
+// when effective Monitor is on, "Monitoring paused" when off. Naive Date
+// diff — fine even against DEMO_TODAY skew.
 function formatRelativeTime(iso) {
   if (!iso) return "";
   const then = new Date(iso).getTime();
@@ -198,24 +273,24 @@ function formatRelativeTime(iso) {
   return `${months[d.getMonth()]} ${d.getDate()}`;
 }
 
-function renderAgentBadge(data) {
+function renderSweepStatus(data) {
   const el = document.getElementById("agentBadgeText");
   if (!el) return;
   const effective = (data.autonomy && data.autonomy.effective) || {};
   if (!effective.monitor_stalled_work) {
-    el.innerText = "Your agent · Monitoring paused";
+    el.innerText = "Your agent · monitoring paused";
     return;
   }
-  let text = "Your agent · Monitoring automatically";
+  let text = "Your agent · monitoring automatically";
   if (data.last_sweep && data.last_sweep.at) {
-    text += ` · Last sweep ${formatRelativeTime(data.last_sweep.at)}`;
+    text += ` · last sweep ${formatRelativeTime(data.last_sweep.at)}`;
   }
   el.innerText = text;
 }
 
 function renderDigest(data) {
-  document.getElementById("digestDateBadge").innerText = data.date || "Today";
-  renderAgentBadge(data);
+  document.getElementById("digestDateBadge").innerText = data.date ? ("TODAY · " + data.date) : "TODAY";
+  renderSweepStatus(data);
 
   // Reminders
   const reminderList = document.getElementById("reminderList");
@@ -242,33 +317,64 @@ function renderDigest(data) {
   const diffCards = data.profile_diff_cards || [];
   suggestContainer.innerHTML = diffCards.map(renderSuggestCard).join("");
 
-  // Need Detection (stagnation cards) — its own section below TODAY
+  // Need Detection (stagnation cards) — its own section above
   const needContainer = document.getElementById("needDetectionSection");
   const stagCards = data.stagnation_cards || [];
   stagCards.forEach(c => { STAG_CARDS[c.card_id] = c; });
+  const monitorOn = !!((data.autonomy && data.autonomy.effective || {}).monitor_stalled_work);
+  // Rail/chart balance: the chart pane appears only once a stall is worth
+  // showing (request_draft tier); the calm morning is pure secretary.
+  const hasNeed = stagCards.some(c => c.tier === "request_draft");
+  const railView = document.getElementById("viewRail");
+  railView.classList.toggle("view--need", hasNeed);
+  railView.classList.toggle("view--calm", !hasNeed);
   if (stagCards.length === 0) {
     needContainer.innerHTML = "";
+    document.getElementById("cornerNeed").textContent = "";
+    document.getElementById("cornerRoutes").style.display = "none";
   } else {
-    needContainer.innerHTML = stagCards.map(renderNeedCard).join("");
+    const ordered = [...stagCards].sort(
+      (a, b) => (a.tier === "request_draft" ? 0 : 1) - (b.tier === "request_draft" ? 0 : 1)
+    );
+    needContainer.innerHTML = ordered.map(c => renderNeedCard(c, monitorOn)).join("");
+    const primary = ordered[0];
+    if (primary && primary.tier === "request_draft") {
+      const p = primary.payload || {};
+      document.getElementById("cornerNeed").textContent =
+        `NEED · ${(p.task_title || p.task_id || "").toUpperCase().slice(0, 40)} ¹`;
+      document.getElementById("cornerRoutes").style.display = "";
+      document.getElementById("footnoteText").innerText =
+        `stall detected — ${p.evidence_line || "no recent activity"}`;
+      document.getElementById("atlasJordanNeed").textContent =
+        `NEED · ${(p.task_title || "").slice(0, 34)} ¹`;
+    }
+  }
+
+  if (REVEAL_PARAM && !revealedOnce) {
+    const target = stagCards.find(c => c.tier === "request_draft");
+    if (target) {
+      revealedOnce = true;
+      revealCandidates(target.card_id);
+    }
   }
 }
 
 function renderSuggestCard(card) {
   const p = card.payload || {};
   return `
-    <div class="card suggest-card" id="card_box_${esc(card.card_id)}">
-      <div class="suggest-label">Your agent suggests</div>
+    <div class="suggest-card" id="card_box_${esc(card.card_id)}">
+      <div class="eyebrow" style="margin-bottom: 6px; color: var(--action);">YOUR AGENT SUGGESTS</div>
       <div class="suggest-subject">From a recent email: <strong>${esc(p.subject || "Email")}</strong></div>
       <div class="suggest-preview">[${esc(p.item_key || "current_work")}] ${esc(p.body_draft || "")}</div>
       <div id="diff_edit_box_${esc(card.card_id)}" class="suggest-edit-box">
         <textarea id="diff_edit_text_${esc(card.card_id)}">${esc(p.body_draft || "")}</textarea>
-        <button class="btn-primary" onclick="submitEditDiff('${esc(card.card_id)}')">Save &amp; apply</button>
+        <button class="btn-action" onclick="submitEditDiff('${esc(card.card_id)}')">Save &amp; apply</button>
       </div>
-      <div class="btn-row">
-        <button class="btn-primary" onclick="reviewDiff('${esc(card.card_id)}', 'apply')">Apply</button>
-        <button class="btn-secondary" onclick="toggleEditDiff('${esc(card.card_id)}')">Edit &amp; apply</button>
-        <button class="btn-secondary" onclick="reviewDiff('${esc(card.card_id)}', 'private_apply')">Apply as private</button>
-        <button class="btn-text" onclick="reviewDiff('${esc(card.card_id)}', 'dismiss')">Skip</button>
+      <div class="btn-row" style="margin-top: 0;">
+        <button class="btn-action" style="height: 34px; padding: 0 16px;" onclick="reviewDiff('${esc(card.card_id)}', 'apply')">Apply</button>
+        <button class="btn-ghost" style="height: 34px; padding: 0 14px;" onclick="toggleEditDiff('${esc(card.card_id)}')">Edit &amp; apply</button>
+        <button class="btn-ghost" style="height: 34px; padding: 0 14px;" onclick="reviewDiff('${esc(card.card_id)}', 'private_apply')">Apply as private</button>
+        <button class="btn-quiet" onclick="reviewDiff('${esc(card.card_id)}', 'dismiss')">Skip</button>
       </div>
     </div>`;
 }
@@ -303,20 +409,37 @@ async function submitEditDiff(cardId) {
 }
 
 // -------------------------------------------------------------------------
-// Need Detection: "It looks like this is stalling" -> Find someone -> reveal
+// Need Detection: "YOUR AGENT NOTICED" -> Find someone -> reveal -> ask
 // -------------------------------------------------------------------------
 
-function renderNeedCard(card) {
+// Comma-split evidence_line into short "· "-joined muted fragments
+// (e.g. "Rescheduled 2 times · No updates for 5 days").
+function splitEvidence(line) {
+  return String(line || "").split(",").map(s => s.trim()).filter(Boolean).join(" · ");
+}
+
+function renderNeedCard(card, monitorOn) {
   const p = card.payload || {};
-  return `
-    <div class="card need-card" id="card_box_${esc(card.card_id)}" data-state="initial">
-      <span class="need-evidence">${esc(p.evidence_line || "This is stalling.")}</span>
-      <div class="need-task-title">${esc(p.task_title || p.task_id)}</div>
-      <div class="need-copy">It looks like this is stalling. I can look across your organization for someone who has relevant experience.</div>
+  if (card.tier === "request_draft") {
+    return `
+    <div class="atl-card" id="card_box_${esc(card.card_id)}" data-state="initial">
+      <div class="eyebrow">YOUR AGENT NOTICED ¹</div>
+      <div class="card-headline">${esc(p.task_title || p.task_id)} has stalled.</div>
+      <div class="card-body">${esc(splitEvidence(p.evidence_line) || "This is stalling.")} I can look across your organization for someone who has relevant experience.</div>
       <div class="btn-row">
-        <button class="btn-primary" onclick="findSomeone('${esc(card.card_id)}')">Find someone who can help</button>
-        <button class="btn-text" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
+        <button class="btn-action" onclick="findSomeone('${esc(card.card_id)}')">Find someone who can help</button>
+        <button class="btn-quiet" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
       </div>
+      <div class="card-meta">nothing has been sent to anyone</div>
+    </div>`;
+  }
+  const shortEvidence = String(p.evidence_line || "").split(",")[0].trim().replace(/\.$/, "");
+  const monitorLabel = monitorOn ? "Monitoring" : "Paused";
+  return `
+    <div class="need-compact" id="card_box_${esc(card.card_id)}" data-state="initial">
+      <span class="need-compact-title">${esc(p.task_title || p.task_id)}</span>
+      <span class="need-monitor">${esc(shortEvidence || "Stalling")} · ${monitorLabel}</span>
+      <button class="btn-quiet" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
     </div>`;
 }
 
@@ -325,10 +448,11 @@ function findSomeone(cardId) {
   if (!box) return;
   box.dataset.state = "exploring";
   box.innerHTML = `
-    <div class="explore-transition">
-      <span class="explore-spark"></span>
-      <span class="explore-copy">Looking across your organization…</span>
-    </div>`;
+    <div class="sweep-line" style="border-top: none; margin-top: 0; padding-top: 0;">
+      <span class="pulse-dot"></span>
+      <span class="sweep-line-text">Sweeping the organization for relevant experience…</span>
+    </div>
+    <div class="card-meta">nothing has been sent to anyone</div>`;
   setTimeout(() => revealCandidates(cardId), 1700);
 }
 
@@ -342,41 +466,50 @@ function revealCandidates(cardId) {
 
   if (cands.length === 0) {
     box.innerHTML = `
-      <div class="need-task-title">${esc(p.task_title || p.task_id)}</div>
-      <div class="need-copy">No matching colleagues found across public profiles yet.</div>
-      <div class="btn-row"><button class="btn-text" onclick="dismissCard('${esc(cardId)}')">Dismiss</button></div>`;
+      <div class="eyebrow">YOUR AGENT NOTICED ¹</div>
+      <div class="card-headline">${esc(p.task_title || p.task_id)}</div>
+      <div class="card-body">No matching colleagues found across public profiles yet.</div>
+      <div class="btn-row"><button class="btn-quiet" onclick="dismissCard('${esc(cardId)}')">Dismiss</button></div>`;
     return;
   }
 
   const top = cands[0];
   const rest = cands.slice(1);
 
+  // Feed the atlas view's introduction card (handoff screen 1).
+  ATLAS_INTRO = {
+    cardId,
+    employeeId: top.employee_id || "",
+    name: top.name || top.employee_id || "Candidate",
+    reason: top.reason_text || "",
+    questionDraft: p.question_draft || "",
+  };
+  renderIntroCard();
+  const cta = document.getElementById("chartCtaText");
+  if (cta) cta.innerText = "Introduction prepared — see the route on the atlas ›";
+
   box.innerHTML = `
-    <div class="person-card">
-      <div class="avatar">${esc(initials(top.name || top.employee_id))}</div>
-      <div class="person-main">
-        <div class="person-name">${esc(top.name || top.employee_id)}</div>
-        <div class="person-why">Why ${esc((top.name || top.employee_id).split(" ")[0])}?</div>
-        <ul class="person-reasons"><li>${esc(top.reason_text || "")}</li></ul>
-        <div class="ai-disclosure">🤖 Generated by AI</div>
-        <div class="person-timing">15 min should be enough.</div>
-        <label class="question-label" for="draft_${esc(cardId)}">Question draft (edit before sending)</label>
-        <textarea id="draft_${esc(cardId)}" class="question-box">${esc(p.question_draft || "")}</textarea>
-        <div class="fixed-notice">Candidates may differ at request time — the full search runs only after you confirm.</div>
-        <div class="btn-row">
-          <button class="btn-primary" onclick="confirmStagnationCard('${esc(cardId)}')">Ask for 15 min</button>
-          <button class="btn-text" onclick="dismissCard('${esc(cardId)}')">Dismiss</button>
-        </div>
-        ${rest.length > 0 ? `
-          <div class="secondary-candidates">
-            ${rest.map(c => `
-              <div class="secondary-candidate-row">
-                <div class="avatar avatar-sm">${esc(initials(c.name || c.employee_id))}</div>
-                <div class="secondary-candidate-text"><strong>${esc(c.name || c.employee_id)}</strong> — ${esc(c.reason_text || "")}</div>
-              </div>`).join("")}
-          </div>` : ""}
-      </div>
-    </div>`;
+    <div class="eyebrow">INTRODUCTION PREPARED — NOT SENT</div>
+    <div class="card-meta" style="margin: 0 0 10px;">${esc(p.task_title || p.task_id)}</div>
+    <div class="person-name">${esc(top.name || top.employee_id)}</div>
+    <div class="person-island">${esc((PERSONA_DEPT[top.employee_id] || "").toUpperCase() || "CANDIDATE")}</div>
+    <div class="person-evidence">${esc(top.reason_text || "")} ²</div>
+    <div class="ai-footnote">² relevance assessed by their agent — private items masked</div>
+    <div class="person-timing" style="font-size: 13px; font-weight: 600; margin-bottom: 10px;">15 min should be enough.</div>
+    <label class="question-label" for="draft_${esc(cardId)}">QUESTION DRAFT — EDIT BEFORE ASKING</label>
+    <textarea id="draft_${esc(cardId)}" class="question-box">${esc(p.question_draft || "")}</textarea>
+    <div class="fixed-notice">Candidates may differ at request time — the full search runs only after you confirm.</div>
+    <div class="btn-row">
+      <button class="btn-action" onclick="confirmStagnationCard('${esc(cardId)}')">Ask ${esc(firstName(top.name || top.employee_id))} for 15 min</button>
+      <button class="btn-quiet" onclick="dismissCard('${esc(cardId)}')">Dismiss</button>
+      <button class="btn-quiet" onclick="showView('atlas')">view on the atlas ›</button>
+    </div>
+    <div class="card-meta">Nothing is sent until you decide.</div>
+    ${rest.length > 0 ? `
+      <div class="secondary-candidates">
+        ${rest.map(c => `
+          <div class="secondary-candidate-text"><strong>${esc(c.name || c.employee_id)}</strong> — ${esc(c.reason_text || "")}</div>`).join("")}
+      </div>` : ""}`;
 }
 
 async function confirmStagnationCard(cardId) {
@@ -386,6 +519,11 @@ async function confirmStagnationCard(cardId) {
     alert("Please enter a question to dispatch.");
     return;
   }
+  await confirmStagnation(cardId, editedQuestion);
+}
+
+// Shared confirm path for the rail card and the atlas introduction card.
+async function confirmStagnation(cardId, editedQuestion) {
   try {
     const res = await fetch("/api/secretary/confirm", {
       method: "POST",
@@ -400,6 +538,7 @@ async function confirmStagnationCard(cardId) {
 
     document.getElementById("queryMeta").innerText = `Inquiry ID: ${data.query_audit_id} · dispatched via your agent`;
     document.getElementById("liveStatus").style.display = "inline-flex";
+    setAtlasState("asked");
 
     await fetchDigest();
     await fetchStatuses();
@@ -422,6 +561,10 @@ async function dismissCard(cardId) {
       return;
     }
     delete STAG_CARDS[cardId];
+    if (ATLAS_INTRO && ATLAS_INTRO.cardId === cardId) {
+      ATLAS_INTRO = null;
+      renderIntroCard();
+    }
     await fetchDigest();
   } catch (err) {
     alert("Dismiss error: " + err.message);
@@ -429,20 +572,10 @@ async function dismissCard(cardId) {
 }
 
 // -------------------------------------------------------------------------
-// Agent autonomy (design §8 B): secondary control, loaded on first open,
-// checkbox changes PUT immediately and re-render from the normalized
-// response (server-side normalization is authoritative, §5.2).
+// Autonomy Policy card (design §8 B): always visible, checkbox changes PUT
+// immediately and re-render from the normalized response (server-side
+// normalization is authoritative, §5.2).
 // -------------------------------------------------------------------------
-
-let autonomyLoaded = false;
-
-function onAutonomyToggle() {
-  const details = document.getElementById("autonomyDisclosure");
-  if (details && details.open && !autonomyLoaded) {
-    autonomyLoaded = true;
-    loadAutonomyPolicy();
-  }
-}
 
 function showAutonomyError(msg) {
   const errEl = document.getElementById("autonomyError");
@@ -512,7 +645,7 @@ async function updateAutonomyFlag(field, value) {
 }
 
 // -------------------------------------------------------------------------
-// Connection Requests (status)
+// Connection Requests (status) — also drives the atlas state machine
 // -------------------------------------------------------------------------
 
 async function fetchStatuses() {
@@ -522,7 +655,15 @@ async function fetchStatuses() {
     });
     if (!res.ok) return;
     const data = await res.json();
-    renderStatuses(data.statuses || []);
+    const statuses = data.statuses || [];
+    renderStatuses(statuses);
+    // Atlas state: a made connection wins; otherwise a pending ask keeps the
+    // dash advancing; otherwise fall back to the discovered state.
+    if (statuses.some(s => s.state === "matched")) {
+      setAtlasState("connected");
+    } else if (statuses.some(s => s.state === "pending")) {
+      setAtlasState("asked");
+    }
   } catch (err) {
     console.error("Status fetch error:", err);
   }
@@ -539,27 +680,27 @@ function renderStatuses(statuses) {
     const name = esc(item.respondent_name || "Your colleague");
     if (item.state === "pending") {
       return `
-        <div class="card status-card">
+        <div class="status-card">
           <div class="status-head">
-            <span class="status-name">Waiting for ${name}'s agent</span>
-            <span class="status-tag waiting">Pending</span>
+            <span class="status-name">Request sent to ${name}</span>
+            <span class="status-tag waiting">PENDING</span>
           </div>
-          <div class="status-body">Their personal agent is reviewing the request.</div>
+          <div class="status-body">Their agent is reviewing it. Declining is invisible to you both.</div>
         </div>`;
     }
     if (item.state === "matched") {
-      const you = firstName(REQUESTER_ID);
-      const them = displayName(item.respondent_name || "");
       return `
-        <div class="card status-card">
+        <div class="status-card">
           <div class="connection-created">
-            <div class="connection-pair">
-              <div class="avatar">${esc(initials(you))}</div>
-              <div class="connection-line"></div>
-              <div class="avatar">${esc(initials(them))}</div>
-            </div>
-            <div class="connection-caption">A new connection was made.</div>
-            <div class="connection-sub">15 min · time to be coordinated</div>
+            <svg width="240" height="34" viewBox="0 0 240 34">
+              <circle cx="16" cy="17" r="8" fill="#26221A"/>
+              <path d="M 24 17 Q 120 8 216 17" fill="none" stroke="#A13A20" stroke-width="2.6"/>
+              <circle cx="224" cy="17" r="8" fill="#A13A20"/>
+            </svg>
+            <div class="connection-caption">A new crossing was recorded.</div>
+            <div class="connection-sub">${esc(displayName(REQUESTER_ID))} ↔ ${name} · 15 min · time to be coordinated</div>
+            <div class="connection-tagline">AI shouldn't replace human connections. It should create them.</div>
+            <button class="btn-quiet connection-link" onclick="showView('atlas')">see it on the atlas ›</button>
           </div>
         </div>`;
     }
@@ -580,10 +721,10 @@ function renderStatuses(statuses) {
         bodyHtml = `${name} can't make it this time.${item.decline_reason ? ` <em>"${esc(item.decline_reason)}"</em>` : ""}`;
       }
       return `
-        <div class="card status-card">
+        <div class="status-card">
           <div class="status-head">
             <span class="status-name">${name}</span>
-            <span class="status-tag ${item.attachment ? "shared" : "waiting"}">${item.attachment ? "Shared" : "Unavailable"}</span>
+            <span class="status-tag ${item.attachment ? "shared" : "waiting"}">${item.attachment ? "SHARED" : "UNAVAILABLE"}</span>
           </div>
           <div class="status-body">${bodyHtml}</div>
         </div>`;
@@ -600,4 +741,8 @@ setupChrome();
 initPrincipal().then(() => {
   fetchDigest();
   fetchStatuses();
+  loadAutonomyPolicy();
+  if ((new URLSearchParams(location.search)).get("view") === "atlas") {
+    showView("atlas");
+  }
 });

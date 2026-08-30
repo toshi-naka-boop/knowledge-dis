@@ -3,260 +3,225 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Knowledge Discovery — Connection Requests</title>
+  <title>Knowledge Discovery — Connection Request</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,600&display=swap" rel="stylesheet">
   <style>
-/* Knowledge Discovery — shared UI (Phase 1 redesign), reused here verbatim.
-   Principle: humans are large, agents are small. No robot/brain icons.
-   Light theme. Warm accent reserved for a made connection only.
-   NOTE: server.py serves only /requester /candidate /audit as raw HTML files
-   (no static mount for this directory), so this file's content is inlined
-   into candidate.html's <style> tag rather than linked. Keep both in sync
-   with web/ui.css / requester.html. */
+/* Knowledge Discovery — Company Atlas UI, Connection Request (candidate) view.
+   Handoff screen 3: the introduction arrives as a letter; the chart strip
+   above shows the proposed crossing reaching your own coast. Serif = humans
+   and the chart's voice, sans = product chrome; agent evidence = footnotes.
+   No border-radius anywhere. NOTE: server.py serves only /requester
+   /candidate /audit as raw HTML files (no static mount), so shared styles
+   are inlined here. Keep tokens in sync with web/ui.css / requester.html. */
 
 :root {
-  --bg: #F7F5F1;
-  --card-bg: #FFFFFF;
-  --border: #E4DFD3;
-  --border-strong: #D4CDBC;
-  --text: #232323;
-  --text-muted: #6B6659;
-  --text-faint: #948E7D;
-  --primary: #1F3A5F;
-  --primary-hover: #16304F;
-  --primary-tint: #EAF0F6;
-  --accent: #C96F4A;      /* used only when a connection is made */
-  --accent-tint: #FBEEE7;
-  --warn: #B5560C;        /* overdue: warm, but distinct from the connection accent */
-  --warn-tint: #FBEFE3;
-  --muted-tag-bg: #EFEBE1;
-  --muted-tag-text: #6B6659;
-  --today-bg: #EAF0F6;
-  --today-text: #1F3A5F;
-  --radius: 8px;
-  --radius-sm: 6px;
-  --shadow-card: 0 1px 2px rgba(35, 35, 35, 0.05);
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --sea: #E4D5AC;
+  --wave: #B49E78;
+  --chrome: #F1E8CF;
+  --chrome-border: #C3AF85;
+  --island-awake: #F6EDCF;
+  --coast-awake: #4A3722;
+  --ink: #26221A;
+  --ink-header: #3B2C1D;
+  --ink-body: #4A3B28;
+  --muted: #6E5A40;
+  --muted-2: #8A7354;
+  --card: #F8F1DC;
+  --card-border: #A8946C;
+  --crossing: #A13A20;
+  --crossing-text: #7A3A22;
+  --action: #1F3A5F;
+  --boundary: #5C6B57;
+  --boundary-bg: #EBEAD3;
+  --boundary-border: #A8AC8C;
+  --boundary-text: #4A5A46;
+  --frame: #58412C;
+  --divider: #DECFA6;
+  --serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body { background: var(--bg); color: var(--text); }
-body { min-height: 100vh; font-size: 14px; line-height: 1.5; }
-
-a { color: inherit; }
-
-button {
-  font-family: var(--font);
-  cursor: pointer;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 500;
-  padding: 8px 16px;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-button.btn-primary { background: var(--primary); color: #fff; }
-button.btn-primary:hover { background: var(--primary-hover); }
-button.btn-primary:disabled { opacity: 0.6; cursor: default; }
-button.btn-secondary { background: #fff; color: var(--text); border: 1px solid var(--border-strong); }
-button.btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
-button.btn-secondary:disabled { opacity: 0.6; cursor: default; }
-button.btn-text { background: transparent; color: var(--text-muted); padding: 4px 8px; font-size: 12px; }
-button.btn-text:hover { color: var(--primary); }
-button.btn-text:disabled { opacity: 0.6; cursor: default; }
-
-textarea, input[type="text"], select {
-  width: 100%;
-  font-family: var(--font);
-  font-size: 13px;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  resize: vertical;
-}
-textarea:focus, input[type="text"]:focus, select:focus { outline: none; border-color: var(--primary); }
-
-/* ---------------- App shell ---------------- */
-
-.app-shell { display: flex; min-height: 100vh; align-items: stretch; }
-
-.sidebar {
-  width: 220px;
-  flex: 0 0 220px;
-  background: var(--card-bg);
-  border-right: 1px solid var(--border);
-  padding: 24px 18px;
+html, body { height: 100%; }
+body {
+  background: var(--sea);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.5;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
-.sidebar-logo { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: 0.01em; margin-bottom: 32px; }
-.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
-.sidebar-nav a {
-  display: block;
-  text-decoration: none;
+
+a { color: var(--action); }
+a:hover { color: var(--crossing); }
+
+button { font-family: var(--sans); cursor: pointer; border-radius: 0; }
+button.btn-action {
+  height: 42px; padding: 0 30px;
+  background: var(--action); color: var(--card);
+  border: none; font: 600 13.5px var(--sans);
+}
+button.btn-action:hover { background: #16304F; }
+button.btn-action:disabled { opacity: 0.6; cursor: default; }
+button.btn-ghost {
+  height: 42px; padding: 0 26px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--card-border); font: 600 13.5px var(--sans);
+}
+button.btn-ghost:hover { color: var(--ink); border-color: var(--frame); }
+button.btn-quiet { background: transparent; border: none; color: var(--muted); font: 500 12px var(--sans); padding: 4px 6px; }
+button.btn-quiet:hover { color: var(--action); }
+
+textarea, input[type="text"], select.att-select {
+  width: 100%;
+  font-family: var(--sans);
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text-muted);
-  padding: 9px 10px;
-  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: #FDF8E9;
+  border: 1px solid var(--card-border);
+  border-radius: 0;
+  padding: 9px 11px;
+  resize: vertical;
 }
-.sidebar-nav a:hover { background: var(--bg); color: var(--text); }
-.sidebar-nav a.active { background: var(--primary-tint); color: var(--primary); }
-.sidebar-spacer { flex: 1; }
+textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--frame); }
 
-.main { flex: 1; min-width: 0; padding: 36px 40px 60px; }
-.main-inner { max-width: 880px; margin: 0 auto; }
+.api-key-warning { background: var(--crossing); color: var(--card); padding: 8px 16px; font-size: 13px; }
 
-.api-key-warning { background: var(--warn); color: #fff; padding: 8px 16px; font-size: 13px; margin: -36px -40px 24px; }
-
-/* ---------------- Header ---------------- */
-
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px 16px; margin-bottom: 28px; }
-.greeting { font-size: 22px; font-weight: 600; color: var(--text); }
-.page-subtitle { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; max-width: 480px; }
-.pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); display: inline-block; animation: dot-pulse 2.2s infinite; }
-.pulse-dot.sm { width: 5px; height: 5px; }
+.pulse-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--crossing); display: inline-block; animation: dot-pulse 2.2s infinite; }
 @keyframes dot-pulse { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
 
+/* ---------------- Top bar ---------------- */
+
+.topbar {
+  height: 52px; flex: none;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--chrome-border);
+  background: var(--chrome);
+}
+.topbar-left { display: flex; align-items: baseline; gap: 16px; min-width: 0; flex: 1; overflow: hidden; }
+.topbar-logo { font-size: 14px; font-weight: 700; color: var(--ink-header); white-space: nowrap; }
+.topbar-context { font-size: 12px; font-weight: 600; letter-spacing: 0.18em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar-right { display: flex; align-items: center; gap: 18px; flex: none; }
+.topbar-status { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+.topbar-nav { display: flex; gap: 12px; font-size: 11px; }
+.topbar-nav a { color: var(--muted-2); text-decoration: none; font-weight: 600; }
+.topbar-nav a:hover { color: var(--action); }
 .persona-select {
-  font-size: 12px;
-  color: var(--text-muted);
-  background: #fff;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  padding: 5px 12px;
+  font: 500 12px var(--sans);
+  color: var(--muted);
+  background: var(--boundary-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 0;
+  padding: 5px 8px;
   max-width: 320px;
-  flex: 0 0 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* ---------------- Section / cards ---------------- */
+/* ---------------- Chart strip ---------------- */
 
-.section { margin-bottom: 28px; }
-.empty-note { font-size: 13px; color: var(--text-faint); padding: 10px 2px; }
+.chart-strip { flex: none; border-bottom: 1px solid var(--chrome-border); }
+.chart-strip svg { width: 100%; height: auto; max-height: 330px; display: block; }
 
-.card {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
-  padding: 18px 20px;
-}
-.card + .card { margin-top: 14px; }
+/* ---------------- Letters ---------------- */
 
-.tag { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
-
-/* ---------------- Person (requester) header ---------------- */
-
-.avatar {
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--primary-tint);
-  color: var(--primary);
+.letters {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 14px;
+  gap: 28px;
+  padding: 36px 20px 48px;
 }
-.avatar.avatar-lg { width: 56px; height: 56px; font-size: 20px; }
-.requester-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-.requester-name { font-size: 18px; font-weight: 600; color: var(--text); }
-.requester-label { font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.empty-note { font-size: 13px; color: var(--muted-2); font-style: italic; padding: 30px 0; }
 
-/* ---------------- Ask card body ---------------- */
-
-.field-block { margin-bottom: 14px; }
-.field-label { font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
-.field-quote {
-  border-left: 3px solid var(--border-strong);
-  padding: 8px 16px;
-  font-size: 15px;
-  color: var(--text);
-  line-height: 1.6;
+.letter {
+  width: 780px; max-width: 96vw; flex: none;
+  background: var(--card);
+  border: 1.6px solid var(--frame);
+  box-shadow: 0 4px 18px rgba(59, 44, 29, 0.16);
+  padding: 8px;
 }
+.letter-inner { border: 0.7px solid var(--frame); padding: 40px 52px 34px; }
+.letter-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: 0.2em; color: var(--muted-2); text-align: center; margin-bottom: 20px; }
+.letter-headline { font-family: var(--serif); font-size: 32px; font-weight: 600; color: var(--ink); text-align: center; line-height: 1.25; margin-bottom: 16px; }
+.letter-context { font-family: var(--serif); font-style: italic; font-size: 15.5px; line-height: 1.7; color: var(--ink-body); text-align: center; margin-bottom: 22px; }
+.letter-meta { display: flex; justify-content: center; gap: 28px; font-size: 11.5px; letter-spacing: 0.14em; color: var(--muted-2); margin-bottom: 26px; flex-wrap: wrap; }
+.letter-actions { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.letter-note { font-size: 11.5px; color: var(--muted-2); text-align: center; margin-top: 12px; }
+.letter-note button { display: inline; font-size: 11.5px; }
+.letter-footnotes { border-top: 1px solid var(--divider); margin-top: 26px; padding-top: 14px; font-family: var(--serif); font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.private-line { font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--boundary-text); text-align: center; margin: -12px 0 22px; }
 
-.reason-list { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
-.reason-list li { font-size: 13px; color: var(--text); padding-left: 14px; position: relative; line-height: 1.5; }
-.reason-list li::before { content: "–"; position: absolute; left: 0; color: var(--text-faint); }
-.ai-disclosure { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-faint); margin-top: 2px; }
-.private-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; display: flex; align-items: flex-start; gap: 6px; }
-
-.assessment-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tag.match-tag { background: var(--muted-tag-bg); color: var(--muted-tag-text); }
-.tag.match-tag.strong { background: var(--primary-tint); color: var(--primary); }
-.assessment-meta { font-size: 12.5px; color: var(--text-muted); }
-
-.privacy-summary {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  font-size: 12.5px;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-.btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-
-.response-panel { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); display: none; }
+.response-panel { margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--card-border); display: none; }
 .response-panel textarea { margin-bottom: 10px; }
-.form-row { display: grid; grid-template-columns: 130px 1fr; gap: 8px; margin-bottom: 10px; }
+.form-row { display: grid; grid-template-columns: 140px 1fr; gap: 8px; margin-bottom: 10px; }
+.response-panel .btn-row { display: flex; gap: 10px; justify-content: center; }
+.already-answered { font-size: 12px; color: var(--muted-2); font-style: italic; }
 
-.already-answered { font-size: 12px; color: var(--text-faint); font-style: italic; }
-
-/* ---------------- Answered state ---------------- */
-
-.status-result { display: flex; align-items: center; gap: 10px; }
-.status-result .tag.accepted { background: var(--accent-tint); color: var(--accent); }
-.status-result .tag.shared { background: var(--today-bg); color: var(--today-text); }
-.status-result .tag.passed { background: var(--muted-tag-bg); color: var(--muted-tag-text); }
-.status-result-text { font-size: 14px; color: var(--text); font-weight: 500; }
+/* Answered state: a short letter-style result */
+.letter-result { text-align: center; }
+.letter-result .letter-headline { font-size: 22px; margin-bottom: 8px; }
+.letter-result .letter-note { margin-top: 4px; }
   </style>
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="sidebar-logo">Knowledge Discovery</div>
-      <nav class="sidebar-nav">
-        <a id="navRequester" href="/requester">My Agent</a>
-        <a href="/candidate" class="active">Connection Requests</a>
-        <a id="navAudit" href="/audit">Bridge Trace</a>
+  <!-- ── Top bar ── -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-logo">Knowledge Discovery</span>
+      <span class="topbar-context">CONNECTION REQUEST</span>
+    </div>
+    <div class="topbar-right">
+      <nav class="topbar-nav">
+        <a id="navRequester" href="/requester">MY AGENT</a>
+        <a id="navAudit" href="/audit">TRACE</a>
       </nav>
-      <div class="sidebar-spacer"></div>
-    </aside>
+      <span class="topbar-status" id="topbarStatus">Marcus Delgado · Real Estate</span>
+      <!-- Demo device: one-person-plays-all dropdown (README: demo simplification). Hidden for a "human" principal. -->
+      <select id="agentSelector" class="persona-select" onchange="loadAsksForAgent()" title="Demo: switch which agent's inbox you are viewing">
+        <option value="agent_marcus_delgado">Marcus Delgado — Commercial Broker (Real Estate)</option>
+        <option value="agent_rachel_kim">Rachel Kim — Senior Account Manager (Staffing)</option>
+        <option value="agent_elena_vasquez">Elena Vasquez — Transition Advisor (M&amp;A / Succession)</option>
+        <option value="agent_tom_whitfield">Tom Whitfield — Senior Accountant (Corporate Services)</option>
+      </select>
+    </div>
+  </div>
 
-    <main class="main">
-      <div class="main-inner">
-        <div class="page-header">
-          <div>
-            <div class="greeting" id="pageHeading">Connection Requests</div>
-            <div class="page-subtitle" id="screenedLabel">Your agent screened this request and thinks your experience is relevant.</div>
-          </div>
-          <!-- Demo device: one-person-plays-all dropdown (README: demo simplification). Hidden for a "human" principal. -->
-          <select id="agentSelector" class="persona-select" onchange="loadAsksForAgent()" title="Demo: switch which agent's inbox you are viewing">
-            <option value="agent_marcus_delgado">Marcus Delgado — Commercial Broker (Real Estate)</option>
-            <option value="agent_rachel_kim">Rachel Kim — Senior Account Manager (Staffing)</option>
-            <option value="agent_elena_vasquez">Elena Vasquez — Transition Advisor (M&amp;A / Succession)</option>
-            <option value="agent_tom_whitfield">Tom Whitfield — Senior Accountant (Corporate Services)</option>
-          </select>
-        </div>
+  <!-- ── Chart strip: the route arriving at your coast ── -->
+  <div class="chart-strip">
+    <svg viewBox="0 0 1920 330" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <pattern id="wavesStrip" width="58" height="26" patternUnits="userSpaceOnUse">
+          <path d="M 4 8 Q 12 3 20 8 Q 28 13 36 8" fill="none" stroke="#B49E78" stroke-width="1"/>
+          <path d="M 30 21 Q 38 16 46 21 Q 54 26 62 21" fill="none" stroke="#B49E78" stroke-width="1" opacity="0.7"/>
+        </pattern>
+      </defs>
+      <rect x="0" y="0" width="1920" height="330" fill="#E4D5AC"/>
+      <rect x="0" y="0" width="1920" height="330" fill="url(#wavesStrip)" opacity="0.55"/>
+      <path d="M 1240 330 Q 1248.7 330 1252.3 327.6 Q 1255.9 325.1 1259.8 323.4 Q 1263.7 321.6 1266.1 318 Q 1268.5 314.4 1270.4 310.6 Q 1272.4 306.8 1276 304.7 Q 1279.7 302.6 1283.1 300.1 Q 1286.4 297.6 1288.2 293.8 Q 1290 290 1295 286.9 Q 1299.9 283.8 1305.6 282.5 Q 1311.3 281.2 1316.5 278.1 Q 1321.6 275 1324.2 269.6 Q 1326.7 264.1 1331.2 260.3 Q 1335.7 256.4 1341.2 254.2 Q 1346.6 251.9 1352.5 253.5 Q 1358.3 255.1 1364.2 253.6 Q 1370 252 1376.2 254.2 Q 1382.4 256.5 1388.9 256 Q 1395.5 255.5 1401.9 254.9 Q 1408.4 254.4 1414.6 252.7 Q 1420.8 250.9 1427 249.3 Q 1433.1 247.7 1439.1 245.6 Q 1445.1 243.5 1451.3 241.6 Q 1457.4 239.7 1463.7 238.9 Q 1470 238 1477.1 240 Q 1484.3 242 1490.1 246.6 Q 1495.9 251.2 1502.8 247.9 Q 1509.7 244.7 1517.2 245.9 Q 1524.7 247 1532.2 247 Q 1539.7 247.1 1545.8 251.4 Q 1551.9 255.8 1558.6 252.7 Q 1565.3 249.6 1572.6 249.8 Q 1580 250 1586.5 250.6 Q 1592.9 251.2 1599.2 249.6 Q 1605.5 248 1612.1 248.4 Q 1618.7 248.7 1624.3 252.2 Q 1629.9 255.8 1635.7 258.4 Q 1641.5 261 1646.8 264.5 Q 1652 268.1 1656.6 272.5 Q 1661.1 277 1665.5 281.5 Q 1670 286 1671.8 291.3 Q 1673.7 296.6 1678.2 299.9 Q 1682.7 303.2 1688 304.8 Q 1693.2 306.5 1697.4 309.9 Q 1701.6 313.4 1705.9 316.6 Q 1710.2 319.8 1714.6 322.7 Q 1719.1 325.5 1724.3 326.7 Q 1729.6 327.8 1734.8 328.9 L 1740 330 Z" fill="#F6EDCF" stroke="#4A3722" stroke-width="2"/>
+      <text id="stripIsland" x="1500" y="316" text-anchor="middle" style="font: 700 15px 'Source Serif 4', serif; letter-spacing: 6px; fill: #3B2C1D;">REAL ESTATE</text>
+      <circle cx="1470" cy="286" r="10" fill="#F6EDCF" stroke="#A13A20" stroke-width="2.6"/>
+      <text x="1470" y="262" text-anchor="middle" style="font: 600 18px 'Source Serif 4', serif; fill: #26221A;">You</text>
+      <path d="M 0 150 Q 300 130 620 150 Q 980 172 1240 232 Q 1360 258 1436 278" fill="none" stroke="#A13A20" stroke-width="2.2" stroke-dasharray="10 9"/>
+      <line x1="1244" y1="216" x2="1252" y2="252" stroke="#4A3722" stroke-width="1.4"/>
+      <text id="stripCaption" x="620" y="120" text-anchor="middle" style="font: italic 600 15px 'Source Serif 4', serif; fill: #7A3A22;">a proposed crossing — waiting on you</text>
+      <text x="30" y="40" style="font: 700 11px 'Archivo', sans-serif; letter-spacing: 2px; fill: #8A7354;">SOMEONE FOUND A ROUTE TO YOUR ISLAND</text>
+    </svg>
+  </div>
 
-        <div class="section" id="asksContainer">
-          <div class="empty-note">Loading received requests...</div>
-        </div>
-      </div>
-    </main>
+  <!-- ── The letters ── -->
+  <div class="letters" id="asksContainer">
+    <div class="empty-note">Loading received requests...</div>
   </div>
 
   <script>
-/* Knowledge Discovery — Connection Requests (candidate) UI logic, Phase 2 redesign. */
+/* Knowledge Discovery — Connection Request (candidate) UI logic,
+   Company Atlas redesign. Wired to the same consent API as before. */
 
 const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
 
@@ -274,13 +239,6 @@ function withKey(path) {
   return path + (path.includes("?") ? "&" : "?") + "api_key=" + encodeURIComponent(API_KEY);
 }
 
-function initials(fullName) {
-  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
 function setupChrome() {
   if (!API_KEY) {
     document.body.insertAdjacentHTML("afterbegin",
@@ -290,6 +248,17 @@ function setupChrome() {
   const auditLink = document.getElementById("navAudit");
   if (reqLink) reqLink.href = withKey("/requester");
   if (auditLink) auditLink.href = withKey("/audit");
+}
+
+// Top-bar identity + chart-strip island label follow the selected agent.
+function renderIdentity() {
+  const sel = document.getElementById("agentSelector");
+  const optionText = sel.options[sel.selectedIndex]?.text || "";
+  const m = optionText.match(/^(.*?) — .*\((.*)\)$/);
+  const name = m ? m[1] : formatId(sel.value);
+  const dept = m ? m[2] : "";
+  document.getElementById("topbarStatus").innerText = dept ? `${name} · ${dept}` : name;
+  document.getElementById("stripIsland").textContent = (dept || "YOUR ISLAND").toUpperCase();
 }
 
 // -------------------------------------------------------------------------
@@ -351,6 +320,7 @@ async function initPrincipal() {
 }
 
 async function loadAsksForAgent() {
+  renderIdentity();
   const agentId = document.getElementById("agentSelector").value;
   const container = document.getElementById("asksContainer");
   container.innerHTML = `<div class="empty-note">Fetching requests for ${esc(agentId)}...</div>`;
@@ -370,21 +340,6 @@ async function loadAsksForAgent() {
   }
 }
 
-function matchLabel(score) {
-  return (score !== undefined && score !== null && score >= 0.75) ? "Strong match" : "Possible match";
-}
-
-function reasonBullets(reasonText) {
-  const text = String(reasonText || "").trim();
-  if (!text) return [];
-  return text
-    .split(/(?<=[.;!?])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 3)
-    .map((s) => (s.length > 90 ? s.slice(0, 90).trim() + "…" : s));
-}
-
 // Local memory of how a request was just answered in this session (decision +
 // whether an attachment was sent). The GET /asks payload only exposes
 // consent_state ("granted"/"declined"), not whether a decline carried an
@@ -395,108 +350,81 @@ const LOCAL_OUTCOME = {};
 
 function renderAsks(asks) {
   const container = document.getElementById("asksContainer");
-  const heading = document.getElementById("pageHeading");
-  const subtitle = document.getElementById("screenedLabel");
-
   if (!asks || asks.length === 0) {
-    heading.innerText = "Connection Requests";
-    subtitle.innerText = "";
+    document.getElementById("stripCaption").textContent = "no proposed crossings today — your coast is quiet";
     container.innerHTML = `<div class="empty-note">No incoming requests for this agent.</div>`;
     return;
   }
-
-  const firstRequesterName = requesterDisplayName(asks[0]);
-  const firstName = (firstRequesterName === "A colleague") ? "Someone" : firstRequesterName.split(/\s+/)[0];
-  heading.innerText = `${firstName} needs your perspective`;
-  subtitle.innerText = asks.length > 1
-    ? "Your agent screened these requests and thinks your experience is relevant."
-    : "Your agent screened this request and thinks your experience is relevant.";
-
-  container.innerHTML = asks.map((ask) => renderAskCard(ask)).join("");
+  const pendingCount = asks.filter(a => a.consent_state === "pending" || a.consent_state === "n/a").length;
+  document.getElementById("stripCaption").textContent = pendingCount > 0
+    ? "a proposed crossing — waiting on you"
+    : "your coast is quiet — every crossing has been answered";
+  container.innerHTML = asks.map((ask) => renderAskLetter(ask)).join("");
 }
 
-function renderAskCard(ask) {
+function renderAskLetter(ask) {
   const auditId = ask.ask_audit_id;
   const isPrivate = ask.is_private || ask.intent === "connect_ask_private";
   const isPending = (ask.consent_state === "pending" || ask.consent_state === "n/a");
-  const match = matchLabel(ask.score);
-  const bullets = reasonBullets(ask.reason_text);
   const name = requesterDisplayName(ask);
-  const avatarText = (name === "A colleague") ? "?" : initials(name);
+  const first = (name === "A colleague") ? "Someone" : name.split(/\s+/)[0];
+  const reason = String(ask.reason_text || "Relevant experience detected.").trim();
 
   if (!isPending) {
     return `
-      <div class="card status-result" id="ask_card_${esc(auditId)}">
-        <div class="avatar">${esc(avatarText)}</div>
-        <div class="status-result-text">${resultText(ask)}</div>
+      <div class="letter" id="ask_card_${esc(auditId)}">
+        <div class="letter-inner letter-result">
+          <div class="letter-eyebrow">AN INTRODUCTION · ANSWERED</div>
+          <div class="letter-headline">${esc(resultText(ask))}</div>
+          <div class="letter-note">Nothing else from your work was shared.</div>
+        </div>
       </div>`;
   }
 
   return `
-    <div class="card" id="ask_card_${esc(auditId)}">
-      <div class="requester-row">
-        <div class="avatar avatar-lg">${esc(avatarText)}</div>
-        <div>
-          <div class="requester-label">Requester</div>
-          <div class="requester-name">${esc(name)}</div>
+    <div class="letter" id="ask_card_${esc(auditId)}">
+      <div class="letter-inner">
+        <div class="letter-eyebrow">AN INTRODUCTION · PREPARED BY ${esc(name === "A colleague" ? "A COLLEAGUE" : name.toUpperCase())}'S AGENT</div>
+        <div class="letter-headline">${esc(name)} needs your perspective.</div>
+        <div class="letter-context">${esc(ask.question_summary || "A colleague inquiry.")}</div>
+        ${isPrivate ? `<div class="private-line">Your agent matched this from a private item — nothing about it has been shared. ¹</div>` : ""}
+        <div class="letter-meta">
+          <span>${esc(name.toUpperCase())}</span><span>·</span><span>15 MINUTES</span><span>·</span><span>THIS WEEK</span>
         </div>
-      </div>
-
-      <div class="field-block">
-        <div class="field-label">What they need help with</div>
-        <div class="field-quote">${esc(ask.question_summary) || "A colleague inquiry"}</div>
-      </div>
-
-      <div class="field-block">
-        <div class="field-label">Why you?</div>
-        <ul class="reason-list">${bullets.map((b) => `<li>${esc(b)}</li>`).join("") || `<li>${esc(ask.reason_text) || "Relevant experience detected."}</li>`}</ul>
-        <div class="ai-disclosure"><span class="pulse-dot sm"></span> Suggested by your agent</div>
-        ${isPrivate ? `<div class="private-note">🔒 Relates to something only your agent knows about you — nothing has been shared.</div>` : ""}
-      </div>
-
-      <div class="field-block">
-        <div class="field-label">Agent assessment</div>
-        <div class="assessment-line">
-          <span class="tag match-tag ${match === "Strong match" ? "strong" : ""}">${match}</span>
-          <span class="assessment-meta">15 min · Limited context shared</span>
+        <div class="letter-actions" id="actions_${esc(auditId)}">
+          <button class="btn-action" onclick="acceptAsk('${esc(auditId)}')">Accept the introduction</button>
+          <button class="btn-ghost" onclick="togglePanel('${esc(auditId)}', 'pass')">Decline quietly</button>
         </div>
-      </div>
+        <div class="letter-note">Declining is invisible to ${esc(first)}. <button class="btn-quiet" onclick="togglePanel('${esc(auditId)}', 'share')">share a resource instead ›</button></div>
 
-      <div class="field-block">
-        <div class="field-label">Privacy summary</div>
-        <div class="privacy-summary">
-          Shared between agents: the question and the AI-generated why-you note.<br>
-          Not shared: your private profile items, calendars, or messages.
+        <div id="sharePanel_${esc(auditId)}" class="response-panel">
+          <div class="form-row">
+            <select class="att-select" id="attType_${esc(auditId)}" onchange="updateAttachmentPlaceholder('${esc(auditId)}')">
+              <option value="link">Link (URL)</option>
+              <option value="doc">Document ID</option>
+              <option value="text">Text Note</option>
+            </select>
+            <input type="text" id="attContent_${esc(auditId)}" placeholder="https://wiki.internal/clinic-relocation" value="https://wiki.internal/clinic-relocation">
+          </div>
+          <textarea id="shareNote_${esc(auditId)}" placeholder="Optional note to include..."></textarea>
+          <div class="btn-row">
+            <button class="btn-action" onclick="submitShare('${esc(auditId)}')">Send resource</button>
+            <button class="btn-quiet" onclick="togglePanel('${esc(auditId)}', 'share')">Cancel</button>
+          </div>
         </div>
-      </div>
 
-      <div class="btn-row" id="actions_${esc(auditId)}">
-        <button class="btn-primary" onclick="acceptAsk('${esc(auditId)}')">Accept</button>
-        <button class="btn-secondary" onclick="togglePanel('${esc(auditId)}', 'share')">Share a resource instead</button>
-        <button class="btn-text" onclick="togglePanel('${esc(auditId)}', 'pass')">Not this time</button>
-      </div>
-
-      <div id="sharePanel_${esc(auditId)}" class="response-panel">
-        <div class="form-row">
-          <select id="attType_${esc(auditId)}" onchange="updateAttachmentPlaceholder('${esc(auditId)}')">
-            <option value="link">Link (URL)</option>
-            <option value="doc">Document ID</option>
-            <option value="text">Text Note</option>
-          </select>
-          <input type="text" id="attContent_${esc(auditId)}" placeholder="https://wiki.internal/clinic-relocation" value="https://wiki.internal/clinic-relocation">
+        <div id="passPanel_${esc(auditId)}" class="response-panel">
+          <textarea id="passReason_${esc(auditId)}" placeholder="Let them know why (optional)..."></textarea>
+          <div class="btn-row">
+            <button class="btn-ghost" onclick="submitPass('${esc(auditId)}')">Confirm — decline quietly</button>
+            <button class="btn-quiet" onclick="togglePanel('${esc(auditId)}', 'pass')">Cancel</button>
+          </div>
         </div>
-        <textarea id="shareNote_${esc(auditId)}" placeholder="Optional note to include..."></textarea>
-        <div class="btn-row">
-          <button class="btn-primary" onclick="submitShare('${esc(auditId)}')">Send resource</button>
-          <button class="btn-text" onclick="togglePanel('${esc(auditId)}', 'share')">Cancel</button>
-        </div>
-      </div>
 
-      <div id="passPanel_${esc(auditId)}" class="response-panel">
-        <textarea id="passReason_${esc(auditId)}" placeholder="Let them know why (optional)..."></textarea>
-        <div class="btn-row">
-          <button class="btn-secondary" onclick="submitPass('${esc(auditId)}')">Confirm</button>
-          <button class="btn-text" onclick="togglePanel('${esc(auditId)}', 'pass')">Cancel</button>
+        <div class="letter-footnotes">
+          ${isPrivate ? `¹ The private item stays private: its content was not disclosed to anyone — including ${esc(first)}.<br>` : ""}
+          ${isPrivate ? "²" : "¹"} Why you (their agent's note): ${esc(reason)}<br>
+          Shared between agents: the question and this note. Kept private: your profile's private items, calendars, and messages.
         </div>
       </div>
     </div>`;
@@ -510,9 +438,6 @@ function resultText(ask) {
   }
   if (ask.consent_state === "granted") {
     return "You accepted — a 15-min intro will be proposed.";
-  }
-  if (ask.consent_state === "declined") {
-    return "You already responded to this request.";
   }
   return "You already responded to this request.";
 }

@@ -426,13 +426,13 @@ class TestServerEndpoints(unittest.TestCase):
         self.assertEqual(res_req.status_code, 200)
         self.assertIn("My Agent", res_req.text)
         self.assertIn("Find someone who can help", res_req.text)
-        self.assertIn("Agent autonomy", res_req.text)
-        self.assertIn("Always ask me first", res_req.text)
+        self.assertIn("AUTONOMY POLICY", res_req.text)
+        self.assertIn("always ask me first", res_req.text)
 
         res_cand = self.client.get("/candidate")
         self.assertEqual(res_cand.status_code, 200)
-        self.assertIn("Your agent screened this request and thinks your experience is relevant.", res_cand.text)
-        self.assertIn("🔒 Relates to something only your agent knows about you", res_cand.text)
+        self.assertIn("SOMEONE FOUND A ROUTE TO YOUR ISLAND", res_cand.text)
+        self.assertIn("Your agent matched this from a private item", res_cand.text)
 
         res_audit = self.client.get("/audit")
         self.assertEqual(res_audit.status_code, 200)

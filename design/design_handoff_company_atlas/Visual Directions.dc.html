@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #ECE8DE; font-family: 'Archivo', sans-serif; color: #26221A; }
+  a { color: #1F3A5F; } a:hover { color: #C96F4A; }
+</style>
+</helmet>
+<section style="padding: 48px 56px 80px; display: flex; flex-direction: column; gap: 32px;">
+  <div style="max-width: 900px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">Knowledge Discovery — Design Direction Review · Turn 1</div>
+    <h1 style="font-family: 'Source Serif 4', serif; font-size: 34px; font-weight: 600; margin: 0 0 14px; line-height: 1.2;">Signature Visual — 3つのDirection</h1>
+    <p style="font-size: 14px; line-height: 1.7; color: #504A3C; margin: 0;">前提: 既存UIの改善ではなく、Product Conceptからゼロで再設計。共通の憲法は <strong>Humans are large. Agents are small.</strong> — AIの活動はevidenceであり主役ではない。各Directionは <a href="#1a">1a</a> / <a href="#1b">1b</a> / <a href="#1c">1c</a>、最終判断は <a href="#1d">1d</a>。</p>
+  </div>
+
+  <div style="display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap;">
+
+    <!-- ============ DIRECTION A ============ -->
+    <div id="1a" style="width: 660px; background: #FDFBF6; border: 1px solid #D8D1BE; box-shadow: 0 2px 8px rgba(38,34,26,0.07);">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid #E4DFD3;">
+        <div style="display: flex; align-items: baseline; gap: 12px;">
+          <span style="font-size: 11px; font-weight: 700; background: #26221A; color: #FDFBF6; padding: 3px 8px; letter-spacing: 0.08em;">1a</span>
+          <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6659;">Direction A</span>
+        </div>
+        <span style="font-size: 11px; color: #948E7D;">Organization Map</span>
+      </div>
+      <div style="padding: 24px 24px 8px;">
+        <h2 style="font-family: 'Source Serif 4', serif; font-size: 24px; font-weight: 600; margin: 0 0 6px;">The Company Atlas</h2>
+        <p style="font-size: 13px; line-height: 1.65; color: #504A3C; margin: 0 0 18px;"><strong style="color: #26221A;">Design thesis:</strong> 会社を一枚の地図として描き、部署という境界線を「実在するが越えられる線」として見せる — connectionとは、地図上に新しい道が引かれることである。</p>
+
+        <!-- Signature screen wireframe -->
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 8px;">3–4 · Signature Screen — Bridge Trace = 組織の地図</div>
+        <svg viewBox="0 0 612 430" style="width: 100%; display: block; background: #F5F1E8; border: 1px solid #D8D1BE;">
+          <text x="24" y="30" style="font: 700 9px 'Archivo'; letter-spacing: 2px; fill: #948E7D;">RIVERBEND HEALTH — ORGANIZATION MAP</text>
+          <text x="588" y="30" text-anchor="end" style="font: 500 9px 'Archivo'; fill: #948E7D;">tracing: Riverside Clinic Relocation</text>
+          <!-- region boundaries (dashed hairlines) -->
+          <path d="M 200 44 L 214 150 L 150 240 L 40 258" fill="none" stroke="#C9C1AD" stroke-width="1" stroke-dasharray="3 4"/>
+          <path d="M 214 150 L 400 132 L 588 168" fill="none" stroke="#C9C1AD" stroke-width="1" stroke-dasharray="3 4"/>
+          <path d="M 400 132 L 424 44" fill="none" stroke="#C9C1AD" stroke-width="1" stroke-dasharray="3 4"/>
+          <path d="M 150 240 L 330 262 L 588 250" fill="none" stroke="#C9C1AD" stroke-width="1" stroke-dasharray="3 4"/>
+          <path d="M 330 262 L 316 372" fill="none" stroke="#C9C1AD" stroke-width="1" stroke-dasharray="3 4"/>
+          <!-- region labels -->
+          <text x="100" y="90" style="font: 600 10px 'Archivo'; letter-spacing: 3px; fill: #A39B85;">CLINICAL</text>
+          <text x="300" y="80" style="font: 600 10px 'Archivo'; letter-spacing: 3px; fill: #A39B85;">FINANCE</text>
+          <text x="480" y="90" style="font: 600 10px 'Archivo'; letter-spacing: 3px; fill: #A39B85;">STRATEGY</text>
+          <text x="80" y="320" style="font: 600 10px 'Archivo'; letter-spacing: 3px; fill: #A39B85;">OPERATIONS</text>
+          <text x="470" y="382" style="font: 600 10px 'Archivo'; letter-spacing: 3px; fill: #C96F4A;">REAL ESTATE</text>
+          <!-- background people (small ink dots) -->
+          <circle cx="88" cy="120" r="3" fill="#B7AF9A"/><circle cx="130" cy="150" r="3" fill="#B7AF9A"/><circle cx="112" cy="192" r="3" fill="#B7AF9A"/>
+          <circle cx="290" cy="106" r="3" fill="#B7AF9A"/><circle cx="340" cy="98" r="3" fill="#B7AF9A"/>
+          <circle cx="478" cy="120" r="3" fill="#B7AF9A"/><circle cx="520" cy="140" r="3" fill="#B7AF9A"/>
+          <circle cx="200" cy="330" r="3" fill="#B7AF9A"/><circle cx="240" cy="300" r="3" fill="#B7AF9A"/>
+          <circle cx="500" cy="300" r="3" fill="#B7AF9A"/><circle cx="530" cy="360" r="3" fill="#B7AF9A"/>
+          <!-- Jordan: large human node + signal ripples -->
+          <circle cx="150" cy="290" r="34" fill="none" stroke="#3D6B8E" stroke-width="1" opacity="0.5"/>
+          <circle cx="150" cy="290" r="52" fill="none" stroke="#3D6B8E" stroke-width="1" opacity="0.3"/>
+          <circle cx="150" cy="290" r="72" fill="none" stroke="#3D6B8E" stroke-width="1" opacity="0.15"/>
+          <circle cx="150" cy="290" r="11" fill="#26221A"/>
+          <text x="150" y="272" text-anchor="middle" style="font: 600 13px 'Source Serif 4', serif; fill: #26221A;">Jordan Lee</text>
+          <!-- new path across the boundary -->
+          <path d="M 162 296 Q 280 340 388 342" fill="none" stroke="#C96F4A" stroke-width="2"/>
+          <circle cx="400" cy="344" r="11" fill="#FDFBF6" stroke="#C96F4A" stroke-width="2.5"/>
+          <text x="400" y="326" text-anchor="middle" style="font: 600 13px 'Source Serif 4', serif; fill: #26221A;">Marcus Delgado</text>
+          <!-- agents: tiny graphite marks -->
+          <circle cx="168" cy="302" r="3" fill="none" stroke="#8A8371" stroke-width="1.2"/>
+          <circle cx="384" cy="352" r="3" fill="none" stroke="#8A8371" stroke-width="1.2"/>
+          <!-- funnel legend -->
+          <text x="24" y="398" style="font: 500 10px 'Archivo'; fill: #6B6659;">Automatic sweep · 400 profiles → 20 shortlisted → 4 agents asked → 1 connection worth making</text>
+          <rect x="24" y="408" width="564" height="1" fill="#D8D1BE"/>
+          <text x="24" y="424" style="font: 500 9px 'Archivo'; fill: #948E7D;">▔ TRACE — 12 events · private items masked · 下部drawerに格納</text>
+        </svg>
+        <p style="font-size: 11.5px; color: #6B6659; line-height: 1.6; margin: 8px 0 20px;">構図: 地図が画面の約80%。Timeline/auditは下部drawer(常時1行のサマリのみ)。左sidebarは既存のまま。</p>
+
+        <!-- Visual vocabulary -->
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">5–10 · Visual Vocabulary</div>
+        <div style="display: grid; grid-template-columns: 118px 1fr; gap: 6px 14px; font-size: 12.5px; line-height: 1.55; color: #3A362C; margin-bottom: 20px;">
+          <div style="font-weight: 600;">Department</div><div>地図上のregion。塗りではなく<strong>破線の境界線 + letterspaced caps のラベル</strong>(地図の地名表記)。壁として実在するが、薄い。</div>
+          <div style="font-weight: 600;">Human</div><div>インクの点。名前はserifで、地図上で最も濃い要素。関与が深いほど点が大きく、名前が大きい。</div>
+          <div style="font-weight: 600;">Agent</div><div>人の脇に添えられた<strong>直径3pxの中空の鉛筆マーク</strong>。地図に書き込まれた測量士の注記であり、地形ではない。</div>
+          <div style="font-weight: 600;">Need detected</div><div>Jordanの点から広がる同心円のripple(surveyor blue、1本ずつ静かに)。radar sweepの回転線は使わない — 波紋であって走査ではない。</div>
+          <div style="font-weight: 600;">Search</div><div>rippleが届いたregionのラベルがinkに変わり「目を覚ます」。該当者の点がわずかに拡大。落選者は評価理由と共に元の薄さへ戻る。</div>
+          <div style="font-weight: 600;">Connection</div><div>境界線を跨いでterracottaの<strong>実線の道</strong>が引かれる。地図に道が1本増える = プロダクトの成果物。</div>
+        </div>
+
+        <!-- Continuity -->
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">11–13 · 他画面とのContinuity</div>
+        <div style="font-size: 12.5px; line-height: 1.65; color: #3A362C; margin-bottom: 20px;">
+          <p style="margin: 0 0 6px;"><strong>My Agent:</strong> ヘッダー背景に自分の周辺だけを描いたminimap(半径2 region分)。Need検知時、カード表示より先にminimapでrippleが始まり、Bridge Traceへの連続性を作る。</p>
+          <p style="margin: 0 0 6px;"><strong>Connection Request (Marcus側):</strong> 冒頭に小さな地図の断片 —「OperationsのJordanからあなたのregionへ届いた線」。どこから来た依頼かが地理的に分かる。</p>
+          <p style="margin: 0;"><strong>Connection Created:</strong> 地図全体がフェードし、2つの点と1本のterracottaの道だけが残る。キャプション「A path that didn't exist yesterday.」</p>
+        </div>
+
+        <!-- Color -->
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">14 · Color System —「紙とインク」</div>
+        <p style="font-size: 12px; line-height: 1.6; color: #504A3C; margin: 0 0 10px;">論拠: 地図の権威と静けさは「紙 + インク」から来る。彩度の高い色は connection の1色だけに独占させ、「人間関係の成立だけが色を持つ」というPhilosophyをパレット構造そのものに刻む。</p>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px 16px; font-size: 11.5px; margin-bottom: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #F5F1E8; border: 1px solid #D8D1BE; flex: none;"></span>Base bg · 古紙 #F5F1E8</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #26221A; flex: none;"></span>Primary text · インク #26221A</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #26221A; border-radius: 50%; flex: none;"></span>Human node · インク(=text色。人が本文)</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #FDFBF6; border: 1.5px solid #8A8371; border-radius: 50%; flex: none;"></span>Agent · 鉛筆 #8A8371(中空・消せる注記)</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #FDFBF6; border: 1px dashed #C9C1AD; flex: none;"></span>Department境界 · #C9C1AD 破線</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #DAD3C2; flex: none;"></span>Inactive connection · #DAD3C2</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #3D6B8E; flex: none;"></span>Search/Signal · surveyor blue #3D6B8E</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #C96F4A; flex: none;"></span>Human connection · terracotta #C96F4A(既存踏襲)</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #A65B1E; flex: none;"></span>Warning · #A65B1E(connectionと隣接させない)</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: repeating-linear-gradient(45deg, #5C6B57 0 2px, #F5F1E8 2px 5px); flex: none;"></span>Privacy boundary · moss #5C6B57 ハッチング</div>
+        </div>
+        <p style="font-size: 11px; color: #6B6659; line-height: 1.55; margin: 0 0 20px;">WCAG: #26221A on #F5F1E8 = 13.9:1 (AAA)。#3D6B8E / #A65B1E on 紙 = 4.6:1+ (AA)。#C96F4A はテキストには #A14E2E に暗めて使用 (4.5:1)。</p>
+
+        <!-- Type / Motion -->
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">15–17 · Typography &amp; Motion</div>
+        <div style="font-size: 12.5px; line-height: 1.65; color: #3A362C; margin-bottom: 20px;">
+          <p style="margin: 0 0 6px;"><strong>Type:</strong> 人名 = <span style="font-family: 'Source Serif 4', serif; font-weight: 600;">Source Serif 4</span>(地図上で人間だけがserif = 人間だけが固有名詞)。Department = Archivo caps + letterspacing 3px(地名表記)。UI本文 = Archivo。Agentの注記 = 11px graphite。この4層のhierarchyがそのままPhilosophyの序列。</p>
+          <p style="margin: 0 0 6px;"><strong>Motion:</strong> 平常時は完全に静止(pulse dot 1つのみ)。Need → ripple 3周(各1.8s、ease-out)→ region覚醒(ラベルの色が0.6sでインク化)→ 候補の点が浮上 → 落選がフェード → terracottaの道が1.2sで描画(stroke-dashoffset)→ Created時に地図ごとフェードして2点1線が残る。</p>
+          <p style="margin: 0;"><strong>Demoの最強の瞬間:</strong> rippleが<strong>部署の破線を越える</strong>一拍。「境界は実在するが、signalは越える」が1カットで伝わる。</p>
+        </div>
+
+        <!-- Judgment -->
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">18–22 · Judgment</div>
+        <div style="display: grid; grid-template-columns: 118px 1fr; gap: 6px 14px; font-size: 12.5px; line-height: 1.55; color: #3A362C;">
+          <div style="font-weight: 600;">非generic性</div><div>AI SaaSに「会社の地図」は存在しない。node graphでもdashboardでもなく、cartographyという別の視覚言語を borrow している。</div>
+          <div style="font-weight: 600;">Enterprise成立</div><div>紙 + インク + 測量は年次報告書・組織図の伝統に接続する。むしろ既存SaaSより保守的に見える。</div>
+          <div style="font-weight: 600;">Risk</div><div>regionレイアウトが恣意的に見える危険。部署数が多いと地図が崩れる。「座席表・監視」に誤読されないようreal officeの地理とは無関係だと明示する必要。</div>
+          <div style="font-weight: 600;">実装難易度</div><div>中。regionは静的な手置きレイアウト(デモは1社固定)で成立。SVG + CSS animationのみ、物理シミュレーション不要。</div>
+          <div style="font-weight: 600;">既存UI残存率</div><div>~70%。shell / cards / type scale / terracottaの意味は温存。Bridge Traceの2カラムを地図 + drawerに置換、My Agentヘッダーにminimap追加。</div>
+        </div>
+      </div>
+      <div style="height: 24px;"></div>
+    </div>
+
+    <!-- ============ DIRECTION B ============ -->
+    <div id="1b" style="width: 660px; background: #FDFBF6; border: 1px solid #D8D1BE; box-shadow: 0 2px 8px rgba(38,34,26,0.07);">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid #E4DFD3;">
+        <div style="display: flex; align-items: baseline; gap: 12px;">
+          <span style="font-size: 11px; font-weight: 700; background: #26221A; color: #FDFBF6; padding: 3px 8px; letter-spacing: 0.08em;">1b</span>
+          <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6659;">Direction B</span>
+        </div>
+        <span style="font-size: 11px; color: #948E7D;">Latent Network</span>
+      </div>
+      <div style="padding: 24px 24px 8px;">
+        <h2 style="font-family: 'Source Serif 4', serif; font-size: 24px; font-weight: 600; margin: 0 0 6px;">The Latent Field</h2>
+        <p style="font-size: 13px; line-height: 1.65; color: #504A3C; margin: 0 0 18px;"><strong style="color: #26221A;">Design thesis:</strong> 組織には見えないHuman Networkが既に存在する — Needが生まれた瞬間だけ、その一部が暗い場から浮かび上がる。</p>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 8px;">3–4 · Signature Screen — 光の井戸としてのcanvas</div>
+        <svg viewBox="0 0 612 430" style="width: 100%; display: block; background: #F7F5F1; border: 1px solid #D8D1BE;">
+          <!-- light chrome frame -->
+          <rect x="0" y="0" width="120" height="430" fill="#FDFBF6"/>
+          <rect x="120" y="0" width="1" height="430" fill="#E4DFD3"/>
+          <text x="16" y="30" style="font: 600 9px 'Archivo'; fill: #6B6659;">Knowledge Discovery</text>
+          <text x="16" y="60" style="font: 500 9px 'Archivo'; fill: #948E7D;">My Agent</text>
+          <text x="16" y="80" style="font: 600 9px 'Archivo'; fill: #1F3A5F;">Bridge Trace</text>
+          <!-- dark canvas -->
+          <rect x="136" y="16" width="460" height="360" fill="#131A24"/>
+          <!-- latent field: faint dots -->
+          <circle cx="200" cy="80" r="2" fill="#2E3B4C"/><circle cx="250" cy="60" r="2" fill="#2E3B4C"/><circle cx="320" cy="90" r="2" fill="#2E3B4C"/>
+          <circle cx="420" cy="70" r="2" fill="#2E3B4C"/><circle cx="500" cy="100" r="2" fill="#2E3B4C"/><circle cx="540" cy="60" r="2" fill="#2E3B4C"/>
+          <circle cx="180" cy="180" r="2" fill="#2E3B4C"/><circle cx="260" cy="210" r="2" fill="#2E3B4C"/><circle cx="480" cy="180" r="2" fill="#2E3B4C"/>
+          <circle cx="230" cy="330" r="2" fill="#2E3B4C"/><circle cx="300" cy="350" r="2" fill="#2E3B4C"/><circle cx="520" cy="330" r="2" fill="#2E3B4C"/>
+          <line x1="200" y1="80" x2="250" y2="60" stroke="#223041" stroke-width="0.6"/>
+          <line x1="250" y1="60" x2="320" y2="90" stroke="#223041" stroke-width="0.6"/>
+          <line x1="420" y1="70" x2="480" y2="180" stroke="#223041" stroke-width="0.6"/>
+          <line x1="260" y1="210" x2="230" y2="330" stroke="#223041" stroke-width="0.6"/>
+          <!-- constellation group labels -->
+          <text x="240" y="46" style="font: 600 8px 'Archivo'; letter-spacing: 2.5px; fill: #44536A;">FINANCE</text>
+          <text x="490" y="46" style="font: 600 8px 'Archivo'; letter-spacing: 2.5px; fill: #44536A;">STRATEGY</text>
+          <text x="180" y="250" style="font: 600 8px 'Archivo'; letter-spacing: 2.5px; fill: #44536A;">OPERATIONS</text>
+          <text x="500" y="340" style="font: 600 8px 'Archivo'; letter-spacing: 2.5px; fill: #7A8AA3;">REAL ESTATE</text>
+          <!-- Jordan lit -->
+          <circle cx="220" cy="280" r="26" fill="none" stroke="#7FB4C9" stroke-width="0.8" opacity="0.5"/>
+          <circle cx="220" cy="280" r="42" fill="none" stroke="#7FB4C9" stroke-width="0.8" opacity="0.25"/>
+          <circle cx="220" cy="280" r="7" fill="#F0EBDD"/>
+          <text x="220" y="262" text-anchor="middle" style="font: 600 12px 'Source Serif 4', serif; fill: #F0EBDD;">Jordan Lee</text>
+          <!-- awakened candidates -->
+          <circle cx="400" cy="200" r="4" fill="#8FA3BC"/><text x="400" y="188" text-anchor="middle" style="font: 500 8px 'Archivo'; fill: #8FA3BC;">Elena</text>
+          <circle cx="330" cy="140" r="4" fill="#8FA3BC"/><text x="330" y="128" text-anchor="middle" style="font: 500 8px 'Archivo'; fill: #8FA3BC;">Tom</text>
+          <!-- Marcus + amber connection -->
+          <line x1="227" y1="286" x2="486" y2="306" stroke="#E0A458" stroke-width="1.8"/>
+          <circle cx="492" cy="308" r="7" fill="none" stroke="#E0A458" stroke-width="2"/>
+          <text x="492" y="292" text-anchor="middle" style="font: 600 12px 'Source Serif 4', serif; fill: #F0EBDD;">Marcus Delgado</text>
+          <!-- funnel overlay -->
+          <rect x="152" y="316" width="132" height="46" fill="#0E141C" stroke="#223041" stroke-width="1"/>
+          <text x="162" y="334" style="font: 500 8px 'Archivo'; fill: #7A8AA3;">400 → 20 → 4 → 1</text>
+          <text x="162" y="350" style="font: 500 8px 'Archivo'; fill: #7A8AA3;">private items masked</text>
+          <!-- trace strip below canvas -->
+          <text x="136" y="400" style="font: 500 9px 'Archivo'; fill: #6B6659;">TRACE · 09:41 stall detected → 09:42 sweep → 09:44 4 agents asked → 09:47 introduction ready</text>
+        </svg>
+        <p style="font-size: 11.5px; color: #6B6659; line-height: 1.6; margin: 8px 0 20px;">構図: <strong>光のchrome、闇のcanvas</strong>。アプリshellは既存の温かい紙のまま、Bridge Traceの窓だけが「組織の潜在層を覗く井戸」として暗い。1画面内のコントラストがそのままconcept(見える業務 / 見えないnetwork)。</p>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">5–10 · Visual Vocabulary</div>
+        <div style="display: grid; grid-template-columns: 118px 1fr; gap: 6px 14px; font-size: 12.5px; line-height: 1.55; color: #3A362C; margin-bottom: 20px;">
+          <div style="font-weight: 600;">Department</div><div>星座のまとまり。境界線は描かず、点の密度と薄いラベルで領域を示す(星座に国境はない)。</div>
+          <div style="font-weight: 600;">Human</div><div>光の点。関与すると点が明るく・名前がserifで浮かぶ。未関与の399人は暗い場のtexture。</div>
+          <div style="font-weight: 600;">Agent</div><div>点そのものではなく、点の間を走る<strong>細い調査線</strong>。人=光、agent=線、と役割を完全分離。</div>
+          <div style="font-weight: 600;">Need detected</div><div>Jordanの点が呼吸のように明滅し、柔らかいcyanのハローが1周広がる。</div>
+          <div style="font-weight: 600;">Search</div><div>relevanceの高いregionの点群が段階的に目を覚ます。落選した点は理由のtooltipを残して眠りに戻る。</div>
+          <div style="font-weight: 600;">Connection</div><div>全ての調査線が消え、amberの1本線だけが残る。「星座に新しい線が加わる」。</div>
+        </div>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">11–13 · 他画面とのContinuity</div>
+        <div style="font-size: 12.5px; line-height: 1.65; color: #3A362C; margin-bottom: 20px;">
+          <p style="margin: 0 0 6px;"><strong>My Agent:</strong> Need検知カードの端に小さな暗い窓(現在の探索の縮小live view)。クリックでBridge Traceへ。</p>
+          <p style="margin: 0 0 6px;"><strong>Connection Request:</strong> Marcusの画面上部に「あなたが今、誰かの空で光っている」ことを示す小さな星座片。承諾前はJordan側の詳細は見えない。</p>
+          <p style="margin: 0;"><strong>Connection Created:</strong> 暗い場全体が明るい紙にfade — 潜在層から日常へ戻り、amberの線だけが紙の上に残る。</p>
+        </div>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">14 · Color System —「夜の場、昼のchrome」</div>
+        <p style="font-size: 12px; line-height: 1.6; color: #504A3C; margin: 0 0 10px;">論拠: 「見えないものが浮かび上がる」は暗い地の上でしか成立しない。ただし全画面dark UIにするとAI toolのクリシェになるため、闇はcanvasの1領域に閉じ込める。</p>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px 16px; font-size: 11.5px; margin-bottom: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #131A24; flex: none;"></span>Canvas bg · 夜のインク #131A24</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #F7F5F1; border: 1px solid #D8D1BE; flex: none;"></span>Chrome bg · 既存の紙 #F7F5F1</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #F0EBDD; border-radius: 50%; flex: none;"></span>Human node · 温白 #F0EBDD</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #131A24; border-bottom: 2px solid #46586E; flex: none;"></span>Agent(調査線) · #46586E</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #131A24; color: #44536A; font: 600 7px 'Archivo'; display: flex; align-items: center; justify-content: center; flex: none;">ABC</span>Department label · #44536A</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #131A24; border-bottom: 1px solid #223041; flex: none;"></span>Inactive connection · #223041</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #7FB4C9; flex: none;"></span>Search/Signal · 淡cyan #7FB4C9</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #E0A458; flex: none;"></span>Human connection · amber #E0A458</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #C97B4A; flex: none;"></span>Warning · #C97B4A(chrome側でのみ使用)</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: repeating-linear-gradient(45deg, #6E7B8E 0 2px, #131A24 2px 5px); flex: none;"></span>Privacy boundary · #6E7B8E 破線囲い</div>
+        </div>
+        <p style="font-size: 11px; color: #6B6659; line-height: 1.55; margin: 0 0 20px;">WCAG: #F0EBDD on #131A24 = 14.2:1 (AAA)。#7FB4C9 on #131A24 = 8.0:1、#E0A458 = 7.4:1 (AA+)。canvas内textは全て12px以上を保証。</p>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">15–17 · Typography &amp; Motion</div>
+        <div style="font-size: 12.5px; line-height: 1.65; color: #3A362C; margin-bottom: 20px;">
+          <p style="margin: 0 0 6px;"><strong>Type:</strong> Aと同じ2書体戦略(serif=人名、grotesk caps=領域)。暗いcanvas上では人名serifがほぼ唯一の「文字」で、闇の中の名前という強い画になる。</p>
+          <p style="margin: 0 0 6px;"><strong>Motion:</strong> quiet(点の0.5%だけが時折瞬く)→ Need(Jordan明滅 + ハロー1周)→ 覚醒(点群が0.4s stagger で点灯)→ 絞り込み(落選が2sかけて減光)→ amber線の描画 → 全調査線消灯。粒子・回転・常時アニメは無し。</p>
+          <p style="margin: 0;"><strong>Demoの最強の瞬間:</strong> 承諾直後、<strong>数百の点が一斉に眠り、amberの1本線だけが闇に残る</strong>2秒間。</p>
+        </div>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">18–22 · Judgment</div>
+        <div style="display: grid; grid-template-columns: 118px 1fr; gap: 6px 14px; font-size: 12.5px; line-height: 1.55; color: #3A362C;">
+          <div style="font-weight: 600;">非generic性</div><div>light chrome + dark canvasの同居は珍しい。ただし<strong>node graph自体はAI demoの既視感が強く、ここが最大の弱点</strong>。静止画1枚ではObsidian / Neo4jに誤読されうる。</div>
+          <div style="font-weight: 600;">Enterprise成立</div><div>chromeが既存の紙UIのまま残るため、全体の信頼感は保たれる。canvasはあくまで1つの計器。</div>
+          <div style="font-weight: 600;">Risk</div><div>generic graph vizとの区別が「動き」に依存する。静止画勝負(Devpost)で不利。監視的に見えるリスクもAより高い(暗所で人が光る=検出のメタファーに近い)。</div>
+          <div style="font-weight: 600;">実装難易度</div><div>中〜高。点群レイアウト・stagger・減光の制御。CSS + SVGで可能だが調整コスト大。</div>
+          <div style="font-weight: 600;">既存UI残存率</div><div>~80%。chromeはそのまま。Bridge Traceのcanvas差し替えが中心。</div>
+        </div>
+      </div>
+      <div style="height: 24px;"></div>
+    </div>
+
+    <!-- ============ DIRECTION C ============ -->
+    <div id="1c" style="width: 660px; background: #FDFBF6; border: 1px solid #D8D1BE; box-shadow: 0 2px 8px rgba(38,34,26,0.07);">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid #E4DFD3;">
+        <div style="display: flex; align-items: baseline; gap: 12px;">
+          <span style="font-size: 11px; font-weight: 700; background: #26221A; color: #FDFBF6; padding: 3px 8px; letter-spacing: 0.08em;">1c</span>
+          <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6659;">Direction C</span>
+        </div>
+        <span style="font-size: 11px; color: #948E7D;">独自案 · The Introduction</span>
+      </div>
+      <div style="padding: 24px 24px 8px;">
+        <h2 style="font-family: 'Source Serif 4', serif; font-size: 24px; font-weight: 600; margin: 0 0 6px;">The Introduction — 見開きの紹介状</h2>
+        <p style="font-size: 13px; line-height: 1.65; color: #504A3C; margin: 0 0 18px;"><strong style="color: #26221A;">Design thesis:</strong> このプロダクトの成果物はnetworkでもdashboardでもなく「1通の紹介」である — 画面を、2人の人間が向かい合う見開き(book spread)として設計し、AIの全活動を<strong>脚注</strong>に格下げする。</p>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 8px;">3–4 · Signature Screen — 紹介状の見開き</div>
+        <svg viewBox="0 0 612 430" style="width: 100%; display: block; background: #F2EEE6; border: 1px solid #D8D1BE;">
+          <rect x="306" y="24" width="1" height="330" fill="#D8D1BE"/>
+          <text x="306" y="46" text-anchor="middle" style="font: italic 600 11px 'Source Serif 4', serif; fill: #8B8577;">An introduction, prepared by Jordan's agent</text>
+          <!-- left page: Jordan -->
+          <circle cx="160" cy="120" r="34" fill="#EAE4D6" stroke="#C9C1AD" stroke-width="1"/>
+          <text x="160" y="126" text-anchor="middle" style="font: 600 16px 'Source Serif 4', serif; fill: #8B8577;">JL</text>
+          <text x="160" y="184" text-anchor="middle" style="font: 600 20px 'Source Serif 4', serif; fill: #1F1D18;">Jordan Lee</text>
+          <text x="160" y="202" text-anchor="middle" style="font: 500 10px 'Archivo'; letter-spacing: 2px; fill: #8B8577;">OPERATIONS</text>
+          <text x="160" y="232" text-anchor="middle" style="font: italic 400 11px 'Source Serif 4', serif; fill: #504A3C;">needs a perspective on clinic</text>
+          <text x="160" y="248" text-anchor="middle" style="font: italic 400 11px 'Source Serif 4', serif; fill: #504A3C;">relocation before a sale ¹</text>
+          <!-- right page: Marcus -->
+          <circle cx="452" cy="120" r="34" fill="#EAE4D6" stroke="#C9C1AD" stroke-width="1"/>
+          <text x="452" y="126" text-anchor="middle" style="font: 600 16px 'Source Serif 4', serif; fill: #8B8577;">MD</text>
+          <text x="452" y="184" text-anchor="middle" style="font: 600 20px 'Source Serif 4', serif; fill: #1F1D18;">Marcus Delgado</text>
+          <text x="452" y="202" text-anchor="middle" style="font: 500 10px 'Archivo'; letter-spacing: 2px; fill: #8B8577;">REAL ESTATE</text>
+          <text x="452" y="232" text-anchor="middle" style="font: italic 400 11px 'Source Serif 4', serif; fill: #504A3C;">led two clinic relocations,</text>
+          <text x="452" y="248" text-anchor="middle" style="font: italic 400 11px 'Source Serif 4', serif; fill: #504A3C;">2022–2024 ² ³</text>
+          <!-- pending connection: unfinished ink line -->
+          <line x1="230" y1="140" x2="330" y2="140" stroke="#B14A32" stroke-width="1.6" stroke-dasharray="6 5"/>
+          <line x1="330" y1="140" x2="386" y2="140" stroke="#D8D1BE" stroke-width="1.6" stroke-dasharray="2 5"/>
+          <!-- CTA -->
+          <rect x="216" y="286" width="180" height="34" fill="#1F3A5F"/>
+          <text x="306" y="308" text-anchor="middle" style="font: 600 12px 'Archivo'; fill: #FDFBF6;">Ask Marcus for 15 min</text>
+          <text x="306" y="340" text-anchor="middle" style="font: 500 9px 'Archivo'; fill: #8B8577;">Marcus has not been contacted. Nothing is sent until you decide.</text>
+          <!-- footnotes = agent evidence -->
+          <rect x="24" y="360" width="564" height="1" fill="#C9C1AD"/>
+          <text x="24" y="380" style="font: 400 9.5px 'Source Serif 4', serif; fill: #6B6659;">¹ Stall detected: Riverside Clinic Relocation Assessment, no activity 6 days.   ² 400 profiles swept → 20 → 4 asked → 1.</text>
+          <text x="24" y="396" style="font: 400 9.5px 'Source Serif 4', serif; fill: #6B6659;">³ Marcus's agent confirmed relevance from a private item — content not disclosed. Full trace ›</text>
+        </svg>
+        <p style="font-size: 11.5px; color: #6B6659; line-height: 1.6; margin: 8px 0 20px;">構図: 2人の人間が本の見開きの左右ページ。間の線は「まだ引かれていない」(破線→承諾で実線)。AIの全仕事は書誌学の脚注¹²³としてページ下部に。<strong>脚注というメタファー自体が "AI activity is evidence" の直訳</strong>。</p>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">5–10 · Visual Vocabulary</div>
+        <div style="display: grid; grid-template-columns: 118px 1fr; gap: 6px 14px; font-size: 12.5px; line-height: 1.55; color: #3A362C; margin-bottom: 20px;">
+          <div style="font-weight: 600;">Department</div><div>人名の下のletterspaced capsの所属表記(名刺・蔵書票の流儀)。空間ではなく肩書として存在。</div>
+          <div style="font-weight: 600;">Human</div><div>ページの主。serif大組みの名前 + 一人称で書かれたneed/experienceの1文。</div>
+          <div style="font-weight: 600;">Agent</div><div>脚注番号(¹²³)。本文には現れず、根拠として参照されるだけ。</div>
+          <div style="font-weight: 600;">Need detected</div><div>左ページだけが先に「書かれる」— タイプライター的に1文が現れ、右ページは空白のまま。</div>
+          <div style="font-weight: 600;">Search</div><div>右ページに候補の名前が薄く重なって現れては消え(20→4→1)、最後にMarcusが定着する。</div>
+          <div style="font-weight: 600;">Connection</div><div>破線がsealing-wax redの実線になり、日付が刻印される —「Introduced · Mar 14, 2026」。</div>
+        </div>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">11–13 · 他画面とのContinuity</div>
+        <div style="font-size: 12.5px; line-height: 1.65; color: #3A362C; margin-bottom: 20px;">
+          <p style="margin: 0 0 6px;"><strong>My Agent:</strong> Need検知は「左ページが書かれ始めた」通知。ページの断片がカードとして現れる。</p>
+          <p style="margin: 0 0 6px;"><strong>Connection Request:</strong> Marcusは<strong>同じ見開きの右ページ側から</strong>見る。左ページ(Jordan)は承諾まで要約のみ。対称性がプライバシー設計そのもの。</p>
+          <p style="margin: 0;"><strong>Connection Created:</strong> 見開きが閉じて1枚のカードになる — 2つの名前、1本の線、日付。組織の「紹介の台帳」に積まれていく。</p>
+        </div>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">14 · Color System —「書簡」</div>
+        <p style="font-size: 12px; line-height: 1.6; color: #504A3C; margin: 0 0 10px;">論拠: 紹介状という私的で丁寧な文書の色。インクと封蝋以外の色を持たないことが誠実さの表現。</p>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px 16px; font-size: 11.5px; margin-bottom: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #F2EEE6; border: 1px solid #D8D1BE; flex: none;"></span>Base bg · 便箋 #F2EEE6</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #1F1D18; flex: none;"></span>Primary text · #1F1D18</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #EAE4D6; border: 1px solid #C9C1AD; border-radius: 50%; flex: none;"></span>Human · plate #EAE4D6 + serif名</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #FDFBF6; color: #8B8577; font: 600 10px 'Source Serif 4', serif; display: flex; align-items: center; justify-content: center; flex: none;">¹</span>Agent · 脚注 graphite #8B8577</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #F2EEE6; color: #8B8577; font: 500 6px 'Archivo'; letter-spacing: 1px; display: flex; align-items: center; justify-content: center; flex: none;">OPS</span>Department · caps表記 #8B8577</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #F2EEE6; border-bottom: 2px dashed #C9C1AD; flex: none;"></span>Inactive connection · 破線 #C9C1AD</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #2C4A6E; flex: none;"></span>Search/Signal · 万年筆blue #2C4A6E</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #B14A32; flex: none;"></span>Human connection · 封蝋 #B14A32</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: #A65B1E; flex: none;"></span>Warning · #A65B1E</div>
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 22px; background: repeating-linear-gradient(45deg, #8B8577 0 2px, #F2EEE6 2px 5px); flex: none;"></span>Privacy · redaction帯 #8B8577</div>
+        </div>
+        <p style="font-size: 11px; color: #6B6659; line-height: 1.55; margin: 0 0 20px;">WCAG: #1F1D18 on #F2EEE6 = 14.6:1。#2C4A6E = 8.5:1、#B14A32 = 5.5:1 (AA)。脚注は9.5pxでなく実装では12px以上に。</p>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">15–17 · Typography &amp; Motion</div>
+        <div style="font-size: 12.5px; line-height: 1.65; color: #3A362C; margin-bottom: 20px;">
+          <p style="margin: 0 0 6px;"><strong>Type:</strong> 3案中もっともtypography主導。人名 = Source Serif 4 semibold 大組み。need/experience文 = serif italic(人の声)。脚注 = serif 小組み(AIの声は常にこのスタイル)。UI操作系のみ Archivo。<strong>書体がそのまま「誰が話しているか」の表明</strong>。</p>
+          <p style="margin: 0 0 6px;"><strong>Motion:</strong> 文字が書かれる速度のmotion。左ページ執筆 → 右ページで候補名が入れ替わり定着 → 破線が実線へ(0.9s)→ 日付スタンプ。アニメ対象はほぼテキストと1本の線のみ。</p>
+          <p style="margin: 0;"><strong>Demoの最強の瞬間:</strong> 空白だった右ページに<strong>Marcusの名前が定着する</strong>瞬間 —「組織があなたの問いに答えた」。</p>
+        </div>
+
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948E7D; margin-bottom: 10px;">18–22 · Judgment</div>
+        <div style="display: grid; grid-template-columns: 118px 1fr; gap: 6px 14px; font-size: 12.5px; line-height: 1.55; color: #3A362C;">
+          <div style="font-weight: 600;">非generic性</div><div>graph も map も dashboard も使わない唯一の案。AI SaaSの語彙が画面に1つも無い。</div>
+          <div style="font-weight: 600;">Enterprise成立</div><div>紹介状・推薦状はビジネスの最古のUI。役員に最も説明しやすい。</div>
+          <div style="font-weight: 600;">Risk</div><div><strong>「組織全体を探索した」規模感が画面から消える</strong>(脚注の数字でしか語れない)。Devpostの静止画では「きれいなプロフィールカード」に見える危険。autonomous agentの技術的凄みが伝わりにくい。</div>
+          <div style="font-weight: 600;">実装難易度</div><div>低。ほぼtypographyとレイアウト。3案中最速。</div>
+          <div style="font-weight: 600;">既存UI残存率</div><div>~60%。person card / status系は書簡様式に組み直し。shellは残る。</div>
+        </div>
+      </div>
+      <div style="height: 24px;"></div>
+    </div>
+  </div>
+
+  <!-- ============ VERDICT ============ -->
+  <div id="1d" style="width: 1050px; background: #26221A; color: #EDE8DB; box-shadow: 0 2px 12px rgba(38,34,26,0.2);">
+    <div style="display: flex; align-items: center; gap: 12px; padding: 20px 32px; border-bottom: 1px solid #453F32;">
+      <span style="font-size: 11px; font-weight: 700; background: #EDE8DB; color: #26221A; padding: 3px 8px; letter-spacing: 0.08em;">1d</span>
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #A39B85;">Design Director's Verdict</span>
+    </div>
+    <div style="padding: 28px 32px 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 40px;">
+      <div>
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #A39B85; margin-bottom: 6px;">Q1 · Devpostに載せる1枚</div>
+        <p style="font-size: 13px; line-height: 1.7; margin: 0 0 18px; color: #DDD6C4;"><a href="#1a" style="color: #E0A458;">1a</a> の Bridge Trace(探索中盤: rippleが境界を越え、Marcusが浮上した瞬間のフレーム)。地図 + 部署ラベル + 波紋 + 境界を跨ぐ1本の線 + 「400 → 20 → 4 → 1」が1枚に同居し、名詞(組織)・動詞(探索)・成果(接続)が全部写る唯一の画面。</p>
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #A39B85; margin-bottom: 6px;">Q2 · 3秒で伝わるか</div>
+        <p style="font-size: 13px; line-height: 1.7; margin: 0 0 18px; color: #DDD6C4;">伝わる。読み順が設計されている: ①「会社の地図だ」(部署ラベル)→ ②「誰かから信号が出ている」(ripple)→ ③「別の部署の人と繋がった」(境界を跨ぐ線)。3ステップとも文章を読まずに図像だけで成立する。BはObsidian、Cはプロフィールカードに誤読される余地が残る。</p>
+      </div>
+      <div>
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #A39B85; margin-bottom: 6px;">Q3 · 固有のプロダクトか</div>
+        <p style="font-size: 13px; line-height: 1.7; margin: 0 0 18px; color: #DDD6C4;">「自社の地図の上で、自分の代わりに誰かを探してくれた」という画は他のどのAI SaaSにも属さない。cartographyの語彙(紙・インク・破線境界・地名caps)はnode graphの語彙と根本的に違うため、模倣元が想起されない。</p>
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #A39B85; margin-bottom: 6px;">Q4 · 受賞作と並んで「世界」があるか</div>
+        <p style="font-size: 13px; line-height: 1.7; margin: 0 0 18px; color: #DDD6C4;">Agentropolis=City、MLB=Field、INTER=Room に対し、Knowledge Discovery=<strong style="color: #EDE8DB;">Company Atlas</strong>。「このプロダクトの中では会社は地図である」という世界の定義を持てる。Bは世界ではなく計器、Cは世界ではなく文書。</p>
+      </div>
+      <div style="grid-column: 1 / -1; border-top: 1px solid #453F32; padding-top: 22px;">
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #E0A458; margin-bottom: 8px;">最終判断 — Direction A「The Company Atlas」を採用</div>
+        <p style="font-size: 13.5px; line-height: 1.75; margin: 0 0 10px; color: #EDE8DB;">理由は3つ。<strong>①スクリーンショット1枚テストに勝つのはAだけ</strong> — Bの価値は動きに、Cの価値は読むことに依存するが、Aは静止画で全文が伝わる。<strong>②Product Problemが構図に内蔵されている</strong> — 「同じ会社にいても出会えていない」は、破線の境界と、それを跨ぐたった1本の線という構図そのもの。<strong>③Philosophyがレイヤー構造で守られる</strong> — 人=インク(最濃)、部署=地名(中)、agent=鉛筆の注記(最薄)。AIは地図に書き込む測量士であって、地形ではない。</p>
+        <p style="font-size: 12.5px; line-height: 1.7; margin: 0; color: #A39B85;">なお採用後、Bの「落選ノードの減光」とCの「脚注としてのagent evidence」は<em>思想として</em>Aの演出・trace drawerの文体に反映できるが、視覚言語の混合はしない — canvasはあくまで地図1本。次の一手: Bridge Trace signature screenのhi-fi 1枚(静止)→ 承認後にNeed→Connectionのmotion prototype。</p>
+      </div>
+    </div>
+  </div>
+</section>
+</x-dc>
+</body>
+</html>
