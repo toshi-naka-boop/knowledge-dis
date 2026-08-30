@@ -14,11 +14,11 @@
     "design.md",
     "ledger.md"
   ],
-  "nextAction": "FEATURE FREEZE（2026-08-29 v1.0-autonomous-agent タグ・push済み）。以降は submission 準備のみ: ①デモ台本（7シーン・autonomous no-click含む、構造提案→承認→本文）②収録（reseed前に kd-autonomous-sweep pause／DEMO_TODAY更新／narration-tts でクローン音声）③アーキ図 ④英語write-up（Spark/MCPは先々の検討候補・Memory Bank・agent identity）⑤GitHub public化 ⑥Devpost提出（8/31 17:00 PDT）。任意残: ゴール28実機（ユーザーのOAuthログイン待ち・凍結対象外の検証）",
+  "nextAction": "FEATURE FREEZE 継続（UI/提出物は8/30に整備済み: Company Atlas UI実装・アーキ図GEAP対応・writeup英日・台本v2・testing-instructions・record_day_reset.sh）。残タスク: ①新UIをCloud Runへデプロイ（収録前必須・本番はまだ旧UI）②収録（scripts/record_day_reset.sh → 台本v2）③GitHub公開 or testing@devpost.com/cloudhackathons@google.com へ共有（problem-evidence.md の取扱い未決）④Devpost記入（writeup.md貼付・アーキ図・動画URL・testing-instructions.md をキー差替えて貼付）⑤提出直前に demo-api-key ローテーション（8/31 17:00 PDT = 9/1 9:00 JST 締切）⑥審査後Teardown",
   "delegation": {
     "批評": "claude-opus-5[1m] design-critic + codex/gpt-5.6-sol xhigh（round-7クロスベンダー）",
     "実装": "antigravity/gemini-3.7-flash-high（M1/M2/M3 A段）＋claude/sonnet（M3テスト補完・B段 secretary_agent）＋Claude Fable 5（B段インフラ・修正）",
     "反証": "claude-opus-5[1m] design-critic ×3（round-8 正しさ/安全性、round-9）+ codex/gpt-5.6-sol xhigh（round-8 過剰実装）"
   },
-  "lastUpdated": "2026-08-29"
+  "lastUpdated": "2026-08-30"
 }
