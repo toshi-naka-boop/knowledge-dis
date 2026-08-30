@@ -27,7 +27,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from urllib.parse import parse_qs
+
 from knowledge_discovery.auth import (
+    DEMO_ACCESS_COOKIE,
     Principal,
     PrincipalResolver,
     _CachingCertsRequest,
@@ -164,6 +167,60 @@ class AutonomyPolicyRequest(BaseModel):  # type: ignore[misc]
     prepare_introduction: bool = Field(..., description="Permission to prepare a request draft (requires ask)")
     contact_mode: str = Field(default="always_ask", description="Always 'always_ask' in this phase")
 
+
+
+# -----------------------------------------------------------------------------
+# Demo sign-in page (Company Atlas styling, self-contained)
+# -----------------------------------------------------------------------------
+
+def _login_page(error: bool = False) -> str:
+    """アクセスコードを HttpOnly Cookie に引き換えるサインインページ（demo_key モード）。"""
+    error_html = (
+        '<div class="err">That code didn\'t match. '
+        "Check the submission's testing instructions.</div>"
+        if error
+        else ""
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Discovery — Sign in</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #E4D5AC; font-family: 'Archivo', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }}
+  .card {{ width: min(420px, 92vw); background: #F8F1DC; border: 1.6px solid #58412C; padding: 8px;
+          box-shadow: 0 4px 18px rgba(59,44,29,0.16); }}
+  .inner {{ border: 0.7px solid #58412C; padding: 34px 36px 30px; text-align: center; }}
+  .eyebrow {{ font-size: 10.5px; font-weight: 700; letter-spacing: 0.2em; color: #8A7354; margin-bottom: 14px; }}
+  h1 {{ font-family: Georgia, 'Source Serif 4', serif; font-size: 25px; font-weight: 600; color: #26221A; margin-bottom: 8px; }}
+  p {{ font-size: 12.5px; color: #6E5A40; line-height: 1.6; margin-bottom: 18px; }}
+  input {{ width: 100%; font-size: 14px; color: #26221A; background: #FDF8E9; border: 1px solid #A8946C;
+          padding: 11px 12px; margin-bottom: 12px; }}
+  input:focus {{ outline: none; border-color: #58412C; }}
+  button {{ width: 100%; height: 42px; background: #1F3A5F; color: #F8F1DC; border: none;
+           font: 600 13.5px inherit; font-family: inherit; cursor: pointer; }}
+  button:hover {{ background: #16304F; }}
+  .err {{ font-size: 12px; color: #A13A20; margin-bottom: 12px; }}
+  .foot {{ font-size: 10.5px; color: #8A7354; margin-top: 14px; }}
+</style>
+</head>
+<body>
+  <div class="card"><div class="inner">
+    <div class="eyebrow">AN ATLAS OF KNOWLEDGE</div>
+    <h1>Knowledge Discovery</h1>
+    <p>Enter the access code from the submission's testing instructions.</p>
+    {error_html}
+    <form method="post" action="/login">
+      <input type="password" name="code" placeholder="Access code" autofocus autocomplete="off">
+      <button type="submit">Enter the atlas</button>
+    </form>
+    <div class="foot">All data is synthetic — a fictional company, 401 employees.</div>
+  </div></div>
+</body>
+</html>"""
 
 
 # -----------------------------------------------------------------------------
@@ -437,6 +494,41 @@ def create_app(
     @app.get("/", response_class=RedirectResponse, include_in_schema=False)
     def index() -> str:
         return "/requester"
+
+    # Access-code sign-in for the hosted demo (AUTH_MODE=demo_key): exchanges
+    # the demo key for the HttpOnly DEMO_ACCESS_COOKIE so it never rides in a
+    # URL. Header/query credentials keep working unchanged (backward compat
+    # for Scheduler jobs and scripts); the resolver treats all three the same.
+    @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
+    def login_form() -> HTMLResponse:
+        return HTMLResponse(content=_login_page())
+
+    @app.post("/login", include_in_schema=False)
+    async def login_submit(request: Request) -> Any:
+        # Parsed by hand to avoid a python-multipart dependency for one form.
+        raw = (await request.body()).decode("utf-8", errors="replace")
+        code = (parse_qs(raw).get("code") or [""])[0].strip()
+        tenant = registry.resolve_by_api_key(code) if code else None
+        if tenant is None:
+            return HTMLResponse(content=_login_page(error=True), status_code=401)
+        response = RedirectResponse(url="/requester", status_code=303)
+        # Secure only over HTTPS (Cloud Run terminates TLS and sets
+        # x-forwarded-proto); a hard secure=True would make Safari and test
+        # clients drop the cookie on plain-http localhost.
+        is_https = (
+            request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto", "").lower() == "https"
+        )
+        response.set_cookie(
+            DEMO_ACCESS_COOKIE,
+            code,
+            max_age=14 * 24 * 3600,
+            httponly=True,
+            secure=is_https,
+            samesite="lax",
+            path="/",
+        )
+        return response
 
     @app.get("/requester", response_class=HTMLResponse, include_in_schema=False)
     def requester_ui() -> HTMLResponse:

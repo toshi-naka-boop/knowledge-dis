@@ -77,6 +77,11 @@ def _forbidden(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
 
+#: HttpOnly cookie set by POST /login: carries the same demo key as the
+#: X-API-Key header, so it never has to ride in the URL (demo_key mode only).
+DEMO_ACCESS_COOKIE = "kd_access"
+
+
 class DemoKeyResolver(PrincipalResolver):
     """AUTH_MODE=demo_key: the key presented determines the tenant (§16.2).
 
@@ -86,13 +91,21 @@ class DemoKeyResolver(PrincipalResolver):
     identity (unchanged from the pre-Part-A behavior). There is no key that
     spans multiple tenants and no way to address another tenant from this
     resolver (design §16.2: "全テナント横断の鍵...は置かない").
+
+    The key may arrive three equivalent ways: X-API-Key header, api_key query
+    parameter, or the DEMO_ACCESS_COOKIE set by POST /login (the browser
+    sign-in path, so judges never carry the key in a URL).
     """
 
     def __init__(self, registry: TenantRegistry) -> None:
         self.registry = registry
 
     def resolve(self, request: Request) -> Principal:
-        provided_key = request.headers.get("x-api-key") or request.query_params.get("api_key")
+        provided_key = (
+            request.headers.get("x-api-key")
+            or request.query_params.get("api_key")
+            or request.cookies.get(DEMO_ACCESS_COOKIE)
+        )
         tenant = self.registry.resolve_by_api_key(provided_key) if provided_key else None
         if tenant is None:
             raise _unauthorized(

@@ -37,4 +37,4 @@ fi
 
 echo "-- 5/5 新キーをクリップボードへ（Devpost のテスト手順欄 <DEMO_API_KEY> に貼る）"
 printf '%s' "${NEW_KEY}" | pbcopy
-echo "完了。キー入りURL例: ${BASE_URL}/requester?api_key=<クリップボードの値>"
+echo "完了。審査員は ${BASE_URL}/ を開き、クリップボードのアクセスコードでサインインする"

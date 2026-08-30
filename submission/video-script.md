@@ -153,7 +153,7 @@ AI shouldn't replace human connections. It should create them.
 
 ## 3-A（1:15–1:31 / 16秒）Jordan の朝 — 秘書としての日常
 
-**操作**: `/requester?api_key=...` を開いた状態から開始。スクロールなし。**地図は画面に存在しない**（静けさの演出）。
+**操作**: 事前に `/login` でアクセスコードを入れておき（Cookie セッション）、`/requester` を開いた状態から開始。**アドレスバーにキーは載らない**。スクロールなし。**地図は画面に存在しない**（静けさの演出）。
 **画面で見せるもの**: 中央カラムに `Good morning, Jordan` / バッジ行 `● Your agent · monitoring automatically · last sweep 12 min ago` / Watching 1行カード `Allied Health Clinician Credentialing Verification — No updates for 2 days · Monitoring` / TODAY の4行（メール由来の `YOUR AGENT SUGGESTS` カードが出ていればそのまま映してよい。操作はしない）。
 **カメラ**: バッジ行に 1秒ズーム。次に Watching 行に 1.5秒。
 
@@ -173,7 +173,7 @@ AI shouldn't replace human connections. It should create them.
 
 **操作**:
 1. ターミナル（またはCloud Schedulerコンソール）に切り替え、`gcloud scheduler jobs run kd-autonomous-sweep --location=asia-northeast1` を実行。**この画面は2〜3秒だけ映す**（Scene 4 の GCP 証明の伏線になる）。
-2. ブラウザに戻り、URL を `/requester?api_key=...&reveal=1` にして**リロードするだけ**。マウスでカードを操作しない。
+2. ブラウザに戻り、URL を `/requester?reveal=1` にして**リロードするだけ**。マウスでカードを操作しない。
 3. 画面が変形する: 秘書レールが左半分に、**右半分に「自分のコーナーの海図」がスライドイン**。破線のスイープ航路がチャート外へ伸びる。
 
 **画面で見せるもの**: 左＝`INTRODUCTION PREPARED — NOT SENT` / `Marcus Delgado` / `REAL ESTATE` / 斜体の根拠文＋脚注 `²` / `QUESTION DRAFT — EDIT BEFORE ASKING` / `[Ask Marcus for 15 min]`。右＝海図（Jordan のドット・信号の波紋・破線航路）と下部チップ `● Introduction prepared — see the route on the atlas ›`。
@@ -258,7 +258,7 @@ AUTONOMY POLICY
 
 ## 3-E（2:35–2:57 / 22秒）受け手側 — 紹介状。何が共有され、何が守られたか
 
-**操作**: `/candidate?api_key=...` へ（既定で Marcus のインボックス）。上部に海図ストリップ、中央にレター。ゆっくり1画面ぶんだけスクロール。
+**操作**: `/candidate` へ（既定で Marcus のインボックス）。上部に海図ストリップ、中央にレター。ゆっくり1画面ぶんだけスクロール。
 **画面で見せるもの**:
 - 海図ストリップ: `SOMEONE FOUND A ROUTE TO YOUR ISLAND` / 右端の自分の海岸に `You`（赤いアウトラインの点）/ 西から届く破線
 - レター: `AN INTRODUCTION · PREPARED BY JORDAN LEE'S AGENT` / `Jordan Lee needs your perspective.` / 斜体の依頼文 / `JORDAN LEE · 15 MINUTES · THIS WEEK` / `[Accept the introduction]` `[Decline quietly]` / `Declining is invisible to Jordan.`
@@ -301,7 +301,7 @@ AUTONOMY POLICY
 
 ## 3-G（3:15–3:25 / 10秒）成立 — 橋だけが残る
 
-**操作**: `/requester?api_key=...&view=atlas` を開く。ロード直後に**探索の痕跡（波紋・航路・匿名ドット・released 候補）が約2秒でフェードアウトする遷移**が自動再生される。操作しない。
+**操作**: `/requester?view=atlas` を開く。ロード直後に**探索の痕跡（波紋・航路・匿名ドット・released 候補）が約2秒でフェードアウトする遷移**が自動再生される。操作しない。
 **画面で見せるもの**: 静かになった海図に2つの島だけ / **実線の橋** / 斜体 `a path that didn't exist yesterday` / 傾いたスタンプ `INTRODUCED · HH:MM` / 上部 `the search is over — 399 people were never disturbed` / 下部ドロワーは `LEDGER` に切替。
 **カメラ**: フェード遷移をそのまま見せ、最後にスタンプへ寄る。
 
@@ -333,13 +333,13 @@ gcloud run services update knowledge-discovery --region=asia-northeast1 --update
 gcloud scheduler jobs resume kd-autonomous-sweep --location=asia-northeast1
 ```
 
-- **3-A の前**: `/requester?api_key=...` を開き、**地図が出ていない**こと（view--calm）と Watching 行を確認。NEED カードが既に出ていたら reseed からやり直す。
-- **3-B**: `jobs run` の直後は数秒待ってから **`&reveal=1` を付けて**リロード。レイアウトが 50/50 に変わり、候補が展開済みで表示される（クリック不要）。`last sweep just now` になる。
+- **3-A の前**: `/login` でアクセスコードを入力してから `/requester` を開き、**地図が出ていない**こと（view--calm）と Watching 行を確認。以降の全シーンで URL にキーは不要（Cookie セッション）。NEED カードが既に出ていたら reseed からやり直す。
+- **3-B**: `jobs run` の直後は数秒待ってから **`?reveal=1` を付けて**リロード。レイアウトが 50/50 に変わり、候補が展開済みで表示される（クリック不要）。`last sweep just now` になる。
 - **3-B′**: 海図はどこをクリックしても遷移する。下部チップにカーソルを寄せてからクリックすると意図が伝わりやすい。
 - **3-C**: `?autonomy=1` は**廃止（無害な no-op）**。AUTONOMY POLICY カードは常時表示なので操作不要。
 - **3-D**: アトラス側の Introduction card で撮ると破線アニメーションが同一フレームに入る。レール側カードで撮る場合は送信後にステータスカードへ。
 - **3-E**: `/candidate` は既定で Marcus のインボックス。ペルソナ切替の操作は映さなくてよい。
-- **3-G**: `&view=atlas` 付きで開き直すとフェード遷移がロード時に再生される。1回で決まらなければリロードで何度でも再生可能（サーバ状態は変わらない）。
+- **3-G**: `?view=atlas` 付きで開き直すとフェード遷移がロード時に再生される。1回で決まらなければリロードで何度でも再生可能（サーバ状態は変わらない）。
 - **失敗時のやり直し**: 3-D で Ask した後に撮り直す場合は、reseed からやり直す（confirm 済みカードは terminal 状態のため再現しない）。
 
 ---

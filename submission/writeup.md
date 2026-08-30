@@ -42,7 +42,7 @@ And the organization becomes a chart. The Company Atlas: departments are islands
 
 The demo is live on Cloud Run, right now. In the demo's world, "Jordan" is a healthcare-staffing manager; the out-of-field request is a clinic relocation — a real-estate question. The colleague who had done it twice sat on a different island entirely.
 
-`/requester` is Jordan's screen. `/candidate` is the letter that reaches Marcus. `/audit` is Bridge Trace. The keyed link is in this submission's testing instructions; the whole flow — request, approve, respond, audit — runs from that one link. The data is all synthetic; you can't break anything.
+`/requester` is Jordan's screen. `/candidate` is the letter that reaches Marcus. `/audit` is Bridge Trace. Sign in once with the access code from this submission's testing instructions — the session is an HttpOnly cookie, so no credential ever rides in a URL — and the whole flow (request, approve, respond, audit) runs from there. The data is all synthetic; you can't break anything.
 
 ## How we built it
 
@@ -67,7 +67,7 @@ Approval is structural.
 - Privacy is enforced by the type system, not by the model's self-report. Private items are masked fail-closed off the real `visibility` field. A model that lies about what it cited can unmask nothing.
 - Data boundary = process boundary. Candidates are evaluated one by one, each in its own isolated inference. Cross-candidate leakage isn't policed — it's impossible.
 - The audit respects privacy too. Before approval: counts only — no names, no free text. Names appear after a human says yes. And delivery is never authorized by an LLM score alone: missing, non-numeric, out of range — all fail closed to "no connection" (our own red team hit this spot; we hardened it).
-- Honestly: the demo runs on one shared key, so a judge can drive the whole flow from a single URL. The production path — IAP, per-employee principals, horizontal-authorization guards — is implemented and tested. What remains is one deployment flag.
+- Honestly: the demo runs on one shared access code (exchanged at /login for an HttpOnly cookie — never carried in a URL), so a judge can drive the whole flow from one sign-in. The production path — IAP, per-employee principals, horizontal-authorization guards — is implemented and tested. What remains is one deployment flag.
 
 ## Challenges we ran into
 

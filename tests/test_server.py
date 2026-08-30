@@ -443,5 +443,45 @@ class TestServerEndpoints(unittest.TestCase):
         self.assertIn("Last sweep", res_audit.text)
 
 
+
+
+class TestDemoLoginCookie(unittest.TestCase):
+    """POST /login exchanges the demo key for the HttpOnly access cookie
+    (auth.DEMO_ACCESS_COOKIE); header/query credentials stay untouched."""
+
+    def setUp(self) -> None:
+        if not HAS_FASTAPI_TESTCLIENT:
+            self.skipTest("FastAPI TestClient is not available in this environment.")
+        self.client = TestClient(create_app(api_key="test-key"))
+
+    def test_login_page_serves(self) -> None:
+        res = self.client.get("/login")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("Access code", res.text)
+
+    def test_wrong_code_is_rejected_without_cookie(self) -> None:
+        res = self.client.post("/login", data={"code": "wrong-key"})
+        self.assertEqual(res.status_code, 401)
+        self.assertNotIn("kd_access", res.cookies)
+        # and the session as a whole still cannot call the API
+        res_api = self.client.get("/api/agents")
+        self.assertEqual(res_api.status_code, 401)
+
+    def test_correct_code_sets_cookie_and_grants_api_access(self) -> None:
+        res = self.client.post("/login", data={"code": "test-key"}, follow_redirects=False)
+        self.assertEqual(res.status_code, 303)
+        self.assertEqual(res.headers["location"], "/requester")
+        set_cookie = res.headers.get("set-cookie", "")
+        self.assertIn("kd_access", set_cookie)
+        self.assertIn("HttpOnly", set_cookie)
+        self.assertIn("SameSite=lax", set_cookie)
+        # cookie jar now authenticates API calls with no header at all
+        res_api = self.client.get("/api/agents")
+        self.assertEqual(res_api.status_code, 200)
+
+    def test_header_auth_still_works_unchanged(self) -> None:
+        res = self.client.get("/api/agents", headers={"X-API-Key": "test-key"})
+        self.assertEqual(res.status_code, 200)
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,13 +1,15 @@
 # Devpost テスト手順欄の文面（draft v1）
 
-Devpost の "Testing instructions for judges" 欄に貼る英文。`<DEMO_API_KEY>` は提出直前にローテーションした実キーに置き換える（この欄以外——公開リポジトリ・writeup——にはキーを書かない）。
+Devpost の "Testing instructions for judges" 欄に貼る英文。`<DEMO_API_KEY>` は提出直前にローテーションした実キー（＝アクセスコード）に置き換える（この欄以外——公開リポジトリ・writeup——には書かない）。
 
 ---
 
 **Live demo (Cloud Run):**
-`https://knowledge-discovery-dg6u6zqs7q-an.a.run.app/requester?api_key=<DEMO_API_KEY>`
+`https://knowledge-discovery-dg6u6zqs7q-an.a.run.app/`
 
-The `api_key` query parameter authenticates every page; keep it in the URL as you navigate.
+**Access code:** `<DEMO_API_KEY>`
+
+Open the URL, enter the access code once on the sign-in page, and you're in — the session is a secure HttpOnly cookie, so no credential ever rides in a URL.
 
 **Suggested 5-minute tour**
 
@@ -23,7 +25,7 @@ The `api_key` query parameter authenticates every page; keep it in the URL as yo
 
 ## 参考訳（日本語）
 
-**ライブデモ（Cloud Run）**: キー入りURLからアクセス。`api_key` クエリが全ページの認証なので、URL に付けたまま遷移する。
+**ライブデモ（Cloud Run）**: URL を開き、サインインページでアクセスコードを1回入力。以降は HttpOnly Cookie のセッションで、URL に認証情報は載らない。
 
 **5分ツアー**: ① `/requester`（Jordan の画面）で「YOUR AGENT NOTICED」カード → Find someone → ドラフト確認 → Ask for 15 min。右の海図をクリックするとフルアトラス。② `/candidate` で Marcus 側に紹介状が届く。承諾・資料共有・静かな辞退（依頼者には見えない）。③ `/audit`（Bridge Trace）で監査証跡——承認前は件数のみ、承認後に実名。
 

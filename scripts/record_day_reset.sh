@@ -36,10 +36,10 @@ gcloud scheduler jobs resume kd-autonomous-sweep --location="${REGION}" --projec
 cat <<NEXT
 
 == 完了。収録前の確認 ==
-1. /requester?api_key=... を開く: 地図なしの秘書ホーム（view--calm）で、Watching 行だけが出ていること
+1. /login でアクセスコードを入力 → /requester: 地図なしの秘書ホーム（view--calm）で、Watching 行だけが出ていること
    （NEED カードが既に出ていたらこのスクリプトを再実行）
 2. Scene 3-B の合図はこれ:
    gcloud scheduler jobs run kd-autonomous-sweep --location=${REGION} --project=${PROJECT_ID}
-   数秒待ってから '&reveal=1' 付きでリロード
+   数秒待ってから '?reveal=1' 付きでリロード
 3. 3-D で Ask した後に撮り直す場合は、このスクリプトからやり直す（confirm 済みカードは再現しない）
 NEXT

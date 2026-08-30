@@ -236,13 +236,15 @@ function esc(v) {
 }
 
 function withKey(path) {
+  if (!API_KEY) return path; // cookie session (/login) rides along on its own
   return path + (path.includes("?") ? "&" : "?") + "api_key=" + encodeURIComponent(API_KEY);
 }
 
 function setupChrome() {
   if (!API_KEY) {
-    document.body.insertAdjacentHTML("afterbegin",
-      '<div class="api-key-warning">Missing api_key: open this page as /candidate?api_key=YOUR_KEY</div>');
+    // No key in the URL: a /login cookie session may be active. Probe once
+    // and bounce to the sign-in page if it is not.
+    fetch("/api/me").then((r) => { if (r.status === 401) location.replace("/login"); }).catch(() => {});
   }
   const reqLink = document.getElementById("navRequester");
   const auditLink = document.getElementById("navAudit");
