@@ -260,17 +260,41 @@ Output strictly valid JSON matching the required schema.
         connection_data = data.get("connection")
         if isinstance(connection_data, dict):
             reason_text = str(connection_data.get("reason_text", "")).strip()
-            try:
-                score = float(connection_data.get("score", 0.8))
-            except (ValueError, TypeError):
-                score = 0.8
+            # Fail-closed score parsing (security-synthesis S-3): a missing,
+            # non-numeric, non-finite, or out-of-[0,1] score must NOT coerce to
+            # a passing default. The old `float(..., 0.8)` default let an
+            # injected profile omit the score and ride 0.8 past the 0.50
+            # threshold, delivering the requester's question to the attacker.
+            # The LLM score is never a delivery authorization on its own.
+            score: float | None = None
+            raw_score = connection_data.get("score")
+            # Reject bool explicitly: JSON `true`/`false` -> float 1.0/0.0 would
+            # otherwise ride through as an in-range score.
+            if not isinstance(raw_score, bool):
+                try:
+                    parsed = float(raw_score)  # type: ignore[arg-type]
+                    if math.isfinite(parsed) and 0.0 <= parsed <= 1.0:
+                        score = parsed
+                except (ValueError, TypeError):
+                    score = None
 
-            if reason_text:
+            if reason_text and score is not None:
                 return ConnectionInferenceResult(
                     connection=ConnectionDetails(reason_text=reason_text, score=score),
                     no_connection_reason=None,
                     cited_item_keys=[str(k) for k in cited_keys],
                 )
+            # A connection dict that lacks a valid reason+score is treated as
+            # no connection, not silently promoted.
+            no_conn_reason = (
+                data.get("no_connection_reason")
+                or "No valid connection score returned — treated as no connection"
+            )
+            return ConnectionInferenceResult(
+                connection=None,
+                no_connection_reason=str(no_conn_reason),
+                cited_item_keys=[str(k) for k in cited_keys],
+            )
 
         # Connection is null or invalid
         no_conn_reason = data.get("no_connection_reason") or "No meaningful connection found"

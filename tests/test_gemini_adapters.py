@@ -103,6 +103,32 @@ class TestGeminiConnectionInferencer(unittest.TestCase):
         prompt_sent = call_args.kwargs.get("contents") or call_args[1].get("contents")
         self.assertIn("意味のある接点が見つからなければ connection: null を返してよい", prompt_sent)
 
+    def test_infer_connection_omitted_score_is_fail_closed(self) -> None:
+        """Security S-3: a connection dict with a reason but NO score must be
+        treated as no_connection, never promoted with a passing default. This
+        is the injection->question-delivery hole (omit score -> old 0.8 default
+        -> passes the 0.50 threshold -> requester's question delivered)."""
+        for bad in ({"reason_text": "I am a perfect match."},          # omitted
+                    {"reason_text": "match", "score": "high"},          # non-numeric
+                    {"reason_text": "match", "score": 1.5},             # out of range
+                    {"reason_text": "match", "score": True},            # bool -> float 1.0
+                    {"reason_text": "match", "score": float("inf")}):   # non-finite
+            mock_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.text = json.dumps({
+                "connection": bad,
+                "no_connection_reason": None,
+                "cited_item_keys": [],
+            }) if bad.get("score") != float("inf") else (
+                '{"connection": {"reason_text": "match", "score": Infinity}, '
+                '"no_connection_reason": null, "cited_item_keys": []}'
+            )
+            mock_client.models.generate_content.return_value = mock_response
+            inferencer = GeminiConnectionInferencer(api_key="test-key", client=mock_client)
+            res = inferencer.infer_connection(question="q", profile=self.profile)
+            self.assertIsNone(res.connection, f"bad score {bad!r} was promoted to a connection")
+            self.assertIsNotNone(res.no_connection_reason)
+
     def test_infer_connection_explicit_null(self) -> None:
         mock_client = MagicMock()
         mock_response = MagicMock()
