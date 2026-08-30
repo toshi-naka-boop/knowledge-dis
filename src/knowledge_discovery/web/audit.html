@@ -4,38 +4,41 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Knowledge Discovery — Bridge Trace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-/* Knowledge Discovery — Bridge Trace (Phase 2 redesign)
-   Same design tokens / app-shell as requester.html (Phase 1), inlined here
-   because server.py serves this file as a raw HTML shell (no static mount).
-   Light theme; this screen is allowed to feel a little more technical than
-   requester/candidate, but no black background, neon, or cyberpunk styling. */
+/* Knowledge Discovery — Bridge Trace (Company Atlas token reskin)
+   Layout and JS are the Phase 2 design untouched; only the design tokens
+   below were swapped to the Company Atlas parchment palette so the audit
+   view sits in the same world as requester/candidate. The screen stays a
+   little more technical (mono timestamps, dense timeline) by design.
+   Inlined here because server.py serves this file as a raw HTML shell. */
 
 :root {
-  --bg: #F7F5F1;
-  --card-bg: #FFFFFF;
-  --border: #E4DFD3;
-  --border-strong: #D4CDBC;
-  --text: #232323;
-  --text-muted: #6B6659;
-  --text-faint: #948E7D;
+  --bg: #E4D5AC;
+  --card-bg: #F8F1DC;
+  --border: #C3AF85;
+  --border-strong: #A8946C;
+  --text: #26221A;
+  --text-muted: #6E5A40;
+  --text-faint: #8A7354;
   --primary: #1F3A5F;
   --primary-hover: #16304F;
-  --primary-tint: #EAF0F6;
-  --accent: #C96F4A;      /* used only when a connection is made */
-  --accent-tint: #FBEEE7;
-  --warn: #B5560C;        /* overdue: warm, but distinct from the connection accent */
-  --warn-tint: #FBEFE3;
-  --danger: #B3261E;
-  --danger-tint: #FBEAE8;
-  --muted-tag-bg: #EFEBE1;
-  --muted-tag-text: #6B6659;
-  --today-bg: #EAF0F6;
+  --primary-tint: #E3E7EA;
+  --accent: #A13A20;      /* used only when a connection is made */
+  --accent-tint: #F2DFD2;
+  --warn: #7A3A22;        /* overdue: warm, but distinct from the connection accent */
+  --warn-tint: #F2DFD2;
+  --danger: #8F2013;
+  --danger-tint: #F0D6CE;
+  --muted-tag-bg: #EBEAD3;
+  --muted-tag-text: #6E5A40;
+  --today-bg: #E3E7EA;
   --today-text: #1F3A5F;
-  --radius: 8px;
-  --radius-sm: 6px;
-  --shadow-card: 0 1px 2px rgba(35, 35, 35, 0.05);
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --radius: 0px;
+  --radius-sm: 0px;
+  --shadow-card: 0 1px 3px rgba(59, 44, 29, 0.10);
+  --font: 'Archivo', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
