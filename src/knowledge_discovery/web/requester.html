@@ -182,6 +182,12 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
 }
 .rail-head { display: flex; flex-direction: column; gap: 6px; }
 .greeting { font-family: var(--serif); font-size: 27px; font-weight: 600; color: var(--ink); }
+.purpose { font-size: 13px; line-height: 1.55; color: var(--ink-body); max-width: 62ch; margin-top: 2px; }
+.purpose strong { color: var(--ink); }
+.lang-hint { font-size: 11.5px; color: var(--muted-2); margin: -4px 0 10px; line-height: 1.5; }
+.lang-hint.warn { color: var(--crossing); font-weight: 600; }
+.history-q { font-size: 12px; color: var(--muted); margin: 14px 0 6px; font-style: italic; }
+.history-details > summary { font-size: 12.5px; color: var(--muted); cursor: pointer; font-weight: 600; margin-top: 6px; }
 .agent-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
 .rail-footnote { margin-top: auto; font-family: var(--serif); font-size: 12.5px; color: var(--muted); padding-top: 10px; }
 .rail-footnote a { text-decoration: none; }
@@ -382,7 +388,28 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
       <div class="rail-head">
         <div class="greeting" id="greeting">Good morning</div>
         <div class="agent-badge"><span class="pulse-dot blue"></span><span id="agentBadgeText">Your agent</span></div>
+        <p class="purpose" id="purposeLine"><strong>Don't know who to ask?</strong> Describe what you need. Your agent looks for colleagues who might know, shows you who it would ask, and — only after you confirm and they agree — proposes a 15-minute conversation. The people you can reach are the owners of the <span id="agentCount">registered</span> agents; nobody is notified automatically.</p>
       </div>
+
+      <!-- Manual ask: the main action, so it comes first and starts open -->
+      <details class="manual-ask" id="manualAsk" open>
+        <summary></summary>
+        <div class="manual-ask-body">
+          <div class="demo-presets">
+            <button class="preset-btn" onclick="setQuestion(1)">Demo 1: Clinic Relocation &amp; Zoning</button>
+            <button class="preset-btn" onclick="setQuestion(2)">Demo 2: Practice Succession &amp; Retirement</button>
+            <button class="preset-btn" onclick="setQuestion(3)">Demo 3: General Inquiries</button>
+          </div>
+          <textarea id="questionText" maxlength="2000" oninput="checkLanguage()" placeholder="Describe the implicit background, tacit experience, or specialized knowledge you need..."></textarea>
+          <div class="lang-hint" id="langHint">Write the question in English: the demo's profiles are English, so a Japanese question will most likely reach nobody. （日本語の質問は、このデモのプロフィールが英語のため、ほぼ誰にも届きません。英語で書いてください。）</div>
+          <div class="btn-row">
+            <button id="submitBtn" class="btn-action" onclick="submitInquiry()">Ask</button>
+            <button class="btn-ghost" onclick="clearForm()">Clear</button>
+            <span id="liveStatus" class="live-indicator" style="display:none;"><span class="pulse-dot blue"></span> Live</span>
+          </div>
+          <div id="queryMeta" class="info-bar"></div>
+        </div>
+      </details>
 
       <!-- Need Detection (protagonist: shown first when present) -->
       <div id="needDetectionSection" class="need-stack"></div>
@@ -399,7 +426,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
             </label>
             <label class="autonomy-row">
               <input type="checkbox" id="autonomySearch" onchange="updateAutonomyFlag('search_organization', this.checked)">
-              Search the organization automatically
+              Search registered colleagues automatically
             </label>
             <label class="autonomy-row">
               <input type="checkbox" id="autonomyAsk" onchange="updateAutonomyFlag('ask_candidate_agents', this.checked)">
@@ -439,29 +466,15 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
           <span>CONNECTION REQUESTS</span>
           <button class="btn-quiet" onclick="fetchStatuses()">Refresh</button>
         </div>
+        <div id="latestQuestion" class="history-q" style="display:none;"></div>
         <div id="statusContainer" class="status-row">
-          <div class="empty-note">No requests yet. When your agent prepares an introduction, or you use "Ask your agent" below, the people asked will appear here.</div>
+          <div class="empty-note">No requests yet. When your agent prepares an introduction, or you use "Ask your agent" above, the people asked will appear here.</div>
         </div>
+        <details class="history-details" id="historyDetails" style="display:none;">
+          <summary id="historySummary">Earlier questions</summary>
+          <div id="historyContainer"></div>
+        </details>
       </div>
-
-      <!-- Manual ask (de-emphasized) -->
-      <details class="manual-ask">
-        <summary></summary>
-        <div class="manual-ask-body">
-          <div class="demo-presets">
-            <button class="preset-btn" onclick="setQuestion(1)">Demo 1: Clinic Relocation &amp; Zoning</button>
-            <button class="preset-btn" onclick="setQuestion(2)">Demo 2: Practice Succession &amp; Retirement</button>
-            <button class="preset-btn" onclick="setQuestion(3)">Demo 3: General Inquiries</button>
-          </div>
-          <textarea id="questionText" placeholder="Describe the implicit background, tacit experience, or specialized knowledge you need..."></textarea>
-          <div class="btn-row">
-            <button id="submitBtn" class="btn-action" onclick="submitInquiry()">Ask</button>
-            <button class="btn-ghost" onclick="clearForm()">Clear</button>
-            <span id="liveStatus" class="live-indicator" style="display:none;"><span class="pulse-dot blue"></span> Live</span>
-          </div>
-          <div id="queryMeta" class="info-bar"></div>
-        </div>
-      </details>
 
       <div class="rail-footnote" id="railFootnote">¹ <span id="footnoteText">your agent's trace appears here</span> · <a id="footnoteTraceLink" href="/audit" style="text-decoration: none;">full trace ›</a></div>
     </div>
@@ -587,7 +600,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
           </g>
 
           <!-- quiet-state message (connected only) -->
-          <text class="quiet-only" x="960" y="196" text-anchor="middle" style="font: italic 400 15px 'Source Serif 4', serif; fill: #A08A62;">the search is over — 399 people were never disturbed</text>
+          <text class="quiet-only" x="960" y="196" text-anchor="middle" style="font: italic 400 15px 'Source Serif 4', serif; fill: #A08A62;">the search is over — a connection was made</text>
 
           <!-- ══ HEALTHCARE STAFFING (awakened) — Jordan's island ══ -->
           <g class="awake-island">
@@ -662,7 +675,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
             <text x="256" y="88" text-anchor="middle" style="font: 600 15px 'Source Serif 4', serif; letter-spacing: 4px; fill: #3B2C1D;">AN ATLAS OF KNOWLEDGE</text>
             <g class="cartouche-search">
               <text x="256" y="106" text-anchor="middle" style="font: italic 400 11.5px 'Source Serif 4', serif; fill: #6E5A40;">distances are organizational, not geographic</text>
-              <text x="256" y="124" text-anchor="middle" style="font: 400 10.5px 'Archivo', sans-serif; fill: #8A7354;">401 people across 5 islands · 2 named</text>
+              <text x="256" y="124" text-anchor="middle" style="font: 400 10.5px 'Archivo', sans-serif; fill: #8A7354;">an illustrative map of a fictional company</text>
             </g>
             <g class="cartouche-done">
               <text x="256" y="106" text-anchor="middle" style="font: italic 400 11.5px 'Source Serif 4', serif; fill: #6E5A40;">one new crossing recorded</text>
@@ -697,7 +710,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
       <div class="trace-drawer">
         <button class="trace-back" onclick="showView('rail')">‹ my agent</button>
         <span class="trace-label" id="traceLabel">TRACE</span>
-        <span class="trace-text" id="traceText">¹ stall detected — no recent activity&nbsp;&nbsp;·&nbsp;&nbsp;automatic sweep — 400 profiles → shortlist → candidate agents asked → 1 introduction prepared&nbsp;&nbsp;·&nbsp;&nbsp;² relevance confirmed by the candidate's agent — private items masked</span>
+        <span class="trace-text" id="traceText">¹ stall detected — no recent activity&nbsp;&nbsp;·&nbsp;&nbsp;automatic sweep — candidate agents checked → 1 introduction prepared&nbsp;&nbsp;·&nbsp;&nbsp;² relevance confirmed by the candidate's agent — private items masked</span>
         <a class="trace-link" id="traceLink" href="/audit">Full trace ▴</a>
       </div>
     </div>
@@ -758,15 +771,26 @@ function clearNotice() {
 }
 
 // Shown when a question reached nobody: say why, and what to try next.
-function noMatchMessage() {
+// `alreadyAsked` lists contacts skipped because an earlier request of yours to
+// them is still open or was accepted (nobody is asked twice).
+let REGISTERED_AGENT_COUNT = null;
+function noMatchMessage(alreadyAsked) {
+  const names = (alreadyAsked || []).map(esc);
+  const scope = REGISTERED_AGENT_COUNT == null ? "the registered agents" : `the ${REGISTERED_AGENT_COUNT} registered agents`;
+  const skipped = names.length
+    ? `<br><br><strong>Not asked again:</strong> ${names.join(", ")} — you already have an open or accepted request to them (see Earlier questions below). Nothing new was sent.`
+    : "";
+  const why = names.length
+    ? ""
+    : `Your question was compared with ${scope} (only they can be asked), and none looked close enough. Nothing was sent to anyone.
+    Try again with more concrete wording, in English: the field or industry, the kind of situation, and what you need (an example, a contact, a decision).
+    The Bridge Trace page (/audit) lists, for each person, why they were not asked.`;
   return `<div class="status-card"><div class="status-head"><span class="status-name">No one was asked</span><span class="status-tag waiting">NO MATCH</span></div>
-    <div class="status-body">Your question was checked against every registered profile, and none looked close enough to ask. Nothing was sent to anyone.
-    Try again with more concrete wording: the field or industry, the kind of situation, and what you need (an example, a contact, a decision).
-    The Bridge Trace page (/audit) lists, for each person, why they were not asked.</div></div>`;
+    <div class="status-body">${why}${skipped}</div></div>`;
 }
 
 // Demo/screenshot device: with ?reveal=1, the first request_draft stagnation
-// card skips the "Looking across your organization…" animation and renders
+// card skips the "Showing the colleagues…" animation and renders
 // its PersonCard immediately. Normal URLs (no reveal=1) are unaffected.
 const REVEAL_PARAM = (new URLSearchParams(location.search)).get("reveal") === "1";
 // Demo staging: ?view=atlas opens the full-atlas Bridge Trace view on load,
@@ -929,7 +953,7 @@ async function initPrincipal() {
 }
 
 // -------------------------------------------------------------------------
-// Manual "Ask your agent" (kept, de-emphasized)
+// Manual "Ask your agent" (the main action)
 // -------------------------------------------------------------------------
 
 const DEMO_QUESTIONS = {
@@ -940,11 +964,13 @@ const DEMO_QUESTIONS = {
 
 function setQuestion(num) {
   document.getElementById("questionText").value = DEMO_QUESTIONS[num] || "";
+  checkLanguage();
 }
 
 function clearForm() {
   document.getElementById("questionText").value = "";
   document.getElementById("queryMeta").innerText = "";
+  checkLanguage();
 }
 
 async function submitInquiry() {
@@ -953,9 +979,18 @@ async function submitInquiry() {
     alert("Please enter a question.");
     return;
   }
+  if (hasJapanese(q) && !confirm("This question is written in Japanese, but the demo's profiles are in English, so it will most likely reach nobody.\nSend it anyway?\n（日本語の質問はほぼ誰にも届きません。このまま送りますか？）")) {
+    return;
+  }
   const submitBtn = document.getElementById("submitBtn");
   submitBtn.disabled = true;
   submitBtn.innerText = "Dispatching...";
+  // A rate-limited model service can make one question take minutes: say so.
+  const slowTimer = setTimeout(() => {
+    submitBtn.innerText = "Still working…";
+    document.getElementById("queryMeta").innerText =
+      "Still working: the model service may be rate-limited and is being retried. This can take a few minutes. Please do not press Ask again; nothing is sent twice if you wait.";
+  }, 8000);
 
   try {
     const res = await fetch("/api/query", {
@@ -969,12 +1004,16 @@ async function submitInquiry() {
     }
     const data = await res.json();
 
+    const skippedNames = data.already_asked_names || [];
     document.getElementById("queryMeta").innerText =
-      `Inquiry ID: ${data.query_id} · dispatched to ${data.dispatched_count} candidate agent(s)`;
+      `Inquiry ID: ${data.query_id} · dispatched to ${data.dispatched_count} candidate agent(s)` +
+      (skippedNames.length ? ` · not asked again: ${skippedNames.join(", ")}` : "");
     if (data.dispatched_count === 0) {
       if (pollInterval) clearInterval(pollInterval);
       document.getElementById("liveStatus").style.display = "none";
-      document.getElementById("statusContainer").innerHTML = noMatchMessage();
+      document.getElementById("statusContainer").innerHTML = noMatchMessage(skippedNames);
+      await fetchStatuses(true);
+      document.getElementById("historyDetails").open = true;
       return;
     }
     document.getElementById("liveStatus").style.display = "inline-flex";
@@ -985,8 +1024,30 @@ async function submitInquiry() {
   } catch (err) {
     alert(networkFailureMessage("send your question"));
   } finally {
+    clearTimeout(slowTimer);
     submitBtn.disabled = false;
     submitBtn.innerText = "Ask";
+  }
+}
+
+function hasJapanese(text) {
+  return /[\u3040-\u30ff\u4e00-\u9fff]/.test(text);
+}
+function checkLanguage() {
+  const hint = document.getElementById("langHint");
+  if (hint) hint.classList.toggle("warn", hasJapanese(document.getElementById("questionText").value));
+}
+
+async function loadAgentCount() {
+  try {
+    const res = await fetch("/api/agents", { headers: { "X-API-Key": API_KEY } });
+    if (!res.ok) return;
+    const data = await res.json();
+    REGISTERED_AGENT_COUNT = (data.agents || []).length;
+    const el = document.getElementById("agentCount");
+    if (el) el.textContent = String(REGISTERED_AGENT_COUNT);
+  } catch (err) {
+    console.error("Agents fetch error:", err);
   }
 }
 
@@ -1198,7 +1259,7 @@ function renderNeedCard(card, monitorOn) {
     <div class="atl-card" id="card_box_${esc(card.card_id)}" data-state="initial">
       <div class="eyebrow">YOUR AGENT NOTICED ¹</div>
       <div class="card-headline">${esc(p.task_title || p.task_id)} has stalled.</div>
-      <div class="card-body">${esc(splitEvidence(p.evidence_line) || "This is stalling.")} I can look across your organization for someone who has relevant experience.</div>
+      <div class="card-body">${esc(splitEvidence(p.evidence_line) || "This is stalling.")} I can compare this with the colleagues who have a registered agent and look for someone with relevant experience.</div>
       <div class="btn-row">
         <button class="btn-action" onclick="findSomeone('${esc(card.card_id)}')">Find someone who can help</button>
         <button class="btn-quiet" onclick="dismissCard('${esc(card.card_id)}')">Dismiss</button>
@@ -1223,7 +1284,7 @@ function findSomeone(cardId) {
   box.innerHTML = `
     <div class="sweep-line" style="border-top: none; margin-top: 0; padding-top: 0;">
       <span class="pulse-dot"></span>
-      <span class="sweep-line-text">Sweeping the organization for relevant experience…</span>
+      <span class="sweep-line-text">Showing the colleagues your agent found among registered agents…</span>
     </div>
     <div class="card-meta">nothing has been sent to anyone</div>`;
   setTimeout(() => revealCandidates(cardId), 1700);
@@ -1314,7 +1375,9 @@ async function confirmStagnation(cardId, editedQuestion) {
     if (data.status === "confirmed" && data.dispatched_count === 0) {
       if (pollInterval) clearInterval(pollInterval);
       document.getElementById("liveStatus").style.display = "none";
-      document.getElementById("statusContainer").innerHTML = noMatchMessage();
+      document.getElementById("statusContainer").innerHTML = noMatchMessage(data.already_asked_names || []);
+      await fetchStatuses(true);
+      document.getElementById("historyDetails").open = true;
       return;
     }
     document.getElementById("liveStatus").style.display = "inline-flex";
@@ -1431,7 +1494,7 @@ async function updateAutonomyFlag(field, value) {
 // Connection Requests (status) — also drives the atlas state machine
 // -------------------------------------------------------------------------
 
-async function fetchStatuses() {
+async function fetchStatuses(keepContainer) {
   try {
     const res = await fetch(`/api/requester/${REQUESTER_ID}/status`, {
       headers: { "X-API-Key": API_KEY }
@@ -1443,7 +1506,11 @@ async function fetchStatuses() {
     const data = await res.json();
     clearNotice();
     const statuses = data.statuses || [];
-    renderStatuses(statuses);
+    const history = data.history || [];
+    // keepContainer: a "nobody was asked" explanation is on screen; keep it
+    // (only the earlier-questions list is refreshed).
+    if (!keepContainer) renderStatuses(statuses);
+    renderHistory(history);
     // Atlas state: a made connection wins; otherwise a pending ask keeps the
     // dash advancing; otherwise fall back to the discovered state.
     if (statuses.some(s => s.state === "matched")) {
@@ -1457,14 +1524,48 @@ async function fetchStatuses() {
   }
 }
 
+function shorten(text, n) {
+  const t = String(text || "");
+  return t.length > n ? t.slice(0, n - 1) + "…" : t;
+}
+
+// Earlier questions keep their outcomes (a connection made, a decline and its
+// reason) after a newer question is asked. history[0] is the latest question,
+// which the main list already shows.
+function renderHistory(history) {
+  const latestEl = document.getElementById("latestQuestion");
+  const details = document.getElementById("historyDetails");
+  if (!history || history.length === 0) {
+    latestEl.style.display = "none";
+    details.style.display = "none";
+    return;
+  }
+  latestEl.style.display = "";
+  latestEl.textContent = `Latest question: “${shorten(history[0].question_text, 140)}”`;
+  const earlier = history.slice(1);
+  if (earlier.length === 0) {
+    details.style.display = "none";
+    return;
+  }
+  details.style.display = "";
+  document.getElementById("historySummary").textContent = `Earlier questions (${earlier.length})`;
+  document.getElementById("historyContainer").innerHTML = earlier.map(h =>
+    `<div class="history-q">“${esc(shorten(h.question_text, 140))}”</div>` +
+    `<div class="status-row">${statusCardsHtml(h.statuses) || '<div class="empty-note">Nobody was asked for this question.</div>'}</div>`
+  ).join("");
+}
+
 function renderStatuses(statuses) {
   const container = document.getElementById("statusContainer");
   if (!statuses || statuses.length === 0) {
-    container.innerHTML = '<div class="empty-note">No requests yet. When your agent prepares an introduction, or you use "Ask your agent" below, the people asked will appear here.</div>';
+    container.innerHTML = '<div class="empty-note">No requests yet. When your agent prepares an introduction, or you use "Ask your agent" above, the people asked will appear here.</div>';
     return;
   }
+  container.innerHTML = statusCardsHtml(statuses);
+}
 
-  container.innerHTML = statuses.map((item) => {
+function statusCardsHtml(statuses) {
+  return (statuses || []).map((item) => {
     const name = esc(item.respondent_name || "Your colleague");
     if (item.state === "pending") {
       return `
@@ -1473,7 +1574,7 @@ function renderStatuses(statuses) {
             <span class="status-name">Request sent to ${name}</span>
             <span class="status-tag waiting">PENDING</span>
           </div>
-          <div class="status-body">Their agent is reviewing it. If they decline, you will see their name and the reason they give.</div>
+          <div class="status-body">${name} is not notified automatically: they see the request when they open the Requests page (/candidate). If they decline, you will see their name and the reason they give.</div>
         </div>`;
     }
     if (item.state === "matched") {
@@ -1494,6 +1595,7 @@ function renderStatuses(statuses) {
     }
     if (item.state === "declined") {
       let bodyHtml;
+      const noteHtml = item.decline_reason ? ` <em>"${esc(item.decline_reason)}"</em>` : "";
       if (item.attachment) {
         let attHtml = "";
         if (item.attachment.type === "link") {
@@ -1504,9 +1606,9 @@ function renderStatuses(statuses) {
         } else {
           attHtml = `<div class="attachment-box">${esc(item.attachment.content)}</div>`;
         }
-        bodyHtml = `${name} shared a resource instead.${attHtml}`;
+        bodyHtml = `${name} shared a resource instead.${noteHtml}${attHtml}`;
       } else {
-        bodyHtml = `${name} can't make it this time.${item.decline_reason ? ` <em>"${esc(item.decline_reason)}"</em>` : ""}`;
+        bodyHtml = `${name} can't make it this time.${noteHtml}`;
       }
       return `
         <div class="status-card">
@@ -1527,6 +1629,7 @@ function renderStatuses(statuses) {
 
 setupChrome();
 initPrincipal().then(() => {
+  loadAgentCount();
   fetchDigest();
   fetchStatuses();
   loadAutonomyPolicy();

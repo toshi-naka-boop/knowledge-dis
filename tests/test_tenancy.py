@@ -26,7 +26,7 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from knowledge_discovery.models import Agent, Card, Profile, ProfileItem, Task
+from knowledge_discovery.models import Agent, AutonomyPolicy, Card, Profile, ProfileItem, Task
 from knowledge_discovery.store import InMemoryStore
 from knowledge_discovery.tenancy import (
     DEFAULT_DATABASE,
@@ -322,18 +322,22 @@ class TestTenantIsolation(unittest.TestCase):
 
     def test_query_requester_status_candidate_asks_audit_isolated(self) -> None:
         # A question crafted to overlap with tenant A's profile body only.
+        # (The requester is a different employee: a requester is never asked about
+        # their own question, so emp_shared, who owns the only agent, cannot be it.)
+        self.store_a.save_autonomy_policy(AutonomyPolicy(employee_id="emp_asker"))
+        self.store_b.save_autonomy_policy(AutonomyPolicy(employee_id="emp_asker"))
         query_a = self.client.post(
             "/api/query",
-            json={"requester_id": "emp_shared", "question_text": "Who knows about clinic zoning permits?"},
+            json={"requester_id": "emp_asker", "question_text": "Who knows about clinic zoning permits?"},
             headers=self.headers_a,
         )
         self.assertEqual(query_a.status_code, 200)
 
         # Tenant B has not been queried at all yet.
-        status_b = self.client.get("/api/requester/emp_shared/status", headers=self.headers_b).json()
+        status_b = self.client.get("/api/requester/emp_asker/status", headers=self.headers_b).json()
         self.assertEqual(status_b["statuses"], [])
 
-        status_a = self.client.get("/api/requester/emp_shared/status", headers=self.headers_a).json()
+        status_a = self.client.get("/api/requester/emp_asker/status", headers=self.headers_a).json()
         self.assertGreaterEqual(len(status_a["statuses"]), 1)
 
         # Candidate asks: tenant B's inbox for the SAME agent_id is empty;

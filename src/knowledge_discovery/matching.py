@@ -185,7 +185,7 @@ class DroppedCandidate:
     reason_text: str
     cited_item_keys: list[str]
     score: float
-    drop_stage: str  # 'vector_floor' | 'stage2_null' | 'stage2_threshold' | 'k_limit'
+    drop_stage: str  # 'vector_floor' | 'stage2_null' | 'stage2_threshold' | 'k_limit' | 'already_asked'
 
 
 @dataclass
@@ -195,6 +195,9 @@ class MatchingResult:
     funnel_candidates: list[FunnelCandidate]
     qualified_candidates: list[QualifiedCandidate]
     dropped_candidates: list[DroppedCandidate]
+    # Real counts of this run (shown in the audit view instead of constants):
+    profiles_screened: int = 0  # profiles the screen funnel compared with the question
+    agents_considered: int = 0  # active registered agents that could be asked at all
 
 
 class MatchingEngine:
@@ -343,9 +346,19 @@ class MatchingEngine:
         )
         return self.preview_evaluate(question, shortlist, max_candidates=max_candidates)
 
-    def screen_funnel(self, question: str, all_profiles: list[Profile]) -> list[FunnelCandidate]:
-        """Track 1: Screen funnel ranking top 20 across all profiles for scale display (C-16)."""
-        q_emb = self.embedder.embed(question)
+    def screen_funnel(
+        self,
+        question: str,
+        all_profiles: list[Profile],
+        q_emb: list[float] | None = None,
+    ) -> list[FunnelCandidate]:
+        """Track 1: Screen funnel ranking top 20 across all profiles for scale display (C-16).
+
+        Display only: nothing is sent to anyone because of this ranking. Pass `q_emb`
+        to reuse an already computed question embedding (one embedding call per question).
+        """
+        if q_emb is None:
+            q_emb = self.embedder.embed(question)
         scored: list[tuple[Profile, float]] = []
 
         for prof in all_profiles:
@@ -373,9 +386,11 @@ class MatchingEngine:
         question: str,
         registered_agents: list[Agent],
         profiles: dict[str, Profile],
+        q_emb: list[float] | None = None,
     ) -> list[tuple[Agent, Profile, float]]:
         """Track 2: Delivery ranking filtered strictly to active registered agents (C-16)."""
-        q_emb = self.embedder.embed(question)
+        if q_emb is None:
+            q_emb = self.embedder.embed(question)
         active_agents = [a for a in registered_agents if a.active]
         ranked: list[tuple[Agent, Profile, float]] = []
 
@@ -397,21 +412,50 @@ class MatchingEngine:
         question: str,
         registered_agents: list[Agent],
         all_profiles: list[Profile],
+        exclude_employee_id: str | None = None,
+        skip_agents: dict[str, str] | None = None,
     ) -> MatchingResult:
-        """Execute full exploratory matching pipeline (2 tracks × 2 stages)."""
-        profiles_by_id = {p.employee_id: p for p in all_profiles}
+        """Execute full exploratory matching pipeline (2 tracks × 2 stages).
 
-        # Track 1: Screen Funnel
-        funnel = self.screen_funnel(question, all_profiles)
+        - The question is embedded once and reused by both tracks.
+        - `exclude_employee_id` (the requester) is never screened, ranked or asked.
+        - `skip_agents` maps agent_id -> reason for agents who must not be asked
+          again (an earlier request from the same requester is still pending or was
+          accepted). They are recorded as dropped (no model call is spent on them).
+        """
+        skip_agents = skip_agents or {}
+        if exclude_employee_id is not None:
+            all_profiles = [p for p in all_profiles if p.employee_id != exclude_employee_id]
+            registered_agents = [a for a in registered_agents if a.employee_id != exclude_employee_id]
+        profiles_by_id = {p.employee_id: p for p in all_profiles}
+        q_emb = self.embedder.embed(question)
+
+        # Track 1: Screen Funnel (display only)
+        funnel = self.screen_funnel(question, all_profiles, q_emb=q_emb)
 
         # Track 2: Delivery Ranking
-        delivery_candidates = self.delivery_ranking(question, registered_agents, profiles_by_id)
+        delivery_candidates = self.delivery_ranking(question, registered_agents, profiles_by_id, q_emb=q_emb)
+        agents_considered = len(delivery_candidates)
 
         qualified: list[QualifiedCandidate] = []
         dropped: list[DroppedCandidate] = []
 
         # Stage 2: Independent inference per candidate (C-17)
         for agent, profile, vector_sim in delivery_candidates:
+            # Gate 0: never ask the same requester's pending/accepted contact twice
+            if agent.agent_id in skip_agents:
+                dropped.append(
+                    DroppedCandidate(
+                        agent=agent,
+                        profile=profile,
+                        reason_text=skip_agents[agent.agent_id],
+                        cited_item_keys=[],
+                        score=vector_sim,
+                        drop_stage="already_asked",
+                    )
+                )
+                continue
+
             # Gate 1: Deterministic Vector Floor (C-23)
             if vector_sim < self.vector_floor:
                 dropped.append(
@@ -450,7 +494,10 @@ class MatchingEngine:
                     DroppedCandidate(
                         agent=agent,
                         profile=profile,
-                        reason_text=f"接続スコア({inference_res.connection.score:.2f})が閾値({self.connection_threshold:.2f})未満のため落選",
+                        reason_text=(
+                            f"Connection score {inference_res.connection.score:.2f} is below the "
+                            f"threshold {self.connection_threshold:.2f}"
+                        ),
                         cited_item_keys=list(inference_res.cited_item_keys),
                         score=inference_res.connection.score,
                         drop_stage="stage2_threshold",
@@ -478,7 +525,7 @@ class MatchingEngine:
                     DroppedCandidate(
                         agent=c.agent,
                         profile=c.profile,
-                        reason_text=f"最大配送数(k={self.max_dispatch_k})の上限による落選",
+                        reason_text=f"Qualified, but only the top {self.max_dispatch_k} are asked per question",
                         cited_item_keys=c.cited_item_keys,
                         score=c.score,
                         drop_stage="k_limit",
@@ -489,4 +536,6 @@ class MatchingEngine:
             funnel_candidates=funnel,
             qualified_candidates=qualified,
             dropped_candidates=dropped,
+            profiles_screened=len(all_profiles),
+            agents_considered=agents_considered,
         )

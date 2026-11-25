@@ -46,6 +46,11 @@ class InvalidConsentDecisionError(Exception):
 
 
 VALID_CONSENT_DECISIONS = ("granted", "declined")
+VALID_ATTACHMENT_TYPES = ("link", "text", "doc")
+
+
+class InvalidAttachmentError(Exception):
+    """attachment is malformed (rejected before any state change, so the ask stays pending)."""
 
 
 class ConsentConflictError(Exception):
@@ -76,23 +81,66 @@ class KnowledgeDiscoveryService:
         # restarts between requests, so every link lives in message payloads
         # (requester_id / query_id / ask_audit_id) and is derived from the store.
 
+    def _already_asked(self, requester_id: str) -> dict[str, str]:
+        """agent_id -> reason, for contacts this requester must not be asked again about.
+
+        An earlier request from the same requester that is still waiting for an
+        answer, or that was already accepted, counts. A declined request does not:
+        the requester may ask that person again.
+        """
+        found: dict[str, str] = {}
+        for m in self.store.list_messages():
+            if m.intent not in ("connect_ask", "connect_ask_private"):
+                continue
+            if m.payload.get("requester_id") != requester_id or m.rejected:
+                continue
+            if m.consent_state == "pending":
+                found[m.to_entity] = (
+                    "Not asked again: your earlier request to this person has not been answered yet"
+                )
+            elif m.consent_state == "granted":
+                found[m.to_entity] = (
+                    "Not asked again: this person already accepted your earlier request"
+                )
+        return found
+
     def submit_query(self, requester_id: str, question_text: str) -> QuerySubmissionResult:
-        """Submit a question, run 2-track matching, and dispatch asks/no_connection records."""
-        # 1. Record query message
+        """Submit a question, run 2-track matching, and dispatch asks/no_connection records.
+
+        Matching (the only step that calls the embedding and model services) runs
+        BEFORE anything is recorded, so a failed embedding call leaves no orphan
+        query in the log. The requester is never asked, and a contact whose earlier
+        request from the same requester is pending or accepted is not asked again.
+        """
+        # 1. Retrieve registered agents and all employee profiles
+        agents = self.store.list_agents(active_only=True)
+        profiles = self.store.list_profiles()
+
+        # 2. Run exploratory matching (2 tracks × 2 stages); no side effects yet
+        matching_res = self.matching_engine.run_matching(
+            question_text,
+            agents,
+            profiles,
+            exclude_employee_id=requester_id,
+            skip_agents=self._already_asked(requester_id),
+        )
+
+        # 3. Record the query, with the real counts of this run (shown in /audit)
         query_msg = self.transmission.send(
             from_entity=requester_id,
             to_entity="system",
             intent="query",
             payload_type="query",
-            payload={"question_text": question_text, "requester_id": requester_id},
+            payload={
+                "question_text": question_text,
+                "requester_id": requester_id,
+                "stats": {
+                    "profiles_screened": matching_res.profiles_screened,
+                    "shortlisted": len(matching_res.funnel_candidates),
+                    "agents_considered": matching_res.agents_considered,
+                },
+            },
         )
-
-        # 2. Retrieve registered agents and all employee profiles
-        agents = self.store.list_agents(active_only=True)
-        profiles = self.store.list_profiles()
-
-        # 3. Run exploratory matching (2 tracks × 2 stages)
-        matching_res = self.matching_engine.run_matching(question_text, agents, profiles)
 
         # 4. Record dropped candidates as no_connection in audit log
         for dropped in matching_res.dropped_candidates:
@@ -105,6 +153,8 @@ class KnowledgeDiscoveryService:
                     "reason_text": dropped.reason_text,
                     "cited_item_keys": list(dropped.cited_item_keys),
                     "score": dropped.score,
+                    "query_id": query_msg.audit_id,
+                    "drop_stage": dropped.drop_stage,
                 },
                 candidate_profile=dropped.profile,
             )
@@ -157,6 +207,19 @@ class KnowledgeDiscoveryService:
             raise InvalidConsentDecisionError(
                 f"decision must be one of {', '.join(VALID_CONSENT_DECISIONS)}"
             )
+        # Validate everything the outcome message needs BEFORE the one-way
+        # pending -> granted/declined transition: a malformed attachment must be
+        # refused while the ask is still pending, never after it is locked in.
+        if not isinstance(reason_text, str):
+            raise InvalidAttachmentError("reason_text must be a string")
+        if attachment is not None:
+            att_check = attachment.to_dict() if isinstance(attachment, Attachment) else dict(attachment)
+            if att_check.get("type") not in VALID_ATTACHMENT_TYPES:
+                raise InvalidAttachmentError(
+                    f"attachment type must be one of {', '.join(VALID_ATTACHMENT_TYPES)}"
+                )
+            if not isinstance(att_check.get("content"), str):
+                raise InvalidAttachmentError("attachment content must be a string")
         original_ask, outcome = self.store.try_transition_ask_consent(
             ask_audit_id, candidate_entity_id, decision
         )
@@ -238,7 +301,34 @@ class KnowledgeDiscoveryService:
 
         return ConsentResult(reply_message=reply_msg, outcome_message=outcome_msg)
 
-    def get_requester_status(self, requester_id: str, query_audit_id: str | None = None) -> list[RequesterCandidateStatus]:
+    def get_requester_history(self, requester_id: str) -> list[dict[str, Any]]:
+        """Every question this requester asked, newest first, each with its own statuses.
+
+        Lets the requester screen keep earlier answers (a connection made, a decline
+        with its reason) visible after a later question is asked.
+        """
+        messages = self.store.list_messages()
+        own_queries = sorted(
+            (m for m in messages if m.intent == "query" and m.payload.get("requester_id") == requester_id),
+            key=lambda m: m.timestamp,
+            reverse=True,
+        )
+        return [
+            {
+                "query_id": q.audit_id,
+                "question_text": q.payload.get("question_text", ""),
+                "timestamp": q.timestamp,
+                "statuses": self.get_requester_status(requester_id, query_audit_id=q.audit_id, _messages=messages),
+            }
+            for q in own_queries
+        ]
+
+    def get_requester_status(
+        self,
+        requester_id: str,
+        query_audit_id: str | None = None,
+        _messages: list[Message] | None = None,
+    ) -> list[RequesterCandidateStatus]:
         """Return candidate status list from the requester viewpoint (§6.4).
 
         States:
@@ -251,7 +341,7 @@ class KnowledgeDiscoveryService:
         # Store-derived, stateless projection (V-2). Scoped to ONE query so
         # candidates from past questions do not mix into the view (V-4):
         # the given query_audit_id, or the requester's latest query by default.
-        messages = self.store.list_messages()
+        messages = _messages if _messages is not None else self.store.list_messages()
 
         if query_audit_id is None:
             own_queries = [
@@ -343,3 +433,37 @@ class KnowledgeDiscoveryService:
             )
 
         return records
+
+    def get_latest_query_stats(self) -> dict[str, Any] | None:
+        """Real numbers of the most recent question, for the audit header.
+
+        Counts come from the stored messages of that one question (asks and skips are
+        matched by query_id), not from constants or all-time totals. None if no
+        question has been asked yet.
+        """
+        messages = self.store.list_messages()
+        queries = [m for m in messages if m.intent == "query"]
+        if not queries:
+            return None
+        latest = max(queries, key=lambda m: m.timestamp)
+        asked = sum(
+            1
+            for m in messages
+            if m.intent in ("connect_ask", "connect_ask_private")
+            and m.payload.get("query_id") == latest.audit_id
+            and not m.rejected
+        )
+        not_asked = sum(
+            1
+            for m in messages
+            if m.intent == "no_connection" and m.payload.get("query_id") == latest.audit_id
+        )
+        stats = latest.payload.get("stats") if isinstance(latest.payload.get("stats"), dict) else {}
+        return {
+            "query_id": latest.audit_id,
+            "profiles_screened": stats.get("profiles_screened"),
+            "shortlisted": stats.get("shortlisted"),
+            "agents_considered": stats.get("agents_considered"),
+            "asked": asked,
+            "not_asked": not_asked,
+        }

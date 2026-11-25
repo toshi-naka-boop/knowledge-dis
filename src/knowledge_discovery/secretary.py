@@ -214,7 +214,7 @@ def derive_autonomy_state(
     |---|---|
     | observing                                                  | no open card |
     | stalled                                                    | open card, tier 'notice' (or None) |
-    | need_detected (also candidate_found / awaiting_human_approval) | open card, tier 'request_draft' |
+    | need_detected (also candidate_found / awaiting_human_confirmation) | open card, tier 'request_draft' |
 
     'searching' is a transient in-run state (never persisted) and is never
     returned here. No new state model/migration: this is purely a read-side
@@ -1310,6 +1310,11 @@ class SecretaryService:
                 "card_id": card.card_id,
                 "query_audit_id": query_audit_id,
                 "dispatched_count": len(result.dispatched_asks),
+                "already_asked_names": [
+                    d.agent.display_name
+                    for d in result.dropped_candidates
+                    if d.drop_stage == "already_asked"
+                ],
             }
         except Exception as exc:
             # Rollback on submission failure
@@ -1317,7 +1322,7 @@ class SecretaryService:
             card.linked_query_audit_id = None
             card.updated_at = utc_now_iso()
             self.store.save_card(card)
-            raise RuntimeError(f"Failed to submit discovery query: {exc}") from exc
+            raise RuntimeError(f"Failed to submit discovery query ({type(exc).__name__})") from exc
 
     def review_profile_diff(
         self,

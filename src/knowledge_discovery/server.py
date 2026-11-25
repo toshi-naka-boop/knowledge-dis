@@ -44,6 +44,7 @@ from knowledge_discovery.connectors import build_connector_from_env
 from knowledge_discovery.service import (
     ConsentConflictError,
     ConsentForbiddenError,
+    InvalidAttachmentError,
     InvalidConsentDecisionError,
     KnowledgeDiscoveryService,
 )
@@ -121,8 +122,9 @@ SAMPLE_ATTACHMENTS: dict[str, str] = {
 # Pydantic Schemas for Requests
 # -----------------------------------------------------------------------------
 
-# Upper bound on a question: each question fans out into one embedding call and
-# up to `funnel_limit` (20) Gemini inference calls, so an unbounded text is a
+# Upper bound on a question. One question costs one embedding call plus one model
+# call per active registered agent whose similarity passes VECTOR_FLOOR (at most
+# the number of registered agents; 4 in the seed data), so an unbounded text is a
 # cost amplifier on a shared demo key.
 MAX_QUESTION_CHARS = 2000
 MAX_REASON_CHARS = 1000
@@ -151,7 +153,7 @@ class QueryRequest(BaseModel):  # type: ignore[misc]
 
 
 class AttachmentModel(BaseModel):  # type: ignore[misc]
-    type: str = Field(..., description="Attachment type: 'link', 'text', or 'doc'")
+    type: Literal["link", "text", "doc"] = Field(..., description="Attachment type: 'link', 'text', or 'doc'")
     content: str = Field(..., max_length=MAX_ATTACHMENT_CHARS, description="URL, text snippet, or doc identifier")
 
 
@@ -164,7 +166,19 @@ class ConsentRequest(BaseModel):  # type: ignore[misc]
 
 class ConfirmCardRequest(BaseModel):  # type: ignore[misc]
     card_id: str = Field(..., description="ID of the stagnation card to confirm")
-    edited_question: str = Field(..., description="Inquiry question (AI draft or user edited)")
+    edited_question: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_QUESTION_CHARS,
+        description="Inquiry question (AI draft or user edited); same limits as /api/query",
+    )
+
+    @field_validator("edited_question")
+    @classmethod
+    def _edited_question_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("edited_question must not be blank")
+        return value
 
 
 class ProfileDiffReviewRequest(BaseModel):  # type: ignore[misc]
@@ -190,6 +204,35 @@ class AutonomyPolicyRequest(BaseModel):  # type: ignore[misc]
 
 
 
+def _format_status(idx: int, s: Any) -> dict[str, Any]:
+    """Requester-facing projection of one candidate status (never reveals private asks)."""
+    if s.state == "pending":
+        return {
+            "status_id": f"status_{idx}",
+            "state": "pending",
+            "display_state": "Waiting for response",
+            "respondent_name": s.candidate_name,
+        }
+    if s.state == "matched":
+        return {
+            "status_id": f"status_{idx}",
+            "state": "matched",
+            "display_state": "Connected (15-min Meeting Proposed)",
+            "respondent_id": s.candidate_id,
+            "respondent_name": s.candidate_name,
+            "meeting_duration": s.meeting_duration or 15,
+        }
+    return {
+        "status_id": f"status_{idx}",
+        "state": "declined",
+        "display_state": "Unavailable this time",
+        "respondent_id": s.candidate_id,
+        "respondent_name": s.candidate_name,
+        "decline_reason": s.decline_reason,
+        "attachment": s.attachment,
+    }
+
+
 # -----------------------------------------------------------------------------
 # Demo sign-in page (Company Atlas styling, self-contained)
 # -----------------------------------------------------------------------------
@@ -198,7 +241,8 @@ def _login_page(error: bool = False) -> str:
     """アクセスコードを HttpOnly Cookie に引き換えるサインインページ（demo_key モード）。"""
     error_html = (
         '<div class="err">That code didn\'t match. '
-        "Check the submission's testing instructions.</div>"
+        "Use the code you set as DEMO_API_KEY when you started the server "
+        "(for the hosted demo: the code in the submission's testing instructions).</div>"
         if error
         else ""
     )
@@ -232,13 +276,13 @@ def _login_page(error: bool = False) -> str:
   <div class="card"><div class="inner">
     <div class="eyebrow">AN ATLAS OF KNOWLEDGE</div>
     <h1>Knowledge Discovery</h1>
-    <p>Enter the access code from the submission's testing instructions.</p>
+    <p>Enter the access code (the value of DEMO_API_KEY you started the server with, or the one in the submission's testing instructions).</p>
     {error_html}
     <form method="post" action="/login">
       <input type="password" name="code" placeholder="Access code" autofocus autocomplete="off">
       <button type="submit">Enter the atlas</button>
     </form>
-    <div class="foot">All data is synthetic — a fictional company, 401 employees.</div>
+    <div class="foot">All data is synthetic — a fictional company with made-up employees.</div>
   </div></div>
 </body>
 </html>"""
@@ -466,8 +510,9 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown tenant.")
 
     # -------------------------------------------------------------------------
-    # §16.1 permission-table helpers (default-deny: every route below states
-    # explicitly what each of demo/human/system may do; nothing is implicit)
+    # §16.1 permission helpers. Every /api route requires an authenticated
+    # Principal; most then call one of these checks. /api/me, /api/agents and
+    # /api/audit/messages only require authentication (see README "Authentication").
     # -------------------------------------------------------------------------
 
     def _deny_system(principal: Principal) -> None:
@@ -643,10 +688,26 @@ def create_app(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Unknown requester_id: no employee profile with that ID exists in this workspace.",
             )
-        result = ctx.service.submit_query(
-            requester_id=req.requester_id,
-            question_text=req.question_text,
-        )
+        try:
+            result = ctx.service.submit_query(
+                requester_id=req.requester_id,
+                question_text=req.question_text,
+            )
+        except Exception as exc:
+            # Matching runs before anything is recorded, so a failure here (for
+            # example the embedding service being unavailable) leaves nothing behind.
+            logger.error("query submission failed (%s)", type(exc).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "The search service did not answer, so your question was not recorded "
+                    "and nobody was asked. Wait a minute and ask again."
+                ),
+            )
+
+        skipped = [
+            d for d in result.dropped_candidates if d.drop_stage == "already_asked"
+        ]
 
         return {
             "query_id": result.query_message.audit_id,
@@ -655,6 +716,7 @@ def create_app(
             "dispatched_count": len(result.dispatched_asks),
             "funnel_count": len(result.funnel_candidates),
             "dropped_count": len(result.dropped_candidates),
+            "already_asked_names": [d.agent.display_name for d in skipped],
             "funnel_candidates": [
                 {
                     "employee_id": c.employee_id,
@@ -687,38 +749,22 @@ def create_app(
         _require_self_employee(principal, requester_id)
         raw_statuses = ctx.service.get_requester_status(requester_id=requester_id)
 
-        formatted_statuses: list[dict[str, Any]] = []
-        for idx, s in enumerate(raw_statuses, start=1):
-            if s.state == "pending":
-                formatted_statuses.append({
-                    "status_id": f"status_{idx}",
-                    "state": "pending",
-                    "display_state": "Waiting for response",
-                    "respondent_name": s.candidate_name,
-                })
-            elif s.state == "matched":
-                formatted_statuses.append({
-                    "status_id": f"status_{idx}",
-                    "state": "matched",
-                    "display_state": "Connected (15-min Meeting Proposed)",
-                    "respondent_id": s.candidate_id,
-                    "respondent_name": s.candidate_name,
-                    "meeting_duration": s.meeting_duration or 15,
-                })
-            elif s.state == "declined":
-                formatted_statuses.append({
-                    "status_id": f"status_{idx}",
-                    "state": "declined",
-                    "display_state": "Unavailable this time",
-                    "respondent_id": s.candidate_id,
-                    "respondent_name": s.candidate_name,
-                    "decline_reason": s.decline_reason,
-                    "attachment": s.attachment,
-                })
+        formatted_statuses = [_format_status(idx, st) for idx, st in enumerate(raw_statuses, start=1)]
 
         return {
             "requester_id": requester_id,
             "statuses": formatted_statuses,
+            # Earlier questions with their own outcomes (newest first), so asking a
+            # second question does not make the first answer disappear.
+            "history": [
+                {
+                    "query_id": h["query_id"],
+                    "question_text": h["question_text"],
+                    "timestamp": h["timestamp"],
+                    "statuses": [_format_status(idx, st) for idx, st in enumerate(h["statuses"], start=1)],
+                }
+                for h in ctx.service.get_requester_history(requester_id)
+            ],
         }
 
     @app.get("/api/candidate/{agent_id}/asks")
@@ -787,7 +833,7 @@ def create_app(
                 "reply_audit_id": consent_res.reply_message.audit_id,
                 "outcome_intent": consent_res.outcome_message.intent,
             }
-        except InvalidConsentDecisionError as exc:
+        except (InvalidConsentDecisionError, InvalidAttachmentError) as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
@@ -796,31 +842,31 @@ def create_app(
         except ConsentConflictError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
 
-    # Counting profiles per poll would pull all 400 documents (with 3072-dim
-    # embeddings, ~10MB) from Firestore every 3 seconds (E-4). The counts are
-    # static for the demo, so compute them once on first request -- per
-    # tenant (ctx.static_counts), since tenants have independent profile/agent
-    # counts (§16.2).
+    # Counting profiles per poll would pull every profile document (with
+    # 3072-dim embeddings, several MB) from Firestore every 3 seconds (E-4). The
+    # directory size is static for the demo, so compute it once on first
+    # request -- per tenant (ctx.static_counts), since tenants have independent
+    # profile/agent counts (§16.2).
     @app.get("/api/audit/messages")
     def get_audit_messages(
         principal: Principal = Depends(get_principal), ctx: TenantContext = Depends(get_context)
     ) -> dict[str, Any]:
-        """Retrieve audit dashboard records with fail-closed masked payloads and funnel stats."""
+        """Retrieve audit dashboard records with fail-closed masked payloads and funnel stats.
+
+        `funnel_stats.latest_query` holds the real numbers of the most recent
+        question only (profiles compared, shortlist length, agents considered,
+        asked, not asked); the other counts describe the directory itself.
+        """
         records = ctx.service.get_audit_dashboard_records()
         if not ctx.static_counts:
             ctx.static_counts["profiles"] = len(ctx.store.list_profiles())
             ctx.static_counts["agents"] = len(ctx.store.list_agents(active_only=True))
 
-        dispatched_count = sum(1 for r in records if r["intent"] in ("connect_ask", "connect_ask_private"))
-        dropped_count = sum(1 for r in records if r["intent"] == "no_connection")
-
         return {
             "funnel_stats": {
                 "total_profiles": ctx.static_counts["profiles"],
-                "funnel_limit": 20,
                 "registered_agents_count": ctx.static_counts["agents"],
-                "dispatched_count": dispatched_count,
-                "dropped_count": dropped_count,
+                "latest_query": ctx.service.get_latest_query_stats(),
             },
             "records": records,
         }
@@ -947,8 +993,8 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-        except Exception:
-            logger.exception("secretary confirm failed for card=%s", req.card_id)
+        except Exception as exc:
+            logger.error("secretary confirm failed for card=%s (%s)", req.card_id, type(exc).__name__)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Could not complete the request. Check the Connection Requests list first so you do not ask twice, then try again.",
@@ -975,8 +1021,8 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-        except Exception:
-            logger.exception("secretary profile-diff review failed for card=%s", card_id)
+        except Exception as exc:
+            logger.error("secretary profile-diff review failed for card=%s (%s)", card_id, type(exc).__name__)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Could not apply your review. Your profile was not changed; please try again.",
@@ -1049,13 +1095,14 @@ def create_app(
                 tenants_result[tenant.tenant_id] = {"status": sweep_status, "run_key": run_key}
                 if sweep_status not in ("ok", "deduplicated"):
                     all_succeeded = False
-            except Exception:
+            except Exception as sweep_exc:
                 all_succeeded = False
                 # round-5 ledger E4: the response body carries only a generic
                 # per-tenant status + message -- no exception string, no stack,
                 # no path. The real exception is logged server-side only.
-                logger.exception(
-                    "autonomous-sweep failed for tenant=%s run_key=%s", tenant.tenant_id, run_key
+                logger.error(
+                    "autonomous-sweep failed for tenant=%s run_key=%s (%s)",
+                    tenant.tenant_id, run_key, type(sweep_exc).__name__,
                 )
                 tenants_result[tenant.tenant_id] = {
                     "status": "error",

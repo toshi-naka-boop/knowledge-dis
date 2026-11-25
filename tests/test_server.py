@@ -405,7 +405,12 @@ class TestServerEndpoints(unittest.TestCase):
 
         self.assertIn("funnel_stats", data)
         self.assertIn("records", data)
-        self.assertEqual(data["funnel_stats"]["funnel_limit"], 20)
+        self.assertNotIn("funnel_limit", data["funnel_stats"])
+        latest = data["funnel_stats"]["latest_query"]
+        self.assertIsNotNone(latest)
+        # Real numbers of THIS question, not constants or all-time totals.
+        self.assertEqual(latest["asked"], sum(1 for r in data["records"] if r["intent"] in ("connect_ask", "connect_ask_private")))
+        self.assertEqual(latest["not_asked"], sum(1 for r in data["records"] if r["intent"] == "no_connection"))
 
         # Check that Elena's private ask is masked in audit view
         records = data["records"]

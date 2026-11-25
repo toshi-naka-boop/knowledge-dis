@@ -222,13 +222,13 @@ class TestMilestone1Goals(unittest.TestCase):
         self.assertEqual(bob_ask.payload_type, "connect_ask_private")
         self.assertIsNotNone(bob_ask.audit_payload)
         self.assertTrue(bob_ask.audit_payload["masked"])
-        self.assertEqual(bob_ask.audit_payload["note"], "非公開項目に基づくconnect_ask_private（内容非表示）")
+        self.assertEqual(bob_ask.audit_payload["note"], "connect_ask_private based on a private item (content hidden)")
 
         # 2. Audit Dashboard view is masked
         audit_records = self.service.get_audit_dashboard_records()
         bob_audit_record = [r for r in audit_records if r["to"] == "agent_bob" and r["intent"] == "connect_ask_private"][0]
         self.assertTrue(bob_audit_record["display_payload"]["masked"])
-        self.assertEqual(bob_audit_record["display_payload"]["note"], "非公開項目に基づくconnect_ask_private（内容非表示）")
+        self.assertEqual(bob_audit_record["display_payload"]["note"], "connect_ask_private based on a private item (content hidden)")
 
         # 3. Requester view does NOT leak private distinction
         requester_statuses = self.service.get_requester_status("user_requester", res.query_message.audit_id)
@@ -262,7 +262,7 @@ class TestMilestone1Goals(unittest.TestCase):
         self.assertEqual(no_conn_msg.intent, "no_connection")
         self.assertIsNotNone(no_conn_msg.audit_payload)
         self.assertTrue(no_conn_msg.audit_payload["masked"])
-        self.assertEqual(no_conn_msg.audit_payload["note"], "非公開項目に基づくno_connection（内容非表示）")
+        self.assertEqual(no_conn_msg.audit_payload["note"], "no_connection based on a private item (content hidden)")
 
     def test_goal_4b_reject_unsupported_intent(self) -> None:
         """Goal 4b: Message with intent unsupported by destination agent is rejected with rejected=True (C-25)."""

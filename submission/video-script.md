@@ -181,12 +181,12 @@ AI shouldn't replace human connections. It should create them.
 
 **ナレーション（EN）**:
 > Thirty minutes later, on a schedule, the agent runs on its own. No one clicked anything.
-> It searched four hundred profiles across the company, evaluated the candidates, and prepared a request.
+> It compared the question with the colleagues whose agents are registered, evaluated each candidate separately, and prepared a request.
 > Marcus Delgado, from commercial real estate. Jordan has never worked with him.
 
 **日本語（参考訳）**:
 > 30分後、スケジュールに従ってエージェントが自律的に動く。誰もクリックしていない。
-> 社内400名のプロフィールを探索し、候補を評価し、依頼を準備した。
+> エージェントを登録している同僚のプロフィールと照らし合わせ、候補を一人ずつ評価し、依頼を準備した。
 > Marcus Delgado——商業用不動産の担当。Jordan は彼と一緒に働いたことがない。
 
 > **ここが「no-click」の核。** リロード以外の操作を映さないこと。マウスカーソルはカードから離しておく。
@@ -240,7 +240,7 @@ AUTONOMY POLICY
 
 ---
 
-## 3-D（2:21–2:35 / 14秒）人間の承認 — Ask Marcus for 15 min
+## 3-D（2:21–2:35 / 14秒）人間の確認 — Ask Marcus for 15 min
 
 **操作**: レール上の候補カード（または ATLAS に戻って Introduction card）の `QUESTION DRAFT` テキストエリアを1度クリックし、**末尾に数語だけタイプして編集できることを見せる**（例: ` Any leads welcome.`）。その後 `[Ask Marcus for 15 min]` をクリック。
 **画面**: アトラス上では破線が**進行するアニメーション**（asked 状態）に変わり、カードは `INTRODUCTION SENT — Waiting quietly` へ。レール側では `Request sent to Marcus Delgado / Their agent is reviewing it.`。
@@ -277,23 +277,23 @@ AUTONOMY POLICY
 
 ---
 
-## 3-F（2:57–3:15 / 18秒）監査 — 承認の前と後で見え方が変わる
+## 3-F（2:57–3:15 / 18秒）監査 — 確認の前と後で見え方が変わる
 
 **操作**: `Bridge Trace`（/audit）へ。上部の `Last sweep: Automatic · HH:MM` と counts 行 → タイムライン → MATCH FOUND の順にゆっくりスクロール。
 **画面で見せるもの**:
 - ヘッダ: `Last sweep: Automatic · 10:00`
-- counts 行: `Automatic sweep — 400 profiles explored · 1 need prepared, awaiting the owner's review`
+- counts 行: `Automatic sweep — 4 candidate agents checked · 1 need prepared, awaiting the owner's review`（件数はその回の実数。デモのシードでは登録エージェントが4人）
 - タイムライン: `Need received — your agent starts searching` → `Request sent to Marcus Delgado` → `Marcus Delgado accepted` → `Connection made`
 - 下部: `MATCH FOUND — Marcus Delgado / Connected with Jordan Lee · 15 min`
 **カメラ**: counts-only 行と named タイムラインが同一画面に収まる位置でスクロールを止める。
 
 **ナレーション（EN）**:
-> Every run is auditable. Before Jordan approved, the automatic sweep is recorded as counts only — how many profiles, how many needs prepared. No names.
-> Names appear after a human said yes. Private recommendation, human approval, then an auditable, named interaction.
+> Every run is auditable. Before Jordan confirmed, the automatic sweep is recorded as counts only — how many candidate agents were checked, how many needs prepared. No names.
+> Names appear after a human said yes. Private recommendation, human confirmation, then an auditable, named interaction.
 
 **日本語（参考訳）**:
-> すべての実行が監査可能だ。Jordan が承認する前、自動実行は件数だけで記録される——何件のプロフィールを見て、何件の依頼を準備したか。名前は出ない。
-> 名前が現れるのは、人間が「はい」と言った後だ。非公開の推薦、人間の承認、そして監査可能な実名のやり取り。
+> すべての実行が監査可能だ。Jordan が確認する前、自動実行は件数だけで記録される——何人の候補エージェントを調べ、何件の依頼を準備したか。名前は出ない。
+> 名前が現れるのは、人間が「はい」と言った後だ。非公開の推薦、人間の確認、そして監査可能な実名のやり取り。
 
 > **この18秒が本プロダクトの統治構造そのもの。**
 
@@ -349,7 +349,7 @@ gcloud scheduler jobs resume kd-autonomous-sweep --location=asia-northeast1
 ```
 This is Jordan's morning. Deadlines, reminders, and one line that matters: her agent is monitoring automatically. It has noticed a task that hasn't moved in two days. It is just watching.
 
-Thirty minutes later, on a schedule, the agent runs on its own. No one clicked anything. It searched four hundred profiles across the company, evaluated the candidates, and prepared a request. Marcus Delgado, from commercial real estate. Jordan has never worked with him.
+Thirty minutes later, on a schedule, the agent runs on its own. No one clicked anything. It compared the question with the colleagues whose agents are registered, evaluated each candidate separately, and prepared a request. Marcus Delgado, from commercial real estate. Jordan has never worked with him.
 
 Her agent drew a map. Departments are islands. People are ink. And between two islands, a dashed line: a route that exists, but a bridge that doesn't. Nothing has been sent.
 
@@ -359,7 +359,7 @@ The draft is hers to edit. Nothing was sent while she was away. She reads it, ch
 
 Marcus doesn't get a ticket. He gets a letter. His own agent screened it first. He can see exactly what crossed between the two agents: the question, and a short note on why him. His calendar, his messages, his private items did not. He could decline, and Jordan would see that, with his reason. He accepts.
 
-Every run is auditable. Before Jordan approved, the automatic sweep is recorded as counts only: how many profiles, how many needs prepared. No names. Names appear after a human said yes. Private recommendation, human approval, then an auditable, named interaction.
+Every run is auditable. Before Jordan confirmed, the automatic sweep is recorded as counts only: how many candidate agents were checked, how many needs prepared. No names. Names appear after a human said yes. Private recommendation, human confirmation, then an auditable, named interaction.
 
 The dashes become a bridge. Three hundred ninety-nine people were never disturbed. Two people who had never worked together now have fifteen minutes on the calendar. That is the whole product.
 ```
@@ -492,7 +492,7 @@ Knowledge Discovery gives every employee a personal AI agent. The agent does not
 2. **「1日1.8〜2.5時間を情報探索に費やす」は使わない**（IDC 2001 由来の神話。`problem-evidence.md` §4）。
 3. **「出社は無意味」と言わない**。主張は「出社は繋がりの十分条件ではない」。反証（近接がメンタリングを改善する等）を否定しない。
 4. **AI を主語にしない**。「エージェントが繋いだ」ではなく「Jordan と Marcus が繋がった」。
-5. **承認前に候補者名を出さない**（プロダクトの不変条件と同じ規律を語りにも適用）。
+5. **依頼者が確認する前に候補者名を出さない**（プロダクトの不変条件と同じ規律を語りにも適用）。
 
 
 ---

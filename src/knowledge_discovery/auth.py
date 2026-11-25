@@ -292,7 +292,7 @@ def verify_autonomous_sweep_token(
             clock_skew_in_seconds=AUTONOMOUS_SWEEP_CLOCK_SKEW_SECONDS,
         )
     except Exception as exc:
-        logger.warning("autonomous-sweep OIDC token verification failed: %s", exc)
+        logger.warning("autonomous-sweep OIDC token verification failed (%s)", type(exc).__name__)
         raise _forbidden("invalid token") from exc
 
     if payload.get("iss") not in GOOGLE_OIDC_ISSUERS:

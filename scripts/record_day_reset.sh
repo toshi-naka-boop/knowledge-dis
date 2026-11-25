@@ -5,9 +5,10 @@
 # 注意: デモデータを完全に消して作り直す。収録・審査中の状態は失われる。
 set -euo pipefail
 
-PROJECT_ID="knowledge-discovery-2026"
-REGION="asia-northeast1"
-SERVICE="knowledge-discovery"
+# 環境ごとの値は環境変数で渡す（例: PROJECT_ID=my-project scripts/record_day_reset.sh 2026-08-20）
+PROJECT_ID="${PROJECT_ID:?PROJECT_ID に GCP プロジェクト ID を設定してください}"
+REGION="${REGION:-asia-northeast1}"
+SERVICE="${SERVICE:-knowledge-discovery}"
 RECORD_DATE="${1:-$(date +%F)}"
 
 echo "== Recording-day reset =="

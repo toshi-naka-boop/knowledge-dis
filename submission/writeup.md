@@ -30,7 +30,7 @@ Jordan has a problem. A client has sent her a request from a completely differen
 
 Her agent notices. And from that moment, it moves differently.
 
-A company of 400 people has 400 agents. Hers guesses who might know and asks around — "this one: could your owner help?" Each agent answers from what it knows about its own owner. Even when the answer is yes because of something only its owner knows, it reveals nothing. It answers yes or no. That's all.
+In the vision, a company of 400 people has 400 agents. (In the demo, 4 of the 400 synthetic employees have a registered agent, and only those 4 can be asked.) Hers guesses who might know and asks around — "this one: could your owner help?" Each agent answers from what it knows about its own owner. Even when the answer is yes because of something only its owner knows, it reveals nothing. It answers yes or no. That's all.
 
 When the candidates narrow to one, the agent drafts an introduction. Then it stops. The screen reads: *Introduction prepared — not sent.* Ready, but not sent. Until Jordan reads the draft, edits it, and clicks "Ask for 15 min," nothing reaches anyone. The one decision to contact a person is reserved, by construction, for a human.
 
@@ -42,7 +42,7 @@ And the organization becomes a chart. The Company Atlas: departments are islands
 
 The demo is live on Cloud Run, right now. In the demo's world, "Jordan" is a healthcare-staffing manager; the out-of-field request is a clinic relocation — a real-estate question. The colleague who had done it twice sat on a different island entirely.
 
-`/requester` is Jordan's screen. `/candidate` is the letter that reaches Marcus. `/audit` is Bridge Trace. Sign in once with the access code from this submission's testing instructions — the session is an HttpOnly cookie, so no credential ever rides in a URL — and the whole flow (request, approve, respond, audit) runs from there. The data is all synthetic; you can't break anything.
+`/requester` is Jordan's screen. `/candidate` is the letter that reaches Marcus. `/audit` is Bridge Trace. Sign in once with the access code from this submission's testing instructions — the session is an HttpOnly cookie, so no credential ever rides in a URL — and the whole flow (request, respond, audit) runs from there. The data is all synthetic; you can't break anything.
 
 ## How we built it
 
@@ -50,23 +50,23 @@ The demo is live on Cloud Run, right now. In the demo's world, "Jordan" is a hea
 
 - **Cloud Run** — the FastAPI service. Agent-to-agent messaging, the secretary pipeline, all three screens — everything lives here. Why not GKE or Cloud Functions? Because the whole service fits in one stateless container. No cluster to operate, and you still get an authenticated HTTPS endpoint, scale-to-zero idle cost, and native OIDC with Cloud Scheduler.
 - **Cloud Scheduler → OIDC → `/internal/autonomous-sweep`** — unattended, every thirty minutes. The route verifies signature, audience, issuer, and the exact invoker service account; it accepts no API key. Why not Pub/Sub or Cloud Tasks? Because what we need is cron, not a queue. The OIDC token proves the caller without a shared secret, and the schedule slot doubles as the idempotency key.
-- **Gemini 3.7 Flash** — question drafts and per-candidate relevance judgments. Why not a Pro-class model? Candidate isolation means up to twenty small, structured judgments per sweep. What matters is latency and unit cost — and safety comes from fail-closed score validation, not model depth.
-- **gemini-embedding-2 on GEAP** — profile search; the 0.62 similarity floor is calibrated for this model. Why not the direct Gemini API? ADC/IAM auth keeps API keys out of code and environment, and inference stays inside the same project, the same governance, as the data.
+- **Gemini 3.7 Flash** — question drafts and per-candidate relevance judgments. Why not a Pro-class model? Candidate isolation means one small, structured judgment per candidate agent (four in the demo). What matters is latency and unit cost — and safety comes from fail-closed score validation, not model depth.
+- **gemini-embedding-2 on GEAP** — profile search; the 0.62 similarity floor is the setting we use for this model (the repository contains no measurement behind it). Why not the direct Gemini API? ADC/IAM auth keeps API keys out of code and environment, and inference stays inside the same project, the same governance, as the data.
 - **Firestore (native)** — profiles ×400, agents, tasks, cards, autonomy policies, sweep-run claims. And `messages`, the append-only audit log. Why not Cloud SQL or AlloyDB? A profile is a per-person document — items and visibility differ person by person — so the document model iterates without schema migrations, transactions give the CAS the idempotency claims need, and tenants map to named databases.
 - **GEAP Agent Runtime (Agent Engine, ADK)** — the secretary also runs as a first-class managed agent. The scheduled operation hits the same sweep API deterministically; the dialogue agent is read-only; six agents sit in the GEAP Agent Registry. Why not hand-roll the loop on Cloud Run? Governance. Register the agent as a first-class platform citizen — and deliberately keep delivery authority out of its hands.
 - **340+ offline tests** — every external service sits behind an interface. Deterministic fakes; the suite runs with no network and no credentials.
 
-Other data sources: none. The company, the 401 people, the profiles, the tasks, the mail — all generated by a script (the fictional Meridian Care Partners Group). Embeddings are computed on GEAP at seed time. Not one byte of real data.
+Other data sources: none. The company, its 400 profiles, the tasks, the mail — all generated by a script (the fictional Meridian Care Partners Group). Embeddings are computed on GEAP at seed time. Not one byte of real data.
 
 ## The security story (why "Fortified")
 
-Approval is structural.
+Confirmation is structural.
 
-- The human approval boundary. `contact_mode` is fixed to `always_ask`, enforced server-side. The agent observes, detects, explores, evaluates, prepares — and stops. The code path that doesn't stop was never written.
+- The human confirmation boundary. `contact_mode` is fixed to `always_ask`, enforced server-side. The agent observes, detects, explores, evaluates, prepares — and stops. The code path that doesn't stop was never written.
 - Autonomy comes in grades: Monitor ⊇ Search ⊇ Ask ⊇ Prepare. Switch off an upper permission and everything below it stops, structurally. Normalized on save. The client's word is never trusted.
 - Privacy is enforced by the type system, not by the model's self-report. Private items are masked fail-closed off the real `visibility` field. A model that lies about what it cited can unmask nothing.
-- Data boundary = process boundary. Candidates are evaluated one by one, each in its own isolated inference. Cross-candidate leakage isn't policed — it's impossible.
-- The audit respects privacy too. Before approval: counts only — no names, no free text. Names appear after a human says yes. And delivery is never authorized by an LLM score alone: missing, non-numeric, out of range — all fail closed to "no connection" (our own red team hit this spot; we hardened it).
+- Data boundary = process boundary. Candidates are evaluated one by one, each in its own isolated inference. Each candidate's evaluation receives only the question and that candidate's own profile.
+- The audit respects privacy too. Before the owner confirms: counts only — no names, no free text. Names appear after a human says yes. And delivery is never authorized by an LLM score alone: missing, non-numeric, out of range — all fail closed to "no connection" (our own red team hit this spot; we hardened it).
 - Honestly: the demo runs on one shared access code (exchanged at /login for an HttpOnly cookie — never carried in a URL), so a judge can drive the whole flow from one sign-in. The production path — IAP, per-employee principals, horizontal-authorization guards — is implemented and tested. What remains is one deployment flag.
 
 ## Challenges we ran into
@@ -96,4 +96,4 @@ That lesson is not theoretical. We hammered the design through fifteen adversari
 
 ---
 
-*Built with Gemini 3.7 Flash, gemini-embedding-2, Cloud Run, Cloud Scheduler, Firestore, and GEAP Agent Runtime. Fictional company (Meridian Care Partners Group, 401 employees) — all data synthetic.*
+*Built with Gemini 3.7 Flash, gemini-embedding-2, Cloud Run, Cloud Scheduler, Firestore, and GEAP Agent Runtime. Fictional company (Meridian Care Partners Group, 400 synthetic employee profiles) — all data synthetic.*

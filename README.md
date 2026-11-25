@@ -1,12 +1,17 @@
 # Knowledge Discovery — Tacit-Knowledge Connection Engine
 
 **In one sentence:** when an employee does not know who in the company to ask,
-their own AI agent looks across everyone's profiles for the colleague who might
-know, drafts the request, and — only after the requester confirms and the
-colleague agrees — proposes a 15-minute conversation between the two people.
+their own AI agent compares the question with the profiles of the colleagues who
+have a registered agent, drafts the request, and — only after the requester
+confirms and the colleague agrees — proposes a 15-minute conversation between the
+two people.
 
 **Status: a hackathon demo with synthetic data** (a fictional company). It is not
 a production system; see "What it does not do" below before judging fit.
+**Who can be asked:** only colleagues whose agent is registered. The demo has 400
+synthetic profiles but only **4 registered agents**, so only those 4 people can
+receive a request; the other profiles are used just for a similarity list on the
+Bridge Trace page.
 
 A multi-agent system where every employee's personal AI agent helps answer
 *"who in our company might know about this?"* — not by delivering a document,
@@ -45,11 +50,24 @@ Key properties:
 Stack: Python / FastAPI on Cloud Run · Firestore (native) · Gemini 3.7 Flash +
 gemini-embedding-2 via **Vertex AI** · google-genai SDK.
 
-## Try it without Google Cloud (offline, ~2 minutes)
+## Try it without Google Cloud (offline, ~5 minutes, no cost)
 
-Needs Python 3.12 or newer. No Google account, network or model access is used:
-a built-in word-overlap stand-in replaces Gemini, and the 400 synthetic profiles
-are held in memory (they are re-created at each start; nothing is saved).
+**What you need:** a computer with a terminal (Linux or macOS; on Windows use WSL),
+and Python 3.12 or newer. **What you do not need:** a Google account, a cloud
+project, an API key or any payment. Nothing leaves your computer: a built-in
+word-overlap stand-in replaces Gemini, and the 400 synthetic profiles are held in
+memory (re-created at each start; nothing is saved).
+
+**Easiest way** (installs into a local `.venv`, picks a random access code and prints it):
+
+```bash
+scripts/try_offline.sh
+```
+
+Then open the address it prints (`http://localhost:8080/login`) and enter the printed access code.
+Stop it with Ctrl+C.
+
+**Or by hand:**
 
 ```bash
 python3 -m venv .venv
@@ -58,18 +76,28 @@ DEMO_API_KEY=choose-a-long-random-code PYTHONPATH=src:. \
   .venv/bin/uvicorn 'knowledge_discovery.server:create_app_from_env' --factory --port 8080
 ```
 
-1. Open `http://localhost:8080/login` and enter the code you chose as `DEMO_API_KEY`.
-   (The server refuses to start without `DEMO_API_KEY`; there is no built-in default key.)
-2. `/requester` is Jordan Lee's screen. Open **Ask your agent** at the bottom, pick
-   a demo question (e.g. "Demo 1"), press **Ask**; the people asked appear under
-   *Connection Requests*.
-3. `/candidate` is the colleague's side: pick the agent in the drop-down (e.g. Marcus
-   Delgado) and accept, share a resource, or decline.
-4. `/audit` ("Bridge Trace") lists everything that was sent, who was skipped, and why.
+(The server refuses to start without `DEMO_API_KEY`; there is no built-in default key.
+Enter the code you chose at `/login`.)
+
+**A 5-minute walk-through** (you play three roles by switching screens):
+
+1. `/requester` is Jordan Lee's screen. The **Ask your agent** box is at the top. Press
+   **Demo 1**, then **Ask**. Under *Connection Requests* you see who was asked (two
+   people in this data); nobody is notified, they have to open their own page.
+2. Open `/candidate` (the "Requests" link), pick *Marcus Delgado* in the drop-down and press
+   **Accept the introduction**. Then pick *Rachel Kim* and decline with a reason, or share a link.
+3. Back on `/requester` press **Refresh** next to *Connection Requests*: Marcus shows as
+   connected ("15 min", agree a time yourself: no invite is sent), Rachel's name and reason are shown.
+4. Ask a second question: the first one stays under **Earlier questions**. Asking the
+   same people again while a request is open or accepted is refused ("Not asked again").
+5. `/audit` ("Bridge Trace") lists, for the latest question, how many profiles were
+   compared, how many registered agents were considered, who was asked and who was
+   skipped, and why.
 
 This mode is for looking around. The matching quality you see is that of the
-word-overlap stand-in, not of Gemini, and questions written in Japanese were not
-verified in either mode (the seed profiles and prompts are English).
+word-overlap stand-in, not of Gemini. Write questions in English: the profiles are
+English, and a Japanese question will most likely reach nobody (the screen warns you;
+this was observed with the offline stand-in and has not been checked with Gemini).
 
 ## Run with Google Cloud (Firestore + Vertex AI)
 
@@ -115,16 +143,21 @@ access logs, so prefer `/login` or the header.
 | `AUTH_MODE` | optional | `demo_key` (default) or `iap`; see below. |
 | `TENANTS_JSON`, `SOURCE_CONNECTOR`, `AUTONOMOUS_SWEEP_*`, `GWS_*`, `IAP_AUDIENCE` | optional | Described in the sections below. |
 
-`VECTOR_FLOOR=0.62` is calibrated for gemini-embedding-2 (unrelated profiles
-score ~0.59 in that space; the default 0.20 suits only the offline test
-embedder).
+`VECTOR_FLOOR=0.62` is the author's setting for gemini-embedding-2; the
+measurement behind it is not included in this repository, so treat it as a starting
+point and check it against your own profiles. The default 0.20 suits only the offline
+test embedder.
 
 ## Authentication (design v15 §16.1)
 
 `AUTH_MODE` selects how each request's `Principal` (`mode: demo|human|system`,
-`tenant_id`, `employee_id`, `email`) is resolved. Every `/api/*` route enforces
-a default-deny permission table over this Principal (design.md §16.1). Two
-exceptions carry no authentication at all: the static UI shells (`/`,
+`tenant_id`, `employee_id`, `email`) is resolved. Every `/api/*` route requires
+an authenticated Principal. Most routes then apply a per-route check on it (system
+callers are refused on user routes; a signed-in human may only act as themselves,
+see design.md §16.1). Three read routes need authentication only:
+`/api/me`, `/api/agents` and `/api/audit/messages`, so in IAP mode any signed-in
+human of the tenant can read the audit page's names, questions and decline reasons.
+Two exceptions carry no authentication at all: the static UI shells (`/`,
 `/requester`, `/candidate`, `/audit` — they contain no data of their own; the
 data calls they make are authenticated) and `GET /attachments/{id}` (pre-placed
 demo documents). `/login` exchanges the access code for an HttpOnly cookie.
@@ -433,8 +466,27 @@ gcloud run services update knowledge-discovery --region=asia-northeast1 --update
 # 3. run one sweep (or wait for the Scheduler job) so the digest cards exist
 ```
 
+## If you wanted to use it for real: what it would take
+
+This repository is a demo, so the list below is what you would have to arrange
+yourself; it is not a ready service.
+
+| Need | Today |
+|---|---|
+| Cloud account | A Google Cloud project with billing, Firestore (native), Vertex AI (Gemini and gemini-embedding-2), Cloud Run and Secret Manager; Cloud Scheduler for the automatic sweeps. Deploy steps are in "Deploy (Cloud Run)" below. |
+| Permissions | The runtime service account needs `roles/datastore.user` and `roles/aiplatform.user` (plus Secret Manager access to the access-code secret); someone with rights to create those resources does the deployment. |
+| Your people's data | **Not provided.** There is no import or edit screen: profiles are created by `scripts/generate_seeds.py` (synthetic data). A loader for real profiles, and a way for each person to register their agent and review their profile, would have to be built. |
+| Who can sign in | Demo mode: one shared access code. Per-person sign-in via Identity-Aware Proxy exists (`AUTH_MODE=iap`) but has not been tried against a real IAP here. |
+| Notifications | None (see below). People have to open their requests page. |
+| Cost | Not estimated here and no prices are claimed: Gemini, Firestore and Cloud Run are billed by use. The number of Gemini calls per question is stated under "Cost and limits" below. |
+
 ## What it does not do (read before judging fit)
 
+- **Only registered agents can be asked.** A question is compared with all 400
+  synthetic profiles (for the similarity list on `/audit`), but a request can only go
+  to a colleague who has a registered agent: 4 in the seed data. Nobody else is
+  contacted, whatever their profile says, and there is no screen for registering
+  more people.
 - **Demo data only.** The 400 employees are synthetic. There is no import or
   edit screen for real employee profiles: profiles enter through
   `scripts/generate_seeds.py` (or by writing to the store). Using it on a real
@@ -446,12 +498,18 @@ gcloud run services update knowledge-discovery --region=asia-northeast1 --update
   read-only and covers one owner (see "Data source connectors").
 - **One question can reach up to 3 people.** Pressing "Ask" runs the full search again
   and sends to the top matches (at most 3), not only the person previewed on the card.
+  A person you already asked (request still open, or accepted) is not asked again; a
+  person who declined can be asked again. You never get a request for your own question.
+- **Earlier answers stay visible.** The requester screen shows the latest question
+  and, under "Earlier questions", the outcome of each previous one.
 - **A decline is visible.** The requester sees the decliner's name, the reason they
-  typed (or "Currently unable to participate.") and any resource they shared; the
-  candidate screen says so before they decline. This is deliberate ("declines are
+  typed (or "Currently unable to participate.") and any resource they shared, with
+  the note typed next to it; the candidate screen says so before they decline. This is deliberate ("declines are
   never hidden"), so choose the reason text accordingly.
 - **The audit page is not private.** `/audit` shows names, question text, decline
-  reasons and skip reasons to everyone who holds the tenant's access code. Private
+  reasons and skip reasons to everyone who holds the tenant's access code (in IAP
+  mode: to every signed-in human of the tenant). The numbers at its top describe the
+  latest question only. Private
   profile items are masked there (by item visibility, not by the model's say-so), but
   nothing else is.
 - **Personal data.** Questions, names, reasons and consent decisions are stored as
@@ -463,14 +521,26 @@ gcloud run services update knowledge-discovery --region=asia-northeast1 --update
   calibration is the `VECTOR_FLOOR` note above; Gemini can be wrong or unavailable. When
   a model call fails, that person is recorded as "Inference evaluation unavailable"
   in the audit trail and treated as no connection (fail-closed).
-- **Cost and limits.** A question triggers one embedding call and up to 20 model calls
-  (questions are capped at 2000 characters). There is no per-user rate limit. A rate-limited
+- **Cost and limits.** A question typed into "Ask your agent" costs one embedding call
+  plus one model call for each registered agent whose similarity passes `VECTOR_FLOOR`:
+  at most one per registered agent, so at most 4 in the seed data (asserted by
+  `tests/test_round2.py::TestCostOfOneQuestion`, which counts calls with fakes; it
+  assumes profile embeddings were computed at seed time, as `generate_seeds.py` does,
+  and does not include the secretary's draft and sweep calls or Gemini's price per
+  call). Questions are capped at 2000 characters. There is no per-user rate limit and
+  no limit on `/login` attempts, so use a long random access code; the sign-in cookie
+  holds that code itself for 14 days. A rate-limited
   embedding call is retried after a wait (default 62 s, up to 4 tries) inside the request.
 - **Reads are not optimised.** Status and inbox views read the whole message log and
   filter in Python; this is fine for a demo and will slow down as messages accumulate.
 - **Dependencies are lower-bounded, not locked** (`scripts/requirements.txt`); the
   suite was last run here with fastapi 0.165, pydantic 2.14, google-genai 3.6 on Python 3.13.
-- English only. The UI, seed profiles and prompts are English.
+- **Language.** The screens, seed profiles and model prompts are English; two sentences
+  of the prompts (in `gemini_adapters.py`, telling the model it may answer "no
+  connection") are in Japanese, and the screen shows a short Japanese note about
+  English-only questions. A Japanese question reached nobody in the offline mode (the
+  stand-in cannot match English profiles); it has not been tried with Gemini.
+  There is no Japanese UI.
 
 ## Demo-mode simplifications (deliberate)
 

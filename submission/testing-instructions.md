@@ -17,9 +17,9 @@ Open the URL, enter the access code once on the sign-in page, and you're in — 
 2. `/candidate` — the introduction arrives on Marcus's side as a letter. Accept it, share a resource instead, or decline (the requester then sees your name and the reason you give — declines are never hidden).
 3. `/audit` — Bridge Trace, the audit trail. Automatic sweeps are recorded as **counts only**; names appear only once a person has confirmed a request.
 
-**Make it your own:** type your own question into "Ask your agent" at the bottom of `/requester` — the full pipeline (400 profiles → similarity floor → isolated per-candidate evaluations → asks) runs live on whatever you ask.
+**Make it your own:** type your own question into "Ask your agent" at the top of `/requester` (write it in English — the profiles are English). Your question is compared with all 400 profiles for the similarity list on `/audit`, but only the 4 registered agents (Marcus, Rachel, Elena, Tom) can actually be asked: each of them goes through the similarity floor and one isolated model evaluation, and up to 3 are asked. Someone you have already asked (pending or accepted) is not asked again.
 
-**Shared world:** all judges share one demo tenant, and an autonomous sweep also runs unattended every 30 minutes (Cloud Scheduler + OIDC — shown in the demo video). If the featured introduction has already been accepted by another judge, the story continues in `/audit` — or press **Run sweep** / use a demo preset to start a new one. All data is synthetic (a fictional company, 401 employees), so nothing real is at stake. But the tenant is shared: another judge's actions (dismissing the featured card, declining a request) change what you see, and the audit page shows every name and decline reason in the tenant to anyone who has the access code. Questions are limited to 2000 characters.
+**Shared world:** all judges share one demo tenant, and an autonomous sweep also runs unattended every 30 minutes (Cloud Scheduler + OIDC — shown in the demo video). If the featured introduction has already been accepted by another judge, the story continues in `/audit` — or press **Run sweep** / use a demo preset to start a new one. All data is synthetic (a fictional company with 400 synthetic employee profiles), so nothing real is at stake. But the tenant is shared: another judge's actions (dismissing the featured card, declining a request) change what you see, and the audit page shows every name and decline reason in the tenant to anyone who has the access code. Questions are limited to 2000 characters.
 
 ---
 
@@ -29,6 +29,6 @@ Open the URL, enter the access code once on the sign-in page, and you're in — 
 
 **5分ツアー**: ① `/requester`（Jordan の画面）で「YOUR AGENT NOTICED」カード → Find someone → ドラフト確認 → Ask for 15 min。右の海図をクリックするとフルアトラス。② `/candidate` で Marcus 側に紹介状が届く。承諾・資料共有・辞退（辞退すると、依頼者に名前と理由が見える。隠れない）。③ `/audit`（Bridge Trace）で監査証跡——自動スイープは件数のみ、人が確認して依頼を送った後に実名。
 
-**自分の質問で試す**: `/requester` 下部の Ask your agent に自由に質問を打てば、400人へのファネルが本番の経路で走る。
+**自分の質問で試す**: `/requester` 上部の Ask your agent に英語で質問を打つ。質問は400件のプロフィールとの類似度一覧（/audit に表示）に使われるが、実際に依頼できるのは登録済みの4人（Marcus・Rachel・Elena・Tom）だけで、その4人が類似度フロアと1人ずつの評価を通り、最大3人に依頼が届く。すでに依頼中・承諾済みの相手には重ねて依頼されない。
 
-**共有ワールド**: 審査員全員が同じテナントを共有し、30分ごとの自律スイープも動き続けている。目玉の紹介が既に成立していたら /audit で続きを、または Run sweep／デモプリセットで新しい依頼を。データはすべて合成。壊れるものはない。
+**共有ワールド**: 審査員全員が同じテナントを共有し、30分ごとの自律スイープも動き続けている。目玉の紹介が既に成立していたら /audit で続きを、または Run sweep／デモプリセットで新しい依頼を。データはすべて合成。ただしテナントは共有なので、他の審査員の操作で見える内容が変わり、/audit にはアクセスコードを持つ全員に名前と辞退理由が見える。

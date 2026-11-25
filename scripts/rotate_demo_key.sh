@@ -5,10 +5,11 @@
 # 新キーは画面に表示しない。Devpost のテスト手順欄にだけ貼ること。
 set -euo pipefail
 
-PROJECT_ID="knowledge-discovery-2026"
-REGION="asia-northeast1"
-SERVICE="knowledge-discovery"
-BASE_URL="https://knowledge-discovery-dg6u6zqs7q-an.a.run.app"
+# 環境ごとの値は環境変数で渡す（例: PROJECT_ID=my-project BASE_URL=https://....run.app scripts/rotate_demo_key.sh）
+PROJECT_ID="${PROJECT_ID:?PROJECT_ID に GCP プロジェクト ID を設定してください}"
+BASE_URL="${BASE_URL:?BASE_URL に Cloud Run のサービス URL を設定してください}"
+REGION="${REGION:-asia-northeast1}"
+SERVICE="${SERVICE:-knowledge-discovery}"
 
 read -r -p "demo-api-key をローテーションします。動画の収録は済んでいますか？ [y/N] " ans
 [[ "${ans}" == "y" || "${ans}" == "Y" ]] || { echo "中止しました（収録前のローテは、新キーが動画に映るので無意味になります）"; exit 1; }
@@ -36,5 +37,12 @@ if [[ "${old_code}" != "401" || "${new_code}" != "200" ]]; then
 fi
 
 echo "-- 5/5 新キーをクリップボードへ（Devpost のテスト手順欄 <DEMO_API_KEY> に貼る）"
-printf '%s' "${NEW_KEY}" | pbcopy
+if command -v pbcopy >/dev/null 2>&1; then
+  printf '%s' "${NEW_KEY}" | pbcopy
+elif command -v xclip >/dev/null 2>&1; then
+  printf '%s' "${NEW_KEY}" | xclip -selection clipboard
+else
+  echo "   クリップボードのコマンド（pbcopy / xclip）が無いため、新キーは Secret Manager から取り出してください:"
+  echo "   gcloud secrets versions access latest --secret=demo-api-key --project=${PROJECT_ID}"
+fi
 echo "完了。審査員は ${BASE_URL}/ を開き、クリップボードのアクセスコードでサインインする"

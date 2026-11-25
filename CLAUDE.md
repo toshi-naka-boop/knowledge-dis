@@ -5,6 +5,7 @@
 - Python 3.12 / FastAPI + uvicorn / Pydantic v2 / Firestore(native) / google-genai SDK。パッケージ管理は venv + pip（`scripts/requirements.txt`）。`src/` レイアウトのため実行時は `PYTHONPATH=src:.`
 - セットアップ: `python3 -m venv .venv && .venv/bin/pip install -r scripts/requirements.txt`
 - ローカル起動: `USE_FIRESTORE=1 GOOGLE_CLOUD_PROJECT=<ID> GOOGLE_GENAI_USE_VERTEXAI=true DEMO_API_KEY=<key> VECTOR_FLOOR=0.62 PYTHONPATH=src:. .venv/bin/uvicorn 'knowledge_discovery.server:create_app_from_env' --factory --port 8080`（UI: `/requester` `/candidate` `/audit`、全アクセスに `api_key` 必須）
+- オフライン試用（Google 不要、アクセスコードは自動生成）: `scripts/try_offline.sh`
 - シード投入: `scripts/generate_seeds.py --use-firestore --project <ID> --embedder gemini [--clear --today YYYY-MM-DD]`
 - テスト: `.venv/bin/python -m unittest discover -s tests`（340件超、ネットワーク・認証不要。ADK未導入時は `test_secretary_agent` 13件 skip）
 - B段（秘書 Agent Runtime）は別 venv: `.venv-agent`（`scripts/requirements-agent.txt`、ピン留め）。`.venv-agent/bin/python -m unittest tests.test_secretary_agent` で skip 0 を確認。デプロイは `scripts/deploy_secretary_agent.py`

@@ -204,7 +204,7 @@ class TransmissionLayer:
                     # Generate audit_payload for masked audit view
                     audit_payload = {
                         "masked": True,
-                        "note": f"非公開項目に基づく{final_intent}（内容非表示）",
+                        "note": f"{final_intent} based on a private item (content hidden)",
                         "score": payload.get("score"),
                         "cited_count": len(cited_list),
                     }

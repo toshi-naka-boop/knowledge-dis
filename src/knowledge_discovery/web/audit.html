@@ -293,7 +293,7 @@ button.btn-text:hover { color: var(--primary); }
         <div class="page-header">
           <div>
             <div class="greeting">Bridge Trace</div>
-            <div class="page-sub">How your agent explored the organization and found a person.</div>
+            <div class="page-sub">What your agent did for each question: whom it could ask (registered agents only), whom it asked, whom it skipped and why.</div>
           </div>
           <span class="live-indicator"><span class="pulse-dot"></span> Live (3s)</span>
         </div>
@@ -472,9 +472,26 @@ async function fetchTrace() {
 
 function renderFunnel(stats) {
   const el = document.getElementById("traceFunnel");
-  el.innerHTML = `Explored <span class="tf-num">${esc(stats.total_profiles ?? "0")}</span> profiles ` +
-    `&middot; shortlisted <span class="tf-num">${esc(stats.funnel_limit ?? "0")}</span> ` +
-    `&middot; asked <span class="tf-num">${esc(stats.dispatched_count ?? "0")}</span> agents`;
+  const num = (v) => `<span class="tf-num">${esc(v)}</span>`;
+  const agents = stats.registered_agents_count ?? 0;
+  const q = stats.latest_query;
+  if (!q) {
+    el.innerHTML = `No question yet &middot; ${num(stats.total_profiles ?? 0)} profiles in the directory &middot; ` +
+      `only the ${num(agents)} registered agents can be asked`;
+    return;
+  }
+  // Every figure below belongs to the latest question only (not all-time totals).
+  const parts = [];
+  if (q.profiles_screened != null) {
+    parts.push(`compared with ${num(q.profiles_screened)} profiles` +
+      (q.shortlisted != null ? ` (top ${num(q.shortlisted)} listed for display)` : ""));
+  }
+  if (q.agents_considered != null) {
+    parts.push(`${num(q.agents_considered)} registered agents considered`);
+  }
+  parts.push(`asked ${num(q.asked ?? 0)}`);
+  parts.push(`not asked ${num(q.not_asked ?? 0)}`);
+  el.innerHTML = `Latest question: ${parts.join(" &middot; ")}`;
 }
 
 function renderMatchCard(sessionRecords) {
@@ -517,9 +534,9 @@ function formatHHMM(ts) {
 }
 
 const POLICY_LIMITED_TEXT = {
-  search: "Search requires approval under current policy",
-  ask: "Asking candidate agents requires approval under current policy",
-  prepare: "Preparing introductions requires approval under current policy",
+  search: "Search is switched off in your autonomy policy",
+  ask: "Asking candidate agents is switched off in your autonomy policy",
+  prepare: "Preparing introductions is switched off in your autonomy policy",
 };
 
 function renderSweepMeta(records, funnelStats) {
@@ -543,17 +560,16 @@ function renderSweepMeta(records, funnelStats) {
   metaEl.textContent = `Last sweep: ${isManual ? "Manual" : "Automatic"} · ${formatHHMM(latest.timestamp)}`;
   metaEl.style.display = "";
 
-  // "profiles explored" mirrors the funnel's org-wide total (the demo's
-  // "400 profiles"); payload.candidates_explored counts shortlisted candidate
-  // agents and would read confusingly small next to the funnel line above.
-  const explored = funnelStats.total_profiles ?? payload.candidates_explored ?? 0;
+  // payload.candidates_explored is the number of candidate agents the sweep
+  // actually checked; show that real count (not the directory size).
+  const explored = payload.candidates_explored ?? 0;
   const needs = typeof payload.needs_detected === "number" ? payload.needs_detected : 0;
   const needsText = needs === 0
     ? "no new needs"
     : `${needs} need${needs === 1 ? "" : "s"} prepared, awaiting the owner's review`;
   const prefix = isManual ? "Manual sweep" : "Automatic sweep";
 
-  let html = `<div class="sweep-summary-line">${esc(prefix)} — ${esc(explored)} profiles explored &middot; ${esc(needsText)}</div>`;
+  let html = `<div class="sweep-summary-line">${esc(prefix)} — ${esc(explored)} candidate agents checked &middot; ${esc(needsText)}</div>`;
 
   const runKey = payload.run_key;
   const heldRecords = records.filter(r => r.intent === "policy_limited" && (r.display_payload || {}).run_key === runKey);
@@ -703,11 +719,12 @@ function recordToEvent(r, funnelStats) {
     rowClass = "policy-blocked";
   } else if (r.intent === "query") {
     action = "Need received — your agent starts searching";
-    sublines.push({
-      label: "EVIDENCE",
-      text: `${esc(funnelStats.total_profiles ?? "?")} profiles → ${esc(funnelStats.funnel_limit ?? "?")} shortlisted → ${esc(funnelStats.registered_agents_count ?? "?")} candidate agents`,
-      cls: "trace-evidence",
-    });
+    // Counts recorded with this very question (older records have none).
+    const st = payload.stats || {};
+    const evidence = (st.profiles_screened != null)
+      ? `${esc(st.profiles_screened)} profiles compared → top ${esc(st.shortlisted ?? "?")} listed for display → ${esc(st.agents_considered ?? "?")} registered agents considered`
+      : `${esc(funnelStats.registered_agents_count ?? "?")} registered agents could be asked`;
+    sublines.push({ label: "EVIDENCE", text: evidence, cls: "trace-evidence" });
   } else if (r.intent === "preview_search") {
     action = "Secretary previewed candidates — nothing delivered";
     sublines.push({ label: "POLICY", text: "content hidden (fail-closed)", cls: "trace-policy" });
@@ -762,11 +779,28 @@ function recordToEvent(r, funnelStats) {
 // (real data only: one representative reason, the rest counted not repeated).
 function buildSessionEvents(sessionRecords, funnelStats) {
   MATCH_PROPOSAL_SEEN.clear();
-  const noConnectionRecords = sessionRecords.filter(r => r.intent === "no_connection");
+  const isSkip = (r) => r.intent === "no_connection" && (r.display_payload || {}).drop_stage === "already_asked";
+  const noConnectionRecords = sessionRecords.filter(r => r.intent === "no_connection" && !isSkip(r));
+  const skipRecords = sessionRecords.filter(isSkip);
   let noConnectionAdded = false;
+  let skipAdded = false;
   const events = [];
 
   for (const r of sessionRecords) {
+    if (isSkip(r)) {
+      // Contacts not asked again because an earlier request is open or accepted.
+      if (skipAdded) continue;
+      skipAdded = true;
+      const names = skipRecords.map(sr => esc(resolveName(sr.to))).join(", ");
+      events.push({
+        action: `Not asked again: ${names}`,
+        sublines: [{ label: "POLICY", text: "an earlier request from you to them is still open or was accepted", cls: "trace-policy" }],
+        rowClass: "",
+        timestamp: r.timestamp,
+        auditId: r.audit_id,
+      });
+      continue;
+    }
     if (r.intent === "no_connection") {
       if (noConnectionAdded) continue;
       noConnectionAdded = true;
