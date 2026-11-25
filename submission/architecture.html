@@ -78,7 +78,7 @@
   <g font-size="12.5" fill="#4A3B28">
     <text x="292" y="408">·  <tspan font-weight="600" fill="#26221A">Detect</tspan> — five deterministic stall signals; no LLM involved</text>
     <text x="292" y="430">·  <tspan font-weight="600" fill="#26221A">Explore</tspan> — compares the question with registered agents' public profile items via Gemini embeddings</text>
-    <text x="292" y="452">·  <tspan font-weight="600" fill="#26221A">Evaluate</tspan> — each candidate in an isolated inference: data boundary = process boundary</text>
+    <text x="292" y="452">·  <tspan font-weight="600" fill="#26221A">Evaluate</tspan> — each candidate in a separate model call (same server process)</text>
     <text x="292" y="474">·  <tspan font-weight="600" fill="#26221A">Prepare</tspan> — Gemini drafts the question; nothing is sent, no one is contacted</text>
   </g>
 

@@ -388,7 +388,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
       <div class="rail-head">
         <div class="greeting" id="greeting">Good morning</div>
         <div class="agent-badge"><span class="pulse-dot blue"></span><span id="agentBadgeText">Your agent</span></div>
-        <p class="purpose" id="purposeLine"><strong>Don't know who to ask?</strong> Describe what you need. Your agent looks for colleagues who might know, shows you who it would ask, and — only after you confirm and they agree — proposes a 15-minute conversation. The people you can reach are the owners of the <span id="agentCount">registered</span> agents; nobody is notified automatically.</p>
+        <p class="purpose" id="purposeLine"><strong>Don't know who to ask?</strong> Describe what you need. When you press Ask, your agent compares it with the registered colleagues and sends the request to up to 3 of them right away (you see who afterwards, not before). A 15-minute conversation is proposed only if they agree. The people you can reach are the owners of the <span id="agentCount">registered</span> agents; nobody is notified automatically.</p>
       </div>
 
       <!-- Manual ask: the main action, so it comes first and starts open -->
@@ -778,11 +778,10 @@ function noMatchMessage(alreadyAsked) {
   const names = (alreadyAsked || []).map(esc);
   const scope = REGISTERED_AGENT_COUNT == null ? "the registered agents" : `the ${REGISTERED_AGENT_COUNT} registered agents`;
   const skipped = names.length
-    ? `<br><br><strong>Not asked again:</strong> ${names.join(", ")} — you already have an open or accepted request to them (see Earlier questions below). Nothing new was sent.`
+    ? `<br><br><strong>Not asked again:</strong> ${names.join(", ")} — you already have an open or accepted request to them about this same question (see Earlier questions below).`
     : "";
-  const why = names.length
-    ? ""
-    : `Your question was compared with ${scope} (only they can be asked), and none looked close enough. Nothing was sent to anyone.
+  const others = names.length ? "Apart from the people listed below, none" : "None";
+  const why = `Your question was compared with ${scope} (only they can be asked). ${others} looked close enough. Nothing new was sent.
     Try again with more concrete wording, in English: the field or industry, the kind of situation, and what you need (an example, a contact, a decision).
     The Bridge Trace page (/audit) lists, for each person, why they were not asked.`;
   return `<div class="status-card"><div class="status-head"><span class="status-name">No one was asked</span><span class="status-tag waiting">NO MATCH</span></div>

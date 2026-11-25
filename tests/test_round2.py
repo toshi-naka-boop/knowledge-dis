@@ -245,10 +245,20 @@ class TestHistoryAndDuplicates(unittest.TestCase):
         ask_rachel = next(a for a in first["dispatched_asks"] if self.store.get_message(a).to_entity == "agent_rachel")
         self.assertEqual(self._answer(ask_marcus, "granted").status_code, 200)
         self.assertEqual(self._answer(ask_rachel, "declined", reason_text="busy").status_code, 200)
-        again = self._ask("Another clinic zoning relocation question")
+        # same question again: accepted Marcus is skipped, declined Rachel is asked again
+        again = self._ask(QUESTION)
         asked = [self.store.get_message(a).to_entity for a in again["dispatched_asks"]]
         self.assertEqual(asked, ["agent_rachel"])
         self.assertEqual(again["already_asked_names"], ["Marcus"])
+
+    def test_different_question_can_reach_an_accepted_contact(self) -> None:
+        first = self._ask()
+        ask_marcus = next(a for a in first["dispatched_asks"] if self.store.get_message(a).to_entity == "agent_marcus")
+        self.assertEqual(self._answer(ask_marcus, "granted").status_code, 200)
+        other = self._ask("Another clinic zoning relocation question")
+        asked = {self.store.get_message(a).to_entity for a in other["dispatched_asks"]}
+        self.assertIn("agent_marcus", asked)
+        self.assertEqual(other["already_asked_names"], [])
 
     def test_second_question_keeps_the_first_answer_in_history(self) -> None:
         first = self._ask()

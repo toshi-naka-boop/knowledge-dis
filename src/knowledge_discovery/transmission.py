@@ -208,6 +208,24 @@ class TransmissionLayer:
                         "score": payload.get("score"),
                         "cited_count": len(cited_list),
                     }
+                elif (
+                    final_intent == "connect_ask"
+                    and reason_text
+                    and any(getattr(i, "visibility", "public") == "private" for i in profile.items)
+                ):
+                    # The model saw this person's private items. A paraphrase that
+                    # cites only public keys cannot be detected, so the reason is
+                    # withheld from the audit view (the ask itself still goes to
+                    # the candidate, who owns those items).
+                    audit_payload = {
+                        "masked": True,
+                        "note": (
+                            "connect_ask: reason withheld from the audit view because "
+                            "this person has private items (a paraphrase cannot be ruled out)"
+                        ),
+                        "score": payload.get("score"),
+                        "cited_count": len(cited_list),
+                    }
 
         # Step 4: Construct and store operational message
         message = Message(

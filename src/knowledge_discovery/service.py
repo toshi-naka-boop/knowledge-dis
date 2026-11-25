@@ -81,18 +81,27 @@ class KnowledgeDiscoveryService:
         # restarts between requests, so every link lives in message payloads
         # (requester_id / query_id / ask_audit_id) and is derived from the store.
 
-    def _already_asked(self, requester_id: str) -> dict[str, str]:
-        """agent_id -> reason, for contacts this requester must not be asked again about.
+    @staticmethod
+    def _norm_question(text: str) -> str:
+        return " ".join(str(text).lower().split())
 
-        An earlier request from the same requester that is still waiting for an
-        answer, or that was already accepted, counts. A declined request does not:
-        the requester may ask that person again.
+    def _already_asked(self, requester_id: str, question_text: str) -> dict[str, str]:
+        """agent_id -> reason, for contacts this requester must not be asked again about
+        THIS question.
+
+        An earlier request for the same question (ignoring case and spacing) from
+        the same requester that is still waiting for an answer, or that was already
+        accepted, counts. A declined request does not, and a different question
+        may go to the same person again.
         """
         found: dict[str, str] = {}
+        target = self._norm_question(question_text)
         for m in self.store.list_messages():
             if m.intent not in ("connect_ask", "connect_ask_private"):
                 continue
             if m.payload.get("requester_id") != requester_id or m.rejected:
+                continue
+            if self._norm_question(m.payload.get("question_summary", "")) != target:
                 continue
             if m.consent_state == "pending":
                 found[m.to_entity] = (
@@ -110,7 +119,7 @@ class KnowledgeDiscoveryService:
         Matching (the only step that calls the embedding and model services) runs
         BEFORE anything is recorded, so a failed embedding call leaves no orphan
         query in the log. The requester is never asked, and a contact whose earlier
-        request from the same requester is pending or accepted is not asked again.
+        request for the same question is pending or accepted is not asked again.
         """
         # 1. Retrieve registered agents and all employee profiles
         agents = self.store.list_agents(active_only=True)
@@ -122,7 +131,7 @@ class KnowledgeDiscoveryService:
             agents,
             profiles,
             exclude_employee_id=requester_id,
-            skip_agents=self._already_asked(requester_id),
+            skip_agents=self._already_asked(requester_id, question_text),
         )
 
         # 3. Record the query, with the real counts of this run (shown in /audit)
@@ -179,7 +188,8 @@ class KnowledgeDiscoveryService:
                 consent_state="pending",
                 candidate_profile=qual.profile,
             )
-            dispatched_asks.append(ask_msg)
+            if not ask_msg.rejected:
+                dispatched_asks.append(ask_msg)
 
         return QuerySubmissionResult(
             query_message=query_msg,

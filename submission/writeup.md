@@ -64,8 +64,8 @@ Confirmation is structural.
 
 - The human confirmation boundary. `contact_mode` is fixed to `always_ask`, enforced server-side. The agent observes, detects, explores, evaluates, prepares — and stops. The code path that doesn't stop was never written.
 - Autonomy comes in grades: Monitor ⊇ Search ⊇ Ask ⊇ Prepare. Switch off an upper permission and everything below it stops, structurally. Normalized on save. The client's word is never trusted.
-- Privacy is enforced by the type system, not by the model's self-report. Private items are masked fail-closed off the real `visibility` field. A model that lies about what it cited can unmask nothing.
-- Data boundary = process boundary. Candidates are evaluated one by one, each in its own isolated inference. Each candidate's evaluation receives only the question and that candidate's own profile.
+- Privacy relies on the items' `visibility` field, the keys the model cited and a fragment scan of the reason text, not on the model alone. A model that paraphrases a private item while citing only public keys is not detected, so the audit view withholds the reason of every ask to a person who has private items.
+- Candidates are evaluated one by one, each in its own model call (same server process; no process-level isolation). Each candidate's evaluation receives only the question and that candidate's own profile.
 - The audit respects privacy too. Before the owner confirms: counts only — no names, no free text. Names appear after a human says yes. And delivery is never authorized by an LLM score alone: missing, non-numeric, out of range — all fail closed to "no connection" (our own red team hit this spot; we hardened it).
 - Honestly: the demo runs on one shared access code (exchanged at /login for an HttpOnly cookie — never carried in a URL), so a judge can drive the whole flow from one sign-in. The production path — IAP, per-employee principals, horizontal-authorization guards — is implemented and tested. What remains is one deployment flag.
 

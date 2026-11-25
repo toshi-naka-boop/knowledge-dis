@@ -7,6 +7,7 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from knowledge_discovery.models import Agent, Profile, ProfileItem
+from knowledge_discovery.schemas import SchemaRegistry
 from knowledge_discovery.store import InMemoryStore
 from knowledge_discovery.transmission import TransmissionLayer
 
@@ -56,6 +57,42 @@ class TestTransmission(unittest.TestCase):
         self.assertEqual(msg.intent, "connect_ask")
         self.assertEqual(msg.payload_type, "connect_ask")
         self.assertFalse(msg.rejected)
+        # The profile has a private item, so the reason is withheld from the audit view
+        self.assertTrue(msg.audit_payload.get("masked"))
+        self.assertNotIn("reason_text", msg.audit_payload)
+
+    def test_paraphrased_private_reason_is_withheld_from_audit(self) -> None:
+        """A paraphrase citing only public keys cannot be detected, so the audit
+        view must not show the reason of a person who has private items."""
+        msg = self.transmission.send(
+            from_entity="system",
+            to_entity="agent_1",
+            intent="connect_ask",
+            payload_type="connect_ask",
+            payload={
+                "question_summary": "q",
+                "reason_text": "She quietly handles a confidential matter.",
+                "cited_item_keys": ["current_work"],
+                "score": 0.9,
+            },
+            consent_state="pending",
+            candidate_profile=self.profile1,
+        )
+        self.assertEqual(msg.intent, "connect_ask")
+        view = SchemaRegistry.get_audit_view(msg)
+        self.assertNotIn("confidential", str(view))
+
+    def test_public_only_profile_reason_stays_visible(self) -> None:
+        public_only = Profile(
+            employee_id="emp_1", name="Alice Tanaka", role="Production Engineer",
+            items=[ProfileItem(key="current_work", body="x", visibility="public", reviewed=True)],
+        )
+        msg = self.transmission.send(
+            from_entity="system", to_entity="agent_1", intent="connect_ask",
+            payload_type="connect_ask",
+            payload={"question_summary": "q", "reason_text": "fits", "cited_item_keys": ["current_work"], "score": 0.9},
+            consent_state="pending", candidate_profile=public_only,
+        )
         self.assertIsNone(msg.audit_payload)
 
         # Verify saved in store
@@ -191,7 +228,8 @@ class TestTransmission(unittest.TestCase):
         self.assertTrue(msg.audit_payload.get("masked"))
 
     def test_no_mask_on_clean_public_reason(self) -> None:
-        """Public citation with clean reason stays unmasked (no false positives)."""
+        """Public citation with clean reason stays an unmasked public ask (intent unchanged).
+        The audit view still withholds the reason because the profile has a private item."""
         msg = self.transmission.send(
             from_entity="system",
             to_entity="agent_1",
@@ -207,7 +245,7 @@ class TestTransmission(unittest.TestCase):
             candidate_profile=self.profile1,
         )
         self.assertEqual(msg.intent, "connect_ask")
-        self.assertIsNone(msg.audit_payload)
+        self.assertTrue(msg.audit_payload.get("masked"))
 
 
 if __name__ == "__main__":

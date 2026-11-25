@@ -2,9 +2,10 @@
 
 **In one sentence:** when an employee does not know who in the company to ask,
 their own AI agent compares the question with the profiles of the colleagues who
-have a registered agent, drafts the request, and — only after the requester
-confirms and the colleague agrees — proposes a 15-minute conversation between the
-two people.
+have a registered agent and sends the request to the best matches (up to 3). When
+a colleague agrees, it proposes a 15-minute conversation between the two people.
+The manual Ask sends right away and shows you who was asked afterwards; only the
+autonomous secretary path (stagnation cards) asks you to confirm before anything is sent.
 
 **Status: a hackathon demo with synthetic data** (a fictional company). It is not
 a production system; see "What it does not do" below before judging fit.
@@ -23,8 +24,11 @@ crosses business units — "who has actually seen a clinic relocate before a
 sale?" — lives in people's heads and never lands in Salesforce, because it is
 made of confidences, relationships and case nuance. This system does
 *exploratory* matching over that tacit layer ("this person **might** know,
-given their background") and always resolves to a human connection: a 15-minute
+given their background") and aims at a human connection: a 15-minute
 meeting proposal, or an honest decline with a reason and optional resources.
+A request stays pending until the colleague opens their page: there is no
+notification, expiry or withdrawal, and if no registered agent is close enough
+nobody is asked.
 
 ## Architecture (governance three-in-one)
 
@@ -37,12 +41,15 @@ meeting proposal, or an honest decline with a reason and optional resources.
 Key properties:
 
 - **Candidate-isolated inference**: each candidate's agent sees ONLY the
-  question and its own profile (data boundary = process boundary).
+  question and its own profile (each candidate is a separate model call within the same server process;
+  there is no process or network isolation between candidates).
 - **Private items**: things an owner deliberately keeps off the public profile.
   Only the owner's agent knows them; when a question relates, the owner alone
   gets a discreet ask. The audit log records that a private-based ask happened —
-  never its content. Masking is decided by the type system (item visibility +
-  content scan), not by the LLM's self-report.
+  never its content. Masking uses the items' `visibility` field, the keys the
+  model cited, and a fragment scan of the reason text. A model that paraphrases a
+  private item while citing only public keys is not detected, so for anyone who has
+  private items the audit view withholds the reason of every ask.
 - **Honest non-matches**: the engine is allowed to say "no meaningful
   connection" (deterministic vector floor OR LLM null), and dropped candidates
   appear in the audit view with their reasons.
@@ -333,7 +340,7 @@ through the server, which applies the requester/audit projections.
 The proactive secretary (`POST /api/secretary/sweep`) is fired daily by a Cloud
 Scheduler HTTP job that carries the demo API key as a header (the service stays
 `--allow-unauthenticated`; the endpoint itself returns 401 without the key).
-Production would use OIDC + a dedicated invoker SA (write-up future item).
+The separate `/internal/autonomous-sweep` route already verifies a Google-signed OIDC token; this `/api/secretary/sweep` job still uses the shared demo key (moving it to OIDC + a dedicated invoker service account is not done).
 
 ```bash
 gcloud scheduler jobs create http kd-secretary-sweep \
@@ -473,7 +480,7 @@ yourself; it is not a ready service.
 
 | Need | Today |
 |---|---|
-| Cloud account | A Google Cloud project with billing, Firestore (native), Vertex AI (Gemini and gemini-embedding-2), Cloud Run and Secret Manager; Cloud Scheduler for the automatic sweeps. Deploy steps are in "Deploy (Cloud Run)" below. |
+| Cloud account | A Google Cloud project with billing, Firestore (native), Vertex AI (Gemini and gemini-embedding-2), Cloud Run and Secret Manager; Cloud Scheduler for the automatic sweeps. Deploy steps are in "Deploy (Cloud Run)" above. |
 | Permissions | The runtime service account needs `roles/datastore.user` and `roles/aiplatform.user` (plus Secret Manager access to the access-code secret); someone with rights to create those resources does the deployment. |
 | Your people's data | **Not provided.** There is no import or edit screen: profiles are created by `scripts/generate_seeds.py` (synthetic data). A loader for real profiles, and a way for each person to register their agent and review their profile, would have to be built. |
 | Who can sign in | Demo mode: one shared access code. Per-person sign-in via Identity-Aware Proxy exists (`AUTH_MODE=iap`) but has not been tried against a real IAP here. |
@@ -498,8 +505,12 @@ yourself; it is not a ready service.
   read-only and covers one owner (see "Data source connectors").
 - **One question can reach up to 3 people.** Pressing "Ask" runs the full search again
   and sends to the top matches (at most 3), not only the person previewed on the card.
-  A person you already asked (request still open, or accepted) is not asked again; a
-  person who declined can be asked again. You never get a request for your own question.
+  A person you already asked the same question (request still open, or accepted) is
+  not asked again; a person who declined, or a different question, can be sent again. You never get a request for your own question.
+- **No cancel, expiry or undo.** A request stays pending until the colleague answers;
+  the requester cannot withdraw it, and "Accept" is a single click that cannot be
+  taken back. If no registered agent is close enough, nobody is asked, so a human
+  connection is not guaranteed.
 - **Earlier answers stay visible.** The requester screen shows the latest question
   and, under "Earlier questions", the outcome of each previous one.
 - **A decline is visible.** The requester sees the decliner's name, the reason they
@@ -510,8 +521,9 @@ yourself; it is not a ready service.
   reasons and skip reasons to everyone who holds the tenant's access code (in IAP
   mode: to every signed-in human of the tenant). The numbers at its top describe the
   latest question only. Private
-  profile items are masked there (by item visibility, not by the model's say-so), but
-  nothing else is.
+  profile items are masked there by item visibility, and the reason of any ask to a
+  person who has private items is withheld (a model paraphrase of a private item cannot
+  be detected), but nothing else is.
 - **Personal data.** Questions, names, reasons and consent decisions are stored as
   messages in Firestore (or memory) until you delete them. The only removal paths
   here are the `--clear` reseed in "Demo reset" and deleting the Firestore database
@@ -545,7 +557,7 @@ yourself; it is not a ready service.
 ## Demo-mode simplifications (deliberate)
 
 - Single shared demo API key; the candidate screen has a persona switcher so
-  one operator can play all four roles. Per-user auth is out of scope by spec.
+  one operator can play all four roles. Per-user sign-in exists only with `AUTH_MODE=iap` (not verified on a real IAP; see above); the demo-key mode has no per-user auth.
 - `POST /api/probe/unregistered-intent` exists solely to demonstrate the
   transmission-layer rejection (red row in the audit view) live.
 - `/api/secretary/*` (digest/confirm/dismiss/profile-diff review) does not
