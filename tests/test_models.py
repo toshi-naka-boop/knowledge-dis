@@ -10,13 +10,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from knowledge_discovery.models import (
     Agent,
     Attachment,
-    ConnectionDetails,
-    ConnectionInferenceResult,
-    FunnelCandidate,
     Message,
     Profile,
     ProfileItem,
-    RequesterCandidateStatus,
 )
 
 

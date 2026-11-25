@@ -332,13 +332,13 @@ async function loadAsksForAgent() {
       headers: { "X-API-Key": API_KEY }
     });
     if (!res.ok) {
-      container.innerHTML = `<div class="empty-note">Error fetching requests.</div>`;
+      container.innerHTML = `<div class="empty-note">${esc(failureMessage("load your requests", res.status, await readDetail(res)))}</div>`;
       return;
     }
     const data = await res.json();
     renderAsks(data.asks || []);
   } catch (err) {
-    container.innerHTML = `<div class="empty-note">Connection error: ${esc(err.message)}</div>`;
+    container.innerHTML = `<div class="empty-note">${esc(networkFailureMessage("load your requests"))}</div>`;
   }
 }
 
@@ -395,9 +395,9 @@ function renderAskLetter(ask) {
         </div>
         <div class="letter-actions" id="actions_${esc(auditId)}">
           <button class="btn-action" onclick="acceptAsk('${esc(auditId)}')">Accept the introduction</button>
-          <button class="btn-ghost" onclick="togglePanel('${esc(auditId)}', 'pass')">Decline quietly</button>
+          <button class="btn-ghost" onclick="togglePanel('${esc(auditId)}', 'pass')">Decline</button>
         </div>
-        <div class="letter-note">Declining is invisible to ${esc(first)}. <button class="btn-quiet" onclick="togglePanel('${esc(auditId)}', 'share')">share a resource instead ›</button></div>
+        <div class="letter-note">If you decline, ${esc(first)} will see your name and the reason you give (or a default note). Sharing a resource instead is also shown to ${esc(first)}. <button class="btn-quiet" onclick="togglePanel('${esc(auditId)}', 'share')">share a resource instead ›</button></div>
 
         <div id="sharePanel_${esc(auditId)}" class="response-panel">
           <div class="form-row">
@@ -406,7 +406,7 @@ function renderAskLetter(ask) {
               <option value="doc">Document ID</option>
               <option value="text">Text Note</option>
             </select>
-            <input type="text" id="attContent_${esc(auditId)}" placeholder="https://wiki.internal/clinic-relocation" value="https://wiki.internal/clinic-relocation">
+            <input type="text" id="attContent_${esc(auditId)}" placeholder="https://wiki.internal/clinic-relocation">
           </div>
           <textarea id="shareNote_${esc(auditId)}" placeholder="Optional note to include..."></textarea>
           <div class="btn-row">
@@ -416,9 +416,9 @@ function renderAskLetter(ask) {
         </div>
 
         <div id="passPanel_${esc(auditId)}" class="response-panel">
-          <textarea id="passReason_${esc(auditId)}" placeholder="Let them know why (optional)..."></textarea>
+          <textarea id="passReason_${esc(auditId)}" placeholder="Let them know why (optional) — this is shown to the requester"></textarea>
           <div class="btn-row">
-            <button class="btn-ghost" onclick="submitPass('${esc(auditId)}')">Confirm — decline quietly</button>
+            <button class="btn-ghost" onclick="submitPass('${esc(auditId)}')">Confirm — decline</button>
             <button class="btn-quiet" onclick="togglePanel('${esc(auditId)}', 'pass')">Cancel</button>
           </div>
         </div>
@@ -435,11 +435,11 @@ function renderAskLetter(ask) {
 function resultText(ask) {
   const local = LOCAL_OUTCOME[ask.ask_audit_id];
   if (local) {
-    if (local.decision === "granted") return "You accepted — a 15-min intro will be proposed.";
+    if (local.decision === "granted") return "You accepted. The requester can now see this. No invite or email is sent automatically — agree a time with them directly.";
     return local.hasAttachment ? "You shared a resource instead." : "You passed this time.";
   }
   if (ask.consent_state === "granted") {
-    return "You accepted — a 15-min intro will be proposed.";
+    return "You accepted. The requester can now see this. No invite or email is sent automatically — agree a time with them directly.";
   }
   return "You already responded to this request.";
 }
@@ -455,12 +455,13 @@ function togglePanel(auditId, which) {
 function updateAttachmentPlaceholder(auditId) {
   const type = document.getElementById(`attType_${auditId}`).value;
   const input = document.getElementById(`attContent_${auditId}`);
+  // Example text only: it is a placeholder, never sent unless the person types it.
   if (type === "link") {
-    input.value = "https://wiki.internal/clinic-relocation";
+    input.placeholder = "https://wiki.internal/clinic-relocation";
   } else if (type === "doc") {
-    input.value = "doc_clinic_relocation_guide";
+    input.placeholder = "doc_clinic_relocation_guide";
   } else {
-    input.value = "Please refer to standard outpatient guidelines.";
+    input.placeholder = "Short note to include";
   }
 }
 
@@ -469,6 +470,35 @@ function disableActions(auditId, message) {
   if (!actions) return;
   actions.querySelectorAll("button").forEach((b) => (b.disabled = true));
   actions.insertAdjacentHTML("beforeend", `<span class="already-answered">${esc(message)}</span>`);
+}
+
+
+// Plain-language failure text: what went wrong, whether anything changed, what to do next.
+// (The server's own `detail` is only shown for 4xx responses, which are written for users.)
+function failureMessage(action, status, detail) {
+  if (status === 401 || status === 403) {
+    return `Could not ${action}: your sign-in is missing or has expired. Open /login, enter the access code again, then retry.`;
+  }
+  if (status === 409) {
+    return `Could not ${action}: this was already answered. Reload the page to see the current state.`;
+  }
+  if (status === 422 || status === 400) {
+    const why = typeof detail === "string" ? detail : "an entry is empty, too long or not in the expected form";
+    return `Could not ${action}: ${why}. Nothing was changed - fix the entry and try again.`;
+  }
+  if (status === 404) {
+    return `Could not ${action}: the item no longer exists. Reload the page and try again.`;
+  }
+  if (status >= 500) {
+    return `Could not ${action}: the server had a problem. Please check the list on the page before retrying so you do not do it twice; if it keeps failing, contact the person who runs this demo.`;
+  }
+  return `Could not ${action} (error ${status}). Reload the page and try again.`;
+}
+function networkFailureMessage(action) {
+  return `Could not ${action}: the server could not be reached. Check your connection, then reload the page and retry. Nothing is known to have been saved.`;
+}
+async function readDetail(res) {
+  try { const d = await res.json(); return d && d.detail; } catch (e) { return null; }
 }
 
 async function acceptAsk(auditId) {
@@ -516,15 +546,14 @@ async function submitConsent(auditId, decision, reasonText, attachment) {
       return;
     }
     if (!res.ok) {
-      const errData = await res.json();
-      alert("Failed to submit response: " + (errData.detail || "Unknown error"));
+      alert(failureMessage("send your response", res.status, await readDetail(res)));
       if (actions) actions.querySelectorAll("button").forEach((b) => (b.disabled = false));
       return;
     }
 
     await loadAsksForAgent();
   } catch (err) {
-    alert("Connection error: " + err.message);
+    alert(networkFailureMessage("send your response"));
     if (actions) actions.querySelectorAll("button").forEach((b) => (b.disabled = false));
   }
 }

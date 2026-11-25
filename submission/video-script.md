@@ -261,19 +261,19 @@ AUTONOMY POLICY
 **操作**: `/candidate` へ（既定で Marcus のインボックス）。上部に海図ストリップ、中央にレター。ゆっくり1画面ぶんだけスクロール。
 **画面で見せるもの**:
 - 海図ストリップ: `SOMEONE FOUND A ROUTE TO YOUR ISLAND` / 右端の自分の海岸に `You`（赤いアウトラインの点）/ 西から届く破線
-- レター: `AN INTRODUCTION · PREPARED BY JORDAN LEE'S AGENT` / `Jordan Lee needs your perspective.` / 斜体の依頼文 / `JORDAN LEE · 15 MINUTES · THIS WEEK` / `[Accept the introduction]` `[Decline quietly]` / `Declining is invisible to Jordan.`
+- レター: `AN INTRODUCTION · PREPARED BY JORDAN LEE'S AGENT` / `Jordan Lee needs your perspective.` / 斜体の依頼文 / `JORDAN LEE · 15 MINUTES · THIS WEEK` / `[Accept the introduction]` `[Decline]` / `If you decline, Jordan will see your name and the reason you give.`
 - 脚注（罫線の下）: private 項目は内容非開示のまま適合判定された旨 / `Shared between agents: the question and this note. Kept private: your profile's private items, calendars, and messages.`
 **カメラ**: 脚注ブロックに 3秒静止。その後 `Accept the introduction` をクリック。
 
 **ナレーション（EN）**:
 > Marcus doesn't get a ticket. He gets a letter. His own agent screened it first.
 > He can see exactly what crossed between the two agents — the question, and a short note on why him. His calendar, his messages, his private items did not.
-> Declining would be invisible. He accepts.
+> He could decline — and Jordan would see that, with his reason. He accepts.
 
 **日本語（参考訳）**:
 > Marcus に届くのはチケットではなく、一通の紹介状だ。彼自身のエージェントが先に選別している。
 > 2つのエージェントの間で何が行き交ったかが正確に見える——質問と、なぜ彼なのかという短いメモ。カレンダーもメッセージも非公開項目も渡っていない。
-> 断っても Jordan には見えない。彼は承諾する。
+> 断れば Jordan に名前と理由が見える。彼は承諾する。
 
 ---
 
@@ -357,7 +357,7 @@ Jordan decides how far her agent may go on its own. Monitor. Search. Ask other a
 
 The draft is hers to edit. Nothing was sent while she was away. She reads it, changes a line, and asks for fifteen minutes.
 
-Marcus doesn't get a ticket. He gets a letter. His own agent screened it first. He can see exactly what crossed between the two agents: the question, and a short note on why him. His calendar, his messages, his private items did not. Declining would be invisible. He accepts.
+Marcus doesn't get a ticket. He gets a letter. His own agent screened it first. He can see exactly what crossed between the two agents: the question, and a short note on why him. His calendar, his messages, his private items did not. He could decline, and Jordan would see that, with his reason. He accepts.
 
 Every run is auditable. Before Jordan approved, the automatic sweep is recorded as counts only: how many profiles, how many needs prepared. No names. Names appear after a human said yes. Private recommendation, human approval, then an auditable, named interaction.
 

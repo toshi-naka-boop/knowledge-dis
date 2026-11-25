@@ -385,6 +385,25 @@ function initials(name) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+// Visible notice instead of a silent failure (the page polls, so it clears itself on the next success).
+function showTraceNotice(msg) {
+  let el = document.getElementById("traceNotice");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "traceNotice";
+    el.setAttribute("role", "alert");
+    el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:14px;max-width:560px;z-index:50;background:#F1E8CF;border:1px solid #A13A20;color:#26221A;padding:10px 14px;font-size:12.5px;";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.display = msg ? "block" : "none";
+}
+function traceFailure(status) {
+  return status === 401 || status === 403
+    ? "The trace could not be loaded: your sign-in is missing or has expired. Open /login, enter the access code again, then reload."
+    : "The trace could not be loaded: the server had a problem. It will retry automatically; if this stays, reload the page or contact the person who runs this demo.";
+}
+
 async function fetchAgents() {
   try {
     const res = await fetch("/api/agents", { headers: { "X-API-Key": API_KEY } });
@@ -434,7 +453,8 @@ function latestSession(records) {
 async function fetchTrace() {
   try {
     const res = await fetch("/api/audit/messages", { headers: { "X-API-Key": API_KEY } });
-    if (!res.ok) return;
+    if (!res.ok) { showTraceNotice(traceFailure(res.status)); return; }
+    showTraceNotice("");
     const data = await res.json();
     const records = (data.records || []).slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
     const session = latestSession(records);
@@ -446,6 +466,7 @@ async function fetchTrace() {
     PREV_RECORD_COUNT = records.length;
   } catch (err) {
     console.error("Trace fetch error:", err);
+    showTraceNotice("The trace could not be loaded: the server could not be reached. It will retry automatically; check your connection if this stays.");
   }
 }
 

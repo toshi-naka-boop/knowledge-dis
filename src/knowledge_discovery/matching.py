@@ -17,8 +17,7 @@ import math
 import re
 import zlib
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from knowledge_discovery.models import (
     Agent,
@@ -148,7 +147,9 @@ class FakeConnectionInferencer(ConnectionInferencer):
 
         if matched_items:
             best_item = matched_items[0]
-            reason = f"質問のテーマに関して「{best_item.key}」の知見（{best_item.body[:40]}...）を持っています"
+            label = best_item.key.replace("_", " ")
+            snippet = best_item.body if len(best_item.body) <= 60 else best_item.body[:60].rsplit(" ", 1)[0] + "…"
+            reason = f"Their profile ({label}) covers a similar topic: {snippet}"
             return ConnectionInferenceResult(
                 connection=ConnectionDetails(reason_text=reason, score=0.85),
                 no_connection_reason=None,
@@ -159,7 +160,7 @@ class FakeConnectionInferencer(ConnectionInferencer):
         first_key = []  # V-1: never fabricate a citation key
         return ConnectionInferenceResult(
             connection=None,
-            no_connection_reason=f"質問「{question[:30]}」に対する意味のある接点が見つかりませんでした",
+            no_connection_reason="No meaningful connection between this question and their profile",
             cited_item_keys=first_key,
         )
 
@@ -417,7 +418,10 @@ class MatchingEngine:
                     DroppedCandidate(
                         agent=agent,
                         profile=profile,
-                        reason_text=f"Vector similarity ({vector_sim:.3f}) fell below the floor ({self.vector_floor:.3f}) — dropped before inference",
+                        reason_text=(
+                            f"Not similar enough to the question (similarity {vector_sim:.3f}, "
+                            f"minimum {self.vector_floor:.3f}) — skipped before the detailed check"
+                        ),
                         cited_item_keys=[],
                         score=vector_sim,
                         drop_stage="vector_floor",
@@ -433,7 +437,7 @@ class MatchingEngine:
                     DroppedCandidate(
                         agent=agent,
                         profile=profile,
-                        reason_text=inference_res.no_connection_reason or "意味のある接点が見つからないため落選",
+                        reason_text=inference_res.no_connection_reason or "No meaningful connection found",
                         cited_item_keys=list(inference_res.cited_item_keys),
                         score=0.0,
                         drop_stage="stage2_null",

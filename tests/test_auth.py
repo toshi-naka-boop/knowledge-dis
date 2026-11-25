@@ -376,6 +376,8 @@ class TestPermissionTable(unittest.TestCase):
         self.store.save_agent(self.agent_rachel)
         self.store.save_profile(self.profile_marcus)
         self.store.save_profile(self.profile_rachel)
+        # The requester must exist in the workspace (POST /api/query returns 404 otherwise).
+        self.store.save_profile(Profile(employee_id="emp_jordan_lee", name="Jordan Lee", role="Requester", items=[]))
 
         self.principal_resolver = _FixedPrincipalResolver(Principal(mode="demo", tenant_id="meridian"))
         self.app = create_app(
@@ -742,6 +744,8 @@ class TestConsentCas(unittest.TestCase):
         self.store.save_agent(self.agent_rachel)
         self.store.save_profile(self.profile_marcus)
         self.store.save_profile(self.profile_rachel)
+        # The requester must exist in the workspace (POST /api/query returns 404 otherwise).
+        self.store.save_profile(Profile(employee_id="emp_jordan_lee", name="Jordan Lee", role="Requester", items=[]))
 
         self.inferencer.set_override(
             "emp_marcus_delgado",

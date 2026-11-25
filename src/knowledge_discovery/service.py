@@ -9,7 +9,7 @@ Follows design.md §1 - §7:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from knowledge_discovery.matching import (
@@ -20,7 +20,6 @@ from knowledge_discovery.matching import (
 from knowledge_discovery.models import (
     Attachment,
     Message,
-    Profile,
     RequesterCandidateStatus,
 )
 from knowledge_discovery.schemas import SchemaRegistry
@@ -40,6 +39,13 @@ class QuerySubmissionResult:
 
 class ConsentForbiddenError(Exception):
     """Ask does not belong to this candidate (to_entity mismatch or non-connect_ask intent, W-1)."""
+
+
+class InvalidConsentDecisionError(Exception):
+    """decision is neither 'granted' nor 'declined' (rejected before any state change)."""
+
+
+VALID_CONSENT_DECISIONS = ("granted", "declined")
 
 
 class ConsentConflictError(Exception):
@@ -147,6 +153,10 @@ class KnowledgeDiscoveryService:
         carry a connect_ask* intent, and still be 'pending'. A second POST
         against the same ask_audit_id (double-submit) raises ConsentConflictError.
         """
+        if decision not in VALID_CONSENT_DECISIONS:
+            raise InvalidConsentDecisionError(
+                f"decision must be one of {', '.join(VALID_CONSENT_DECISIONS)}"
+            )
         original_ask, outcome = self.store.try_transition_ask_consent(
             ask_audit_id, candidate_entity_id, decision
         )

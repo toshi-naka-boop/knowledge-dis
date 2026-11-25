@@ -1,0 +1,6 @@
+# Optional lint (not a runtime dependency): pip install ruff && ruff check
+# Only real-error rules: syntax errors, unused imports/variables, undefined names.
+extend-exclude = [".venv", ".venv-agent", "design"]
+
+[lint]
+select = ["E9", "F"]

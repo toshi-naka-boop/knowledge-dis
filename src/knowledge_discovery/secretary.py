@@ -27,10 +27,8 @@ from knowledge_discovery.matching import MatchingEngine
 from knowledge_discovery.models import (
     Card,
     MailSeed,
-    PreviewCandidate,
     Profile,
     ProfileItem,
-    Schedule,
     Task,
     default_autonomy_policy,
     utc_now_iso,
@@ -263,8 +261,9 @@ def generate_question_draft(task: Task, llm_client: Any | None = None) -> str:
         if hasattr(response, "text") and response.text:
             cleaned = response.text.strip().strip('"').strip("'")
             return cleaned if cleaned else fallback
-    except Exception:
-        pass
+    except Exception as exc:
+        # Type only: never log exception text (it may echo task/mail content).
+        logger.warning("question draft generation failed (%s); using the template fallback", type(exc).__name__)
 
     return fallback
 
@@ -324,7 +323,9 @@ If no meaningful knowledge is found, return null."""
                 if body:
                     return key, body
             return None
-        except Exception:
+        except Exception as exc:
+            # Type only: never log exception text (it may echo mail content).
+            logger.warning("profile-diff extraction failed (%s); mail is retried next sweep", type(exc).__name__)
             # LLM call/parse failed. Do NOT copy mail text as a fallback (that
             # re-opens S-6) and do NOT consume the mail — retry next sweep (R-2).
             return EXTRACTION_FAILED
@@ -511,7 +512,8 @@ class SecretaryService:
             try:
                 fetch_result = self.connector.fetch(owner_id, today_str)
                 summary = apply_fetch_result(self.store, owner_id, fetch_result, today_str)
-            except Exception:
+            except Exception as exc:
+                logger.warning("connector sync failed for owner_id=%s (%s)", owner_id, type(exc).__name__)
                 stats["sync_errors"] += 1
                 continue
             stats["sync_tasks"] += summary.tasks

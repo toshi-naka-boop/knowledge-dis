@@ -23,8 +23,6 @@ from __future__ import annotations
 import argparse
 from datetime import date, datetime, timedelta, timezone
 import os
-import sys
-from typing import Any
 
 from knowledge_discovery.matching import DeterministicEmbedder, Embedder
 from knowledge_discovery.models import (
@@ -35,7 +33,6 @@ from knowledge_discovery.models import (
     ProfileItem,
     Schedule,
     Task,
-    utc_now_iso,
 )
 from knowledge_discovery.store import Store
 
@@ -384,57 +381,57 @@ def generate_synthetic_profiles(count: int = 396) -> list[Profile]:
         # First 5 in transition: strong overlap with Demo 2 (practice retirement & succession)
         if dept == "real_estate" and local_idx <= 5:
             current_work = (
-                f"Coordinates site acquisition and municipal zoning clearances and permits for outpatient medical facilities. "
-                f"Evaluates parking ratio compliance, ADA access, and plumbing infrastructure conversions for clinic tenants. "
-                f"Assists regional health networks with complex clinic relocation planning."
+                "Coordinates site acquisition and municipal zoning clearances and permits for outpatient medical facilities. "
+                "Evaluates parking ratio compliance, ADA access, and plumbing infrastructure conversions for clinic tenants. "
+                "Assists regional health networks with complex clinic relocation planning."
             )
             expertise = "Medical zoning codes, retail-to-clinic adaptive reuse, healthcare facility tenant representation."
             background = f"Experienced real estate specialist with {4 + (idx % 6)} years in commercial healthcare properties."
         elif dept == "transition" and local_idx <= 5:
             current_work = (
-                f"Assists retiring physicians with practice valuations, succession timelines, and buyer matchmaking. "
-                f"Structures goodwill asset transfers and patient chart continuity for private clinical practices. "
-                f"Coordinates transition staffing retainers during practice leadership handovers."
+                "Assists retiring physicians with practice valuations, succession timelines, and buyer matchmaking. "
+                "Structures goodwill asset transfers and patient chart continuity for private clinical practices. "
+                "Coordinates transition staffing retainers during practice leadership handovers."
             )
             expertise = "Physician retirement succession, practice valuation metrics, medical practice asset sales."
             background = f"Former healthcare practice business manager with {5 + (idx % 5)} years in medical M&A advisory."
         elif dept == "staffing":
             current_work = (
-                f"Manages clinical staffing placements and scheduling for regional healthcare networks. "
-                f"Liaises with hospital department heads to fulfill urgent nursing and allied health staffing requests. "
-                f"Monitors contract compliance and clinician credentialing timelines."
+                "Manages clinical staffing placements and scheduling for regional healthcare networks. "
+                "Liaises with hospital department heads to fulfill urgent nursing and allied health staffing requests. "
+                "Monitors contract compliance and clinician credentialing timelines."
             )
             expertise = "Allied health placement, nursing registry management, acute care staffing contracts."
             background = f"Healthcare staffing professional with {3 + (idx % 8)} years of industry experience."
         elif dept == "real_estate":
             current_work = (
-                f"Analyzes commercial real estate lease agreements and property listings for healthcare tenants. "
-                f"Prepares market comparison reports for medical office buildings and clinical suites. "
-                f"Coordinates site visits and lease negotiations between healthcare groups and property owners."
+                "Analyzes commercial real estate lease agreements and property listings for healthcare tenants. "
+                "Prepares market comparison reports for medical office buildings and clinical suites. "
+                "Coordinates site visits and lease negotiations between healthcare groups and property owners."
             )
             expertise = "Commercial lease negotiation, medical office market analysis, tenant improvement allowances."
             background = f"Commercial real estate advisor with {2 + (idx % 7)} years specializing in healthcare assets."
         elif dept == "transition":
             current_work = (
-                f"Supports financial modeling and due diligence reviews for medical practice acquisitions. "
-                f"Coordinates confidential information memorandums and buyer NDA tracking for clinic owners. "
-                f"Analyzes practice operational metrics to prepare seller readiness assessments."
+                "Supports financial modeling and due diligence reviews for medical practice acquisitions. "
+                "Coordinates confidential information memorandums and buyer NDA tracking for clinic owners. "
+                "Analyzes practice operational metrics to prepare seller readiness assessments."
             )
             expertise = "Practice financial valuation, confidential seller representation, clinical M&A due diligence."
             background = f"Financial analyst with {3 + (idx % 6)} years in healthcare transaction advisory."
         elif dept == "corporate":
             current_work = (
-                f"Administers corporate business operations, compliance audits, and internal workflows. "
-                f"Maintains enterprise systems and ensures adherence to state and federal healthcare regulations. "
-                f"Prepares documentation for cross-department reporting and organizational oversight."
+                "Administers corporate business operations, compliance audits, and internal workflows. "
+                "Maintains enterprise systems and ensures adherence to state and federal healthcare regulations. "
+                "Prepares documentation for cross-department reporting and organizational oversight."
             )
             expertise = "Enterprise administrative workflows, healthcare regulatory compliance, organizational operations."
             background = f"Corporate operations professional with {4 + (idx % 10)} years in healthcare administration."
         else:  # executive
             current_work = (
-                f"Directs group-wide strategic initiatives and cross-divisional partnership development. "
-                f"Oversees operational performance metrics across staffing, real estate, and advisory units. "
-                f"Aligns group resources to support enterprise growth across metropolitan healthcare markets."
+                "Directs group-wide strategic initiatives and cross-divisional partnership development. "
+                "Oversees operational performance metrics across staffing, real estate, and advisory units. "
+                "Aligns group resources to support enterprise growth across metropolitan healthcare markets."
             )
             expertise = "Healthcare enterprise strategy, executive leadership, inter-departmental synergy development."
             background = f"Senior healthcare executive with {10 + (idx % 8)} years in healthcare management."
@@ -673,7 +670,7 @@ def populate_store(
     autonomy_policies = build_autonomy_policies()
 
     if dry_run:
-        print(f"=== DRY RUN: Seed Data Summary ===")
+        print("=== DRY RUN: Seed Data Summary ===")
         print(f"Total Agents to register:  {len(agents)}")
         print(f"Total Profiles to store:    {len(profiles)}")
         print(f"Total M3 Tasks to store:    {len(m3_tasks)}")

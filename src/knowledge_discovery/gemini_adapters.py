@@ -12,6 +12,7 @@ Follows design.md §2:
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import re
@@ -24,6 +25,14 @@ from knowledge_discovery.models import (
     ConnectionInferenceResult,
     Profile,
 )
+
+logger = logging.getLogger(__name__)
+
+# Seconds to wait after a rate-limit (429 / RESOURCE_EXHAUSTED) response before
+# retrying an embedding call (up to 4 attempts). This sleep runs inside the
+# request that triggered it, so a rate-limited request can block for minutes;
+# lower it (GEMINI_RATE_LIMIT_BACKOFF_SECONDS) if your platform timeout is shorter.
+RATE_LIMIT_BACKOFF_SECONDS = float(os.environ.get("GEMINI_RATE_LIMIT_BACKOFF_SECONDS", "62"))
 
 try:
     from google import genai
@@ -97,7 +106,7 @@ class GeminiEmbedder(Embedder):
                 # Free-tier rate limit (100 req/min): wait out the window and retry
                 if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
                     last_exc = exc
-                    time.sleep(62)
+                    time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
                     continue
                 raise RuntimeError(f"Gemini embedding API call failed: {exc}") from exc
         if response is None:
@@ -238,11 +247,18 @@ Output strictly valid JSON matching the required schema.
             return self._parse_json_result(data, all_item_keys)
 
         except Exception as exc:
-            # Fallback to no_connection on API or parsing failure (fail-closed)
+            # Fallback to no_connection on API or parsing failure (fail-closed).
+            # The cause is logged server-side; the audit trail only says that the
+            # model check itself failed (distinct from a genuine "no connection"),
+            # and carries no exception text.
+            # Type only: never log exception text or the prompt (profile content).
+            logger.warning(
+                "connection inference failed for employee_id=%s (%s)", profile.employee_id, type(exc).__name__
+            )
             first_key = []  # V-1: never fabricate a citation key
             return ConnectionInferenceResult(
                 connection=None,
-                no_connection_reason=f"Inference evaluation unavailable: {exc}",
+                no_connection_reason="Inference evaluation unavailable (the model check failed) — treated as no connection",
                 cited_item_keys=first_key,
             )
 

@@ -159,6 +159,9 @@ class TestServerEndpoints(unittest.TestCase):
             self.store.save_agent(a)
         for p in (self.profile_marcus, self.profile_rachel, self.profile_elena, self.profile_tom):
             self.store.save_profile(p)
+        # The requester must exist in the workspace (POST /api/query returns 404 otherwise).
+        self.store.save_profile(Profile(employee_id="emp_jordan_lee", name="Jordan Lee", role="Requester", items=[]))
+        self.store.save_profile(Profile(employee_id="u1", name="U One", role="Requester", items=[]))
 
         self.api_key = "test-secret-key-123"
         self.app = create_app(store=self.store, service=self.service, api_key=self.api_key)

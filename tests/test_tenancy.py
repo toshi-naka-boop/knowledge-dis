@@ -29,7 +29,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from knowledge_discovery.models import Agent, Card, Profile, ProfileItem, Task
 from knowledge_discovery.store import InMemoryStore
 from knowledge_discovery.tenancy import (
-    DEFAULT_API_KEY_FALLBACK,
     DEFAULT_DATABASE,
     DEFAULT_EMAIL_DOMAINS,
     DEFAULT_TENANT_ID,
@@ -110,15 +109,22 @@ class TestTenantRegistryValidation(unittest.TestCase):
 
 
 class TestTenantRegistryFromEnv(unittest.TestCase):
+    def test_missing_demo_api_key_fails_closed(self) -> None:
+        """No built-in default key: TENANTS_JSON and DEMO_API_KEY both unset -> startup error."""
+        with self.assertRaises(RuntimeError):
+            TenantRegistry.from_env(env={})
+        with self.assertRaises(RuntimeError):
+            TenantRegistry.from_env(env={"DEMO_API_KEY": "   "})
+
     def test_default_is_single_current_compatible_tenant(self) -> None:
-        """TENANTS_JSON unset -> exactly today's behavior (§16.2 e)."""
-        registry = TenantRegistry.from_env(env={})
+        """TENANTS_JSON unset -> the single default tenant keyed by DEMO_API_KEY (§16.2 e)."""
+        registry = TenantRegistry.from_env(env={"DEMO_API_KEY": "k-from-env"})
         self.assertEqual(len(registry.tenants), 1)
         tenant = registry.tenants[0]
         self.assertEqual(tenant.tenant_id, DEFAULT_TENANT_ID)
         self.assertEqual(tenant.database, DEFAULT_DATABASE)
         self.assertEqual(tenant.email_domains, DEFAULT_EMAIL_DOMAINS)
-        self.assertEqual(tenant.api_key, DEFAULT_API_KEY_FALLBACK)
+        self.assertEqual(tenant.api_key, "k-from-env")
 
     def test_default_honors_demo_api_key_env(self) -> None:
         registry = TenantRegistry.from_env(env={"DEMO_API_KEY": "my-custom-key"})

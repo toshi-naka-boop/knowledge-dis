@@ -14,8 +14,7 @@
    Rules: humans are large (serif, darkest ink), agents are small (thin dashed
    lines and footnotes). No border-radius anywhere. Flat rectangular buttons.
    NOTE: server.py serves only /requester /candidate /audit as raw HTML files
-   (no static mount for this directory), so this stylesheet is inlined here.
-   Keep in sync with web/ui.css. */
+   (no static mount for this directory), so this stylesheet is inlined here. */
 
 :root {
   --sea: #E4D5AC;
@@ -441,7 +440,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
           <button class="btn-quiet" onclick="fetchStatuses()">Refresh</button>
         </div>
         <div id="statusContainer" class="status-row">
-          <div class="empty-note">No requests yet. Ask for an intro above to get started.</div>
+          <div class="empty-note">No requests yet. When your agent prepares an introduction, or you use "Ask your agent" below, the people asked will appear here.</div>
         </div>
       </div>
 
@@ -682,7 +681,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
           <textarea id="introQuestion" class="question-box"></textarea>
           <div class="intro-actions">
             <button class="btn-action" id="introAskBtn" onclick="confirmFromIntroCard()">Ask for 15 min</button>
-            <div class="intro-footer">Nothing is sent until you decide.</div>
+            <div class="intro-footer">Nothing is sent until you decide. Asking runs the full search again and sends the request to up to 3 matching people, not only the one shown.</div>
           </div>
         </div>
 
@@ -690,7 +689,7 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
         <div class="intro-card" id="askedCard" hidden>
           <div class="eyebrow" style="margin-bottom: 10px;">INTRODUCTION SENT</div>
           <div class="intro-evidence" id="askedText">Waiting quietly — their agent has the request.</div>
-          <div class="intro-footer">Declining is invisible to you both.</div>
+          <div class="intro-footer">If they decline, you will see their name and the reason they give.</div>
         </div>
       </div>
 
@@ -707,10 +706,65 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--fr
   <script>
 /* Knowledge Discovery — My Agent (requester) UI logic, Company Atlas redesign.
    NOTE: server.py does not statically serve this directory (only the raw
-   HTML shells at /requester /candidate /audit), so this exact content is
-   inlined here. Keep in sync with web/ui.js. */
+   HTML shells at /requester /candidate /audit), so the logic is inlined here. */
 
 const API_KEY = (new URLSearchParams(location.search)).get("api_key") || "";
+
+// Plain-language failure text: what went wrong, whether anything changed, what to do next.
+// (The server's own `detail` is only shown for 4xx responses, which are written for users.)
+function failureMessage(action, status, detail) {
+  if (status === 401 || status === 403) {
+    return `Could not ${action}: your sign-in is missing or has expired. Open /login, enter the access code again, then retry.`;
+  }
+  if (status === 409) {
+    return `Could not ${action}: this was already done. Reload the page to see the current state.`;
+  }
+  if (status === 404) {
+    const why = typeof detail === "string" ? detail : "the item no longer exists";
+    return `Could not ${action}: ${why}. Reload the page and try again.`;
+  }
+  if (status === 422 || status === 400) {
+    const why = typeof detail === "string" ? detail : "an entry is empty, too long (questions are limited to 2000 characters) or not in the expected form";
+    return `Could not ${action}: ${why}. Nothing was sent - fix the entry and try again.`;
+  }
+  if (status >= 500) {
+    const why = typeof detail === "string" ? detail : "the server had a problem";
+    return `Could not ${action}: ${why} Check the Connection Requests list before retrying so you do not send it twice; if it keeps failing, contact the person who runs this demo.`;
+  }
+  return `Could not ${action} (error ${status}). Reload the page and try again.`;
+}
+function networkFailureMessage(action) {
+  return `Could not ${action}: the server could not be reached. Check your connection, then reload the page and retry. Nothing is known to have been saved.`;
+}
+async function readDetail(res) {
+  try { const d = await res.json(); return d && d.detail; } catch (e) { return null; }
+}
+// Visible (non-blocking) notice for background loads that used to fail silently.
+function showNotice(msg) {
+  let el = document.getElementById("appNotice");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "appNotice";
+    el.setAttribute("role", "alert");
+    el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:14px;max-width:560px;z-index:50;background:#F1E8CF;border:1px solid #A13A20;color:#26221A;padding:10px 14px;font-size:12.5px;";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.display = "block";
+}
+function clearNotice() {
+  const el = document.getElementById("appNotice");
+  if (el) el.style.display = "none";
+}
+
+// Shown when a question reached nobody: say why, and what to try next.
+function noMatchMessage() {
+  return `<div class="status-card"><div class="status-head"><span class="status-name">No one was asked</span><span class="status-tag waiting">NO MATCH</span></div>
+    <div class="status-body">Your question was checked against every registered profile, and none looked close enough to ask. Nothing was sent to anyone.
+    Try again with more concrete wording: the field or industry, the kind of situation, and what you need (an example, a contact, a decision).
+    The Bridge Trace page (/audit) lists, for each person, why they were not asked.</div></div>`;
+}
+
 // Demo/screenshot device: with ?reveal=1, the first request_draft stagnation
 // card skips the "Looking across your organization…" animation and renders
 // its PersonCard immediately. Normal URLs (no reveal=1) are unaffected.
@@ -823,7 +877,7 @@ function renderIntroCard() {
     (PERSONA_DEPT[ATLAS_INTRO.employeeId] || "CANDIDATE").toUpperCase() + " ISLAND";
   document.getElementById("introEvidence").innerText = ATLAS_INTRO.reason;
   document.getElementById("introQuestion").value = ATLAS_INTRO.questionDraft;
-  document.getElementById("introAskBtn").innerText = `Ask ${ATLAS_INTRO.name.split(" ")[0]} for 15 min`;
+  document.getElementById("introAskBtn").innerText = `Ask for 15 min (top match: ${ATLAS_INTRO.name.split(" ")[0]})`;
   intro.hidden = false;
 }
 
@@ -909,21 +963,27 @@ async function submitInquiry() {
       headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
       body: JSON.stringify({ requester_id: REQUESTER_ID, question_text: q })
     });
-    const data = await res.json();
     if (!res.ok) {
-      alert("Error dispatching query: " + (data.detail || "Unknown error"));
+      alert(failureMessage("send your question", res.status, await readDetail(res)));
       return;
     }
+    const data = await res.json();
 
     document.getElementById("queryMeta").innerText =
       `Inquiry ID: ${data.query_id} · dispatched to ${data.dispatched_count} candidate agent(s)`;
+    if (data.dispatched_count === 0) {
+      if (pollInterval) clearInterval(pollInterval);
+      document.getElementById("liveStatus").style.display = "none";
+      document.getElementById("statusContainer").innerHTML = noMatchMessage();
+      return;
+    }
     document.getElementById("liveStatus").style.display = "inline-flex";
     await fetchStatuses();
 
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(fetchStatuses, 2000);
   } catch (err) {
-    alert("Failed to connect to server: " + err.message);
+    alert(networkFailureMessage("send your question"));
   } finally {
     submitBtn.disabled = false;
     submitBtn.innerText = "Ask";
@@ -939,11 +999,16 @@ async function fetchDigest() {
     const res = await fetch(`/api/secretary/digest?employee_id=${REQUESTER_ID}`, {
       headers: { "X-API-Key": API_KEY }
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      showNotice(failureMessage("load your agent's digest", res.status, null));
+      return;
+    }
     const data = await res.json();
+    clearNotice();
     renderDigest(data);
   } catch (err) {
     console.error("Digest fetch error:", err);
+    showNotice(networkFailureMessage("load your agent's digest"));
   }
 }
 
@@ -955,12 +1020,12 @@ async function triggerSweep() {
       body: JSON.stringify({origin: "manual"})
     });
     if (!res.ok) {
-      alert("Sweep failed: " + res.statusText);
+      alert(failureMessage("run the sweep", res.status, await readDetail(res)));
       return;
     }
     await fetchDigest();
   } catch (err) {
-    alert("Sweep error: " + err.message);
+    alert(networkFailureMessage("run the sweep"));
   }
 }
 
@@ -1095,14 +1160,13 @@ async function reviewDiff(cardId, action, editedBody = null) {
       headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
       body: JSON.stringify({ action, edited_body: editedBody })
     });
-    const data = await res.json();
     if (!res.ok) {
-      alert("Review failed: " + (data.detail || "Error"));
+      alert(failureMessage("apply your review", res.status, await readDetail(res)));
       return;
     }
     await fetchDigest();
   } catch (err) {
-    alert("Review error: " + err.message);
+    alert(networkFailureMessage("apply your review"));
   }
 }
 
@@ -1207,9 +1271,9 @@ function revealCandidates(cardId) {
     <div class="person-timing" style="font-size: 13px; font-weight: 600; margin-bottom: 10px;">15 min should be enough.</div>
     <label class="question-label" for="draft_${esc(cardId)}">QUESTION DRAFT — EDIT BEFORE ASKING</label>
     <textarea id="draft_${esc(cardId)}" class="question-box">${esc(p.question_draft || "")}</textarea>
-    <div class="fixed-notice">Candidates may differ at request time — the full search runs only after you confirm.</div>
+    <div class="fixed-notice">Asking runs the full search again and sends the request to up to 3 matching people. The person shown is only the top match now; you will see exactly who was asked under Connection Requests.</div>
     <div class="btn-row">
-      <button class="btn-action" onclick="confirmStagnationCard('${esc(cardId)}')">Ask ${esc(firstName(top.name || top.employee_id))} for 15 min</button>
+      <button class="btn-action" onclick="confirmStagnationCard('${esc(cardId)}')">Ask for 15 min (top match: ${esc(firstName(top.name || top.employee_id))})</button>
       <button class="btn-quiet" onclick="dismissCard('${esc(cardId)}')">Dismiss</button>
       <button class="btn-quiet" onclick="showView('atlas')">view on the atlas ›</button>
     </div>
@@ -1239,34 +1303,40 @@ async function confirmStagnation(cardId, editedQuestion) {
       headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
       body: JSON.stringify({ card_id: cardId, edited_question: editedQuestion })
     });
-    const data = await res.json();
     if (!res.ok) {
-      alert("Confirm failed: " + (data.detail || "Error"));
+      alert(failureMessage("send the request", res.status, await readDetail(res)));
       return;
     }
+    const data = await res.json();
 
     document.getElementById("queryMeta").innerText = `Inquiry ID: ${data.query_audit_id} · dispatched via your agent`;
+    await fetchDigest();
+    if (data.status === "confirmed" && data.dispatched_count === 0) {
+      if (pollInterval) clearInterval(pollInterval);
+      document.getElementById("liveStatus").style.display = "none";
+      document.getElementById("statusContainer").innerHTML = noMatchMessage();
+      return;
+    }
     document.getElementById("liveStatus").style.display = "inline-flex";
     setAtlasState("asked");
-
-    await fetchDigest();
     await fetchStatuses();
 
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(fetchStatuses, 2000);
   } catch (err) {
-    alert("Confirm error: " + err.message);
+    alert(networkFailureMessage("send the request"));
   }
 }
 
 async function dismissCard(cardId) {
+  if (!confirm("Dismiss this card? It will be removed and cannot be restored.")) return;
   try {
     const res = await fetch(`/api/secretary/cards/${encodeURIComponent(cardId)}/dismiss`, {
       method: "POST",
       headers: { "X-API-Key": API_KEY }
     });
     if (!res.ok) {
-      alert("Dismiss failed");
+      alert(failureMessage("dismiss the card", res.status, await readDetail(res)));
       return;
     }
     delete STAG_CARDS[cardId];
@@ -1276,7 +1346,7 @@ async function dismissCard(cardId) {
     }
     await fetchDigest();
   } catch (err) {
-    alert("Dismiss error: " + err.message);
+    alert(networkFailureMessage("dismiss the card"));
   }
 }
 
@@ -1311,7 +1381,9 @@ async function loadAutonomyPolicy() {
   }
 }
 
+let LAST_AUTONOMY = null;
 function renderAutonomyPolicy(data) {
+  LAST_AUTONOMY = data;
   const eff = data.effective || {};
   document.getElementById("autonomyMonitor").checked = !!eff.monitor_stalled_work;
   document.getElementById("autonomySearch").checked = !!eff.search_organization;
@@ -1341,15 +1413,17 @@ async function updateAutonomyFlag(field, value) {
       headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
     if (!res.ok) {
-      showAutonomyError("Could not save — please try again.");
+      await loadAutonomyPolicy();   // re-sync the checkboxes with what the server actually holds
+      showAutonomyError("Could not save this setting, so it was left as it was. Please try again.");
       return;
     }
+    const data = await res.json();
     renderAutonomyPolicy(data);
     fetchDigest();
   } catch (err) {
-    showAutonomyError("Could not save — please try again.");
+    if (LAST_AUTONOMY) renderAutonomyPolicy(LAST_AUTONOMY);
+    showAutonomyError("Could not reach the server, so the setting was not saved. Reverted to the last saved state.");
   }
 }
 
@@ -1362,8 +1436,12 @@ async function fetchStatuses() {
     const res = await fetch(`/api/requester/${REQUESTER_ID}/status`, {
       headers: { "X-API-Key": API_KEY }
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      showNotice(failureMessage("refresh Connection Requests", res.status, null));
+      return;
+    }
     const data = await res.json();
+    clearNotice();
     const statuses = data.statuses || [];
     renderStatuses(statuses);
     // Atlas state: a made connection wins; otherwise a pending ask keeps the
@@ -1375,13 +1453,14 @@ async function fetchStatuses() {
     }
   } catch (err) {
     console.error("Status fetch error:", err);
+    showNotice(networkFailureMessage("refresh Connection Requests"));
   }
 }
 
 function renderStatuses(statuses) {
   const container = document.getElementById("statusContainer");
   if (!statuses || statuses.length === 0) {
-    container.innerHTML = '<div class="empty-note">No requests yet. Ask for an intro above to get started.</div>';
+    container.innerHTML = '<div class="empty-note">No requests yet. When your agent prepares an introduction, or you use "Ask your agent" below, the people asked will appear here.</div>';
     return;
   }
 
@@ -1394,7 +1473,7 @@ function renderStatuses(statuses) {
             <span class="status-name">Request sent to ${name}</span>
             <span class="status-tag waiting">PENDING</span>
           </div>
-          <div class="status-body">Their agent is reviewing it. Declining is invisible to you both.</div>
+          <div class="status-body">Their agent is reviewing it. If they decline, you will see their name and the reason they give.</div>
         </div>`;
     }
     if (item.state === "matched") {
@@ -1407,7 +1486,7 @@ function renderStatuses(statuses) {
               <circle cx="224" cy="17" r="8" fill="#A13A20"/>
             </svg>
             <div class="connection-caption">A new crossing was recorded.</div>
-            <div class="connection-sub">${esc(displayName(REQUESTER_ID))} ↔ ${name} · 15 min · time to be coordinated</div>
+            <div class="connection-sub">${esc(displayName(REQUESTER_ID))} ↔ ${name} · 15 min · no invite or email is sent automatically — agree a time with them directly</div>
             <div class="connection-tagline">AI shouldn't replace human connections. It should create them.</div>
             <button class="btn-quiet connection-link" onclick="showView('atlas')">see it on the atlas ›</button>
           </div>

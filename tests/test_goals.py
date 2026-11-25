@@ -30,7 +30,6 @@ from knowledge_discovery.models import (
     Profile,
     ProfileItem,
 )
-from knowledge_discovery.schemas import SchemaRegistry
 from knowledge_discovery.service import KnowledgeDiscoveryService
 from knowledge_discovery.store import InMemoryStore
 from knowledge_discovery.transmission import TransmissionLayer

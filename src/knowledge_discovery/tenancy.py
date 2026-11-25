@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -29,7 +30,6 @@ DEFAULT_TENANT_ID = "meridian"
 DEFAULT_DATABASE = "(default)"
 DEFAULT_EMAIL_DOMAINS: tuple[str, ...] = ("meridian-care.example",)
 DEFAULT_API_KEY_ENV = "DEMO_API_KEY"
-DEFAULT_API_KEY_FALLBACK = "demo-key-2026"
 
 
 def _normalize_strings(values: list[str]) -> tuple[str, ...]:
@@ -102,11 +102,19 @@ class TenantRegistry:
         env = env if env is not None else os.environ
         raw = env.get("TENANTS_JSON")
         if not raw:
+            # Fail closed: there is no built-in default key. A server started
+            # without DEMO_API_KEY must not open with a well-known value.
+            api_key = env.get(DEFAULT_API_KEY_ENV, "").strip()
+            if not api_key:
+                raise RuntimeError(
+                    f"{DEFAULT_API_KEY_ENV} is not set. Set it to a long random value "
+                    "(or configure TENANTS_JSON) before starting the server."
+                )
             return cls.single(
                 tenant_id=DEFAULT_TENANT_ID,
                 database=DEFAULT_DATABASE,
                 email_domains=list(DEFAULT_EMAIL_DOMAINS),
-                api_key=env.get(DEFAULT_API_KEY_ENV, DEFAULT_API_KEY_FALLBACK),
+                api_key=api_key,
             )
         entries = json.loads(raw)
         return cls([cls._config_from_entry(entry, env) for entry in entries])
@@ -135,12 +143,18 @@ class TenantRegistry:
         tenant_id: str = DEFAULT_TENANT_ID,
         database: str = DEFAULT_DATABASE,
         email_domains: list[str] | None = None,
-        api_key: str = DEFAULT_API_KEY_FALLBACK,
+        api_key: str | None = None,
         system_accounts: list[str] | None = None,
     ) -> "TenantRegistry":
         """Build a one-tenant registry. Used by `server.create_app`'s
         test-friendly signature (explicit `store=`/`api_key=`) to stay a drop-in
-        single-tenant setup without requiring a TENANTS_JSON ledger."""
+        single-tenant setup without requiring a TENANTS_JSON ledger.
+
+        `api_key=None` means "no usable key": a random per-process value that
+        nobody knows is used, so the key path stays closed (principal-resolver
+        based tests and IAP mode do not need it)."""
+        if not api_key:
+            api_key = secrets.token_urlsafe(32)
         return cls(
             [
                 TenantConfig(

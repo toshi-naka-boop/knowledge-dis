@@ -25,7 +25,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from urllib.parse import parse_qs
 
@@ -44,6 +44,7 @@ from knowledge_discovery.connectors import build_connector_from_env
 from knowledge_discovery.service import (
     ConsentConflictError,
     ConsentForbiddenError,
+    InvalidConsentDecisionError,
     KnowledgeDiscoveryService,
 )
 from knowledge_discovery.store import InMemoryStore, Store
@@ -66,17 +67,13 @@ EMPLOYEE_ID_FORMAT_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 try:
     from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
     from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field, field_validator
 except ImportError as exc:
     # This module is meaningless without fastapi/pydantic. Fail with a clean
     # ImportError so package __init__ and test guards can catch and skip it.
     raise ImportError(
         "knowledge_discovery.server requires fastapi and pydantic (see scripts/requirements.txt)"
     ) from exc
-
-
-# Default API key for demo environment
-DEFAULT_DEMO_API_KEY = "demo-key-2026"
 
 
 # -----------------------------------------------------------------------------
@@ -124,20 +121,44 @@ SAMPLE_ATTACHMENTS: dict[str, str] = {
 # Pydantic Schemas for Requests
 # -----------------------------------------------------------------------------
 
+# Upper bound on a question: each question fans out into one embedding call and
+# up to `funnel_limit` (20) Gemini inference calls, so an unbounded text is a
+# cost amplifier on a shared demo key.
+MAX_QUESTION_CHARS = 2000
+MAX_REASON_CHARS = 1000
+MAX_ATTACHMENT_CHARS = 2000
+
+
 class QueryRequest(BaseModel):  # type: ignore[misc]
-    requester_id: str = Field(..., description="ID of the employee submitting the inquiry")
-    question_text: str = Field(..., description="Natural language question text")
+    requester_id: str = Field(
+        ...,
+        pattern=r"^[A-Za-z0-9_-]{1,64}$",
+        description="ID of the employee submitting the inquiry",
+    )
+    question_text: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_QUESTION_CHARS,
+        description="Natural language question text",
+    )
+
+    @field_validator("question_text")
+    @classmethod
+    def _question_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("question_text must not be blank")
+        return value
 
 
 class AttachmentModel(BaseModel):  # type: ignore[misc]
     type: str = Field(..., description="Attachment type: 'link', 'text', or 'doc'")
-    content: str = Field(..., description="URL, text snippet, or doc identifier")
+    content: str = Field(..., max_length=MAX_ATTACHMENT_CHARS, description="URL, text snippet, or doc identifier")
 
 
 class ConsentRequest(BaseModel):  # type: ignore[misc]
     ask_audit_id: str = Field(..., description="Audit ID of the original connect_ask message")
-    decision: str = Field(..., description="Consent decision: 'granted' or 'declined'")
-    reason_text: str = Field(default="", description="Optional note or decline reason")
+    decision: Literal["granted", "declined"] = Field(..., description="Consent decision: 'granted' or 'declined'")
+    reason_text: str = Field(default="", max_length=MAX_REASON_CHARS, description="Optional note or decline reason")
     attachment: AttachmentModel | None = Field(default=None, description="Optional attachment")
 
 
@@ -339,7 +360,10 @@ def create_app(
     if FastAPI is None:
         raise RuntimeError("fastapi is not installed. Please install requirements.txt.")
 
-    expected_api_key = api_key or os.environ.get("DEMO_API_KEY", DEFAULT_DEMO_API_KEY)
+    # No built-in default key (fail closed): without an explicit key or
+    # DEMO_API_KEY the key path matches nothing (TenantRegistry.single makes
+    # an unguessable per-process value). create_app_from_env refuses to start.
+    expected_api_key = api_key or os.environ.get("DEMO_API_KEY") or None
 
     preset_store: Store | None = None
     preset_service: KnowledgeDiscoveryService | None = None
@@ -476,6 +500,16 @@ def create_app(
         if agent is None or agent.employee_id != principal.employee_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this agent_id.")
 
+    def _requester_exists(tenant_store: Store, employee_id: str) -> bool:
+        """A requester is known when the workspace holds a profile, a registered
+        agent or an autonomy policy for that employee_id (the seeded requesters,
+        e.g. the demo's Jordan Lee, have a policy but no searchable profile)."""
+        return (
+            tenant_store.get_profile(employee_id) is not None
+            or tenant_store.get_agent_by_employee_id(employee_id) is not None
+            or tenant_store.get_autonomy_policy(employee_id) is not None
+        )
+
     def _require_card_owner(principal: Principal, card_id: str, tenant_store: Store) -> None:
         """human may only act on secretary cards they own; missing cards fall
         through to the service layer's own 404 handling."""
@@ -604,6 +638,11 @@ def create_app(
         """Submit a question, run 2-track 2-stage matching, and dispatch asks."""
         _deny_system(principal)
         _require_self_employee(principal, req.requester_id)
+        if not _requester_exists(ctx.store, req.requester_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Unknown requester_id: no employee profile with that ID exists in this workspace.",
+            )
         result = ctx.service.submit_query(
             requester_id=req.requester_id,
             question_text=req.question_text,
@@ -637,8 +676,11 @@ def create_app(
         """Return requester-facing status projection (design.md §3, §6.4).
 
         Strict Privacy Rules:
-        - When pending: Candidate employee_id and identity are NOT exposed.
+        - When pending: the candidate's display name is shown (so the requester knows
+          who was asked) but their employee_id is NOT exposed.
         - When resolved (matched or declined): Respondent ID/name and reason/attachment are exposed.
+          A decline is therefore visible to the requester, with the reason the
+          candidate chose to give (design: declines are never hidden).
         - NEVER exposes connect_ask vs connect_ask_private distinction or internal consent events.
         """
         _deny_system(principal)
@@ -745,6 +787,8 @@ def create_app(
                 "reply_audit_id": consent_res.reply_message.audit_id,
                 "outcome_intent": consent_res.outcome_message.intent,
             }
+        except InvalidConsentDecisionError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         except ConsentForbiddenError as exc:
@@ -903,8 +947,12 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-        except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+        except Exception:
+            logger.exception("secretary confirm failed for card=%s", req.card_id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not complete the request. Check the Connection Requests list first so you do not ask twice, then try again.",
+            )
 
     @app.post("/api/secretary/profile-diff/{card_id}/review")
     def review_profile_diff(
@@ -927,8 +975,12 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-        except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+        except Exception:
+            logger.exception("secretary profile-diff review failed for card=%s", card_id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not apply your review. Your profile was not changed; please try again.",
+            )
 
     @app.post("/api/secretary/cards/{card_id}/dismiss")
     def dismiss_secretary_card(

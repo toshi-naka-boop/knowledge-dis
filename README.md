@@ -1,5 +1,13 @@
 # Knowledge Discovery — Tacit-Knowledge Connection Engine
 
+**In one sentence:** when an employee does not know who in the company to ask,
+their own AI agent looks across everyone's profiles for the colleague who might
+know, drafts the request, and — only after the requester confirms and the
+colleague agrees — proposes a 15-minute conversation between the two people.
+
+**Status: a hackathon demo with synthetic data** (a fictional company). It is not
+a production system; see "What it does not do" below before judging fit.
+
 A multi-agent system where every employee's personal AI agent helps answer
 *"who in our company might know about this?"* — not by delivering a document,
 but by proposing a real human connection. Built for the All Things Agentic
@@ -37,7 +45,33 @@ Key properties:
 Stack: Python / FastAPI on Cloud Run · Firestore (native) · Gemini 3.7 Flash +
 gemini-embedding-2 via **Vertex AI** · google-genai SDK.
 
-## Run locally
+## Try it without Google Cloud (offline, ~2 minutes)
+
+Needs Python 3.12 or newer. No Google account, network or model access is used:
+a built-in word-overlap stand-in replaces Gemini, and the 400 synthetic profiles
+are held in memory (they are re-created at each start; nothing is saved).
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r scripts/requirements.txt
+DEMO_API_KEY=choose-a-long-random-code PYTHONPATH=src:. \
+  .venv/bin/uvicorn 'knowledge_discovery.server:create_app_from_env' --factory --port 8080
+```
+
+1. Open `http://localhost:8080/login` and enter the code you chose as `DEMO_API_KEY`.
+   (The server refuses to start without `DEMO_API_KEY`; there is no built-in default key.)
+2. `/requester` is Jordan Lee's screen. Open **Ask your agent** at the bottom, pick
+   a demo question (e.g. "Demo 1"), press **Ask**; the people asked appear under
+   *Connection Requests*.
+3. `/candidate` is the colleague's side: pick the agent in the drop-down (e.g. Marcus
+   Delgado) and accept, share a resource, or decline.
+4. `/audit` ("Bridge Trace") lists everything that was sent, who was skipped, and why.
+
+This mode is for looking around. The matching quality you see is that of the
+word-overlap stand-in, not of Gemini, and questions written in Japanese were not
+verified in either mode (the seed profiles and prompts are English).
+
+## Run with Google Cloud (Firestore + Vertex AI)
 
 ```bash
 python3 -m venv .venv
@@ -57,8 +91,29 @@ USE_FIRESTORE=1 GOOGLE_CLOUD_PROJECT=<PROJECT_ID> GOOGLE_GENAI_USE_VERTEXAI=true
   .venv/bin/uvicorn 'knowledge_discovery.server:create_app_from_env' --factory --port 8080
 ```
 
-Open `http://localhost:8080/requester?api_key=<your-demo-key>` (also
-`/candidate`, `/audit`). All API and UI access requires the `api_key`.
+Open `http://localhost:8080/login`, enter the code, and you are taken to
+`/requester` (also `/candidate`, `/audit`). All `/api/*` calls require the key
+(sent as the sign-in cookie, or an `X-API-Key` header for scripts); the HTML
+pages themselves carry no data and load without it. A `?api_key=` query
+parameter is still accepted for scripts, but it lands in browser history and
+access logs, so prefer `/login` or the header.
+
+### Environment variables
+
+| Variable | Needed | Meaning |
+|---|---|---|
+| `DEMO_API_KEY` | always (unless `TENANTS_JSON` supplies keys) | Shared access code. No default: the server will not start without it. Use a long random value and keep it in Secret Manager or your shell, not in code. |
+| `USE_FIRESTORE=1` | for Google Cloud | Use Firestore instead of the in-memory demo store. |
+| `GOOGLE_CLOUD_PROJECT` | with Firestore / Vertex | Your GCP project ID. |
+| `GOOGLE_GENAI_USE_VERTEXAI=true` | for Gemini via Vertex | Switches matching to Gemini (otherwise the offline stand-in is used unless `GEMINI_API_KEY` is set). |
+| `GEMINI_API_KEY` | alternative to Vertex | API-key access to Gemini. |
+| `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL` | optional | Default `gemini-3.7-flash` / `gemini-embedding-2`. |
+| `VECTOR_FLOOR` | with Gemini | Similarity cut-off; `0.62` for gemini-embedding-2 (default `0.20` suits only the offline stand-in). |
+| `CONNECTION_THRESHOLD` | optional | Minimum model score to ask someone (default `0.50`). |
+| `GEMINI_RATE_LIMIT_BACKOFF_SECONDS` | optional | Wait before retrying a rate-limited embedding call (default `62`; up to 4 tries, inside the request). |
+| `DEMO_TODAY` | optional | Pin "today" (ISO date) for recordings. |
+| `AUTH_MODE` | optional | `demo_key` (default) or `iap`; see below. |
+| `TENANTS_JSON`, `SOURCE_CONNECTOR`, `AUTONOMOUS_SWEEP_*`, `GWS_*`, `IAP_AUDIENCE` | optional | Described in the sections below. |
 
 `VECTOR_FLOOR=0.62` is calibrated for gemini-embedding-2 (unrelated profiles
 score ~0.59 in that space; the default 0.20 suits only the offline test
@@ -69,9 +124,10 @@ embedder).
 `AUTH_MODE` selects how each request's `Principal` (`mode: demo|human|system`,
 `tenant_id`, `employee_id`, `email`) is resolved. Every `/api/*` route enforces
 a default-deny permission table over this Principal (design.md §16.1). Two
-exceptions carry no authentication at all, unchanged from before Part A: the
-static UI shells (`/`, `/requester`, `/candidate`, `/audit` — they contain no
-data of their own) and `GET /attachments/{id}` (pre-placed demo documents).
+exceptions carry no authentication at all: the static UI shells (`/`,
+`/requester`, `/candidate`, `/audit` — they contain no data of their own; the
+data calls they make are authenticated) and `GET /attachments/{id}` (pre-placed
+demo documents). `/login` exchanges the access code for an HttpOnly cookie.
 Both modes below resolve `tenant_id` from the tenant ledger (see "Tenants"
 below, design.md §16.2) rather than a fixed constant.
 
@@ -101,9 +157,10 @@ below, design.md §16.2) rather than a fixed constant.
     required and format-checked at startup only when `AUTH_MODE=iap`. API
     keys are not accepted in this mode — machine callers (Cloud Scheduler)
     must also go through IAP via an OIDC token.
-  - The IAP public key is cached in-process (~1h, Cache-Control aware); a
-    failed refetch keeps serving the previous key for one more window before
-    failing closed with `401` (never a silent `503`).
+  - The IAP public key is cached in-process (~1h, Cache-Control aware). While
+    the cache is fresh no fetch is made; once it expires a failed refetch fails
+    closed with `401` immediately (there is no grace period and never a silent
+    `503`).
 
 `GET /api/me` returns the resolved `{mode, tenant_id, employee_id}` and is
 used by `requester.html`/`candidate.html` to hide the demo persona switcher
@@ -122,9 +179,9 @@ boundary (they don't apply to the server's own client); the boundary is
 "every route only ever asks for its own tenant's context, and there is no
 function that returns another tenant's".
 
-**Ledger** — env `TENANTS_JSON`, a JSON array; unset defaults to today's
-single-tenant setup (`meridian` / `(default)` / `meridian-care.example` /
-`DEMO_API_KEY`):
+**Ledger** — env `TENANTS_JSON`, a JSON array; unset defaults to a
+single-tenant setup (`meridian` / `(default)` / `meridian-care.example`, keyed by
+`DEMO_API_KEY`, which must then be set):
 
 ```json
 [
@@ -212,8 +269,11 @@ itself as a literal value — round-14 E-13). Startup fails closed if
 ## Tests
 
 ```bash
-.venv/bin/python -m unittest discover -s tests   # ~200 tests, no network/credentials needed (13 B-stage tests skip without google-adk)
+PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests   # 340+ tests, no network/credentials needed (13 B-stage tests skip without google-adk)
 ```
+
+Optional lint (not a runtime dependency): `pip install ruff && ruff check` uses
+`ruff.toml` (syntax errors, unused imports/variables, undefined names only).
 
 All external services (Firestore, Gemini) sit behind interfaces with in-memory
 / deterministic fakes; the suite runs fully offline.
@@ -372,6 +432,45 @@ gcloud run services update knowledge-discovery --region=asia-northeast1 --update
 
 # 3. run one sweep (or wait for the Scheduler job) so the digest cards exist
 ```
+
+## What it does not do (read before judging fit)
+
+- **Demo data only.** The 400 employees are synthetic. There is no import or
+  edit screen for real employee profiles: profiles enter through
+  `scripts/generate_seeds.py` (or by writing to the store). Using it on a real
+  company means building that loader first; none exists here.
+- **No notifications and no scheduling.** When someone accepts, the app records the
+  match and shows "15 min" to both people; it does not email, message or send a
+  calendar invite. The colleague only sees a request by opening `/candidate`, and
+  the two people agree a time themselves. The Google Workspace connector is
+  read-only and covers one owner (see "Data source connectors").
+- **One question can reach up to 3 people.** Pressing "Ask" runs the full search again
+  and sends to the top matches (at most 3), not only the person previewed on the card.
+- **A decline is visible.** The requester sees the decliner's name, the reason they
+  typed (or "Currently unable to participate.") and any resource they shared; the
+  candidate screen says so before they decline. This is deliberate ("declines are
+  never hidden"), so choose the reason text accordingly.
+- **The audit page is not private.** `/audit` shows names, question text, decline
+  reasons and skip reasons to everyone who holds the tenant's access code. Private
+  profile items are masked there (by item visibility, not by the model's say-so), but
+  nothing else is.
+- **Personal data.** Questions, names, reasons and consent decisions are stored as
+  messages in Firestore (or memory) until you delete them. The only removal paths
+  here are the `--clear` reseed in "Demo reset" and deleting the Firestore database
+  yourself; there is no per-person delete or retention setting. Server logs record employee IDs
+  and exception types, not question text or profile content.
+- **Search quality is unmeasured.** There is no accuracy evaluation. The only
+  calibration is the `VECTOR_FLOOR` note above; Gemini can be wrong or unavailable. When
+  a model call fails, that person is recorded as "Inference evaluation unavailable"
+  in the audit trail and treated as no connection (fail-closed).
+- **Cost and limits.** A question triggers one embedding call and up to 20 model calls
+  (questions are capped at 2000 characters). There is no per-user rate limit. A rate-limited
+  embedding call is retried after a wait (default 62 s, up to 4 tries) inside the request.
+- **Reads are not optimised.** Status and inbox views read the whole message log and
+  filter in Python; this is fine for a demo and will slow down as messages accumulate.
+- **Dependencies are lower-bounded, not locked** (`scripts/requirements.txt`); the
+  suite was last run here with fastapi 0.165, pydantic 2.14, google-genai 3.6 on Python 3.13.
+- English only. The UI, seed profiles and prompts are English.
 
 ## Demo-mode simplifications (deliberate)
 

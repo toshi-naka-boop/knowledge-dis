@@ -18,11 +18,9 @@ sequences and injected failures. Covers:
 from __future__ import annotations
 
 import base64
-import logging
 import os
 import sys
 import unittest
-from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
